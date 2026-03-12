@@ -52,24 +52,12 @@
     "adblock": {
       "id": "uBlock0@raymondhill.net",
       "download_url": "https://addons.mozilla.org/firefox/downloads/latest/uBlock0@raymondhill.net/latest.xpi",
-      "marker_file": ".webapp_adblock_extension_id",
-      "legacy_ids": [],
-      "legacy_marker_files": []
+      "marker_file": ".webapp_adblock_extension_id"
     },
     "swipe": {
       "id": "{6f3ab763-a4c2-4183-b596-984bf5b7ac31}",
       "download_url": "https://addons.mozilla.org/android/downloads/file/4666831/simple_swipe_navigator-1.6.xpi",
       "marker_file": ".webapp_simple_swipe_navigator_extension_id",
-      "legacy_ids": [
-        "touch-browser-navigation@webapp",
-        "touch-browser-navigation@h43z",
-        "swipe-navigator@webapp-manager"
-      ],
-      "legacy_marker_files": [
-        ".webapp_touch_browser_navigation_extension_id",
-        ".webapp_simple_swipe_extension_id",
-        ".webapp_swipe_extension_id"
-      ],
       "bundle_path": "extensions/simple-swipe-navigator-1.6.xpi",
       "name": "Simple Swipe Navigator",
       "version": "1.6",

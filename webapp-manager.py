@@ -63,12 +63,12 @@ from engine_support import available_engines, engine_icon_name
 from browser_profiles import read_profile_settings
 from ui_icons import create_image_from_ref
 from app_state import WebAppState
-from app_identity import APP_DIR, APP_ID, APP_ICON_NAME, APP_DB_PATH, LEGACY_APP_DB_PATHS
+from app_identity import APP_DIR, APP_ID, APP_ICON_NAME, APP_DB_PATH
 from manager_integration import ensure_manager_desktop_integration, headerbar_decoration_layout_without_icon
 
 Adw.init()
 LOG = get_logger(__name__)
-APP_VERSION = '56'
+APP_VERSION = '57'
 
 
 MANAGED_IMPORT_OPTION_KEYS = [
@@ -157,7 +157,6 @@ class MainWindow(Adw.ApplicationWindow):
             self.set_icon_name(APP_ICON_NAME)
         except Exception:
             pass
-        self._migrate_legacy_database_if_needed()
         self.db = Database(str(APP_DB_PATH))
         self.search_text = ''
         self.search_visible = False
@@ -735,28 +734,6 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _restore_overview_header_actions(self):
         self._show_overview_header()
-
-    def _migrate_legacy_database_if_needed(self):
-        try:
-            target = Path(APP_DB_PATH)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if target.exists():
-                return
-            for legacy_path in LEGACY_APP_DB_PATHS:
-                try:
-                    legacy = Path(legacy_path).expanduser()
-                except Exception:
-                    continue
-                if not legacy.exists() or not legacy.is_file():
-                    continue
-                try:
-                    shutil.copy2(legacy, target)
-                    LOG.info('Migrated legacy database from %s to %s', legacy, target)
-                    return
-                except Exception:
-                    LOG.warning('Failed to migrate legacy database from %s', legacy, exc_info=True)
-        except Exception:
-            LOG.warning('Legacy database migration check failed', exc_info=True)
 
     def _read_exec_command_from_desktop(self, desktop_path):
         try:

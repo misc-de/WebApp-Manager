@@ -37,6 +37,7 @@ from webapp_constants import (
     OPTION_SWIPE_KEY,
 )
 from input_validation import (
+    DESKTOP_CHROME_USER_AGENT,
     MAX_ICON_FILE_SIZE,
     build_safe_slug,
     check_origin_status,
@@ -1483,7 +1484,7 @@ class DetailPage(Gtk.Box):
         return ordered
 
     def _download_image_bytes(self, url):
-        request = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        request = urllib.request.Request(url, headers={'User-Agent': DESKTOP_CHROME_USER_AGENT, 'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', 'Connection': 'close'})
         with urllib.request.urlopen(request, timeout=10) as response:
             content_length = response.headers.get('Content-Length')
             if content_length:
@@ -1517,7 +1518,7 @@ class DetailPage(Gtk.Box):
         base_url = f'{parsed.scheme}://{parsed.netloc}'
         html = ''
         try:
-            request = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            request = urllib.request.Request(url, headers={'User-Agent': DESKTOP_CHROME_USER_AGENT, 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', 'Connection': 'close'})
             with urllib.request.urlopen(request, timeout=10) as response:
                 content_type = response.headers.get_content_type()
                 content_length = response.headers.get('Content-Length')

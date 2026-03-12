@@ -9,7 +9,6 @@ LANG_DIR = APP_DIR / 'lang'
 DEFAULT_CONFIG_PATH = APP_DIR / 'config.json'
 USER_CONFIG_DIR = Path.home() / '.config' / 'webapp-manager'
 USER_CONFIG_PATH = USER_CONFIG_DIR / 'config.json'
-LEGACY_USER_CONFIG_PATH = Path.home() / '.local/share/vibecode/config.json'
 DEFAULT_LANGUAGE_CODE = 'en'
 MUTABLE_CONFIG_KEYS = {'language', 'settings', 'window_state'}
 
@@ -160,10 +159,9 @@ def get_app_config(force_reload=False):
         defaults = _load_json_file(DEFAULT_CONFIG_PATH)
 
     loaded = deepcopy(defaults) if isinstance(defaults, dict) else {}
-    for path in (LEGACY_USER_CONFIG_PATH, USER_CONFIG_PATH):
-        if path.exists():
-            user_data = _filter_mutable_config(_load_json_file(path))
-            loaded = _deep_merge(loaded, user_data)
+    if USER_CONFIG_PATH.exists():
+        user_data = _filter_mutable_config(_load_json_file(USER_CONFIG_PATH))
+        loaded = _deep_merge(loaded, user_data)
 
     if not loaded:
         loaded = {'language': 'system'}
