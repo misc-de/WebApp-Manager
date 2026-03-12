@@ -8,7 +8,7 @@ LOG = get_logger(__name__)
 
 
 class Database:
-    def __init__(self, db_name='entries.db'):
+    def __init__(self, db_name='webappmanager.db'):
         db_path = Path(db_name).expanduser()
         if db_path.parent and str(db_path.parent) not in ('', '.'):
             db_path.parent.mkdir(parents=True, exist_ok=True)

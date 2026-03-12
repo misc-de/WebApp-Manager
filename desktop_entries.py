@@ -358,7 +358,6 @@ def export_desktop_file(entry, options_dict, engines_list, logger):
             configured_command = engine['command']
             break
     if selected_engine is None:
-        logger.info('Skipping desktop export for entry %s because no browser engine is selected', entry.id)
         delete_managed_entry_artifacts(entry.id, title, engines_list, logger, delete_profiles=False, stored_profile_path=previous_profile_path, stored_profile_name=previous_profile_name)
         return None
     engine_command = resolve_browser_command(configured_command, logger)

@@ -56,26 +56,15 @@ DEFAULT_FIREFOX_EXTENSIONS = {
         'id': 'uBlock0@raymondhill.net',
         'download_url': 'https://addons.mozilla.org/firefox/downloads/latest/uBlock0@raymondhill.net/latest.xpi',
         'marker_file': '.webapp_adblock_extension_id',
-        'legacy_ids': [],
-        'legacy_marker_files': [],
     },
     'swipe': {
         'id': '{6f3ab763-a4c2-4183-b596-984bf5b7ac31}',
         'bundle_path': 'extensions/simple-swipe-navigator-1.6.xpi',
         'download_url': 'https://addons.mozilla.org/android/downloads/file/4666831/simple_swipe_navigator-1.6.xpi',
         'marker_file': '.webapp_simple_swipe_navigator_extension_id',
-        'legacy_ids': [
-            'touch-browser-navigation@webapp',
-            'touch-browser-navigation@h43z',
-            'swipe-navigator@webapp-manager',
-        ],
-        'legacy_marker_files': [
-            '.webapp_touch_browser_navigation_extension_id',
-            '.webapp_simple_swipe_extension_id',
-            '.webapp_swipe_extension_id',
-        ],
     },
 }
+
 
 def normalize_color_scheme(value):
     value = (value or 'auto').strip().lower()
@@ -101,37 +90,12 @@ def get_firefox_extension_config(name):
     merged = dict(defaults)
     merged.update(extensions.get(name) or {})
 
-    # Auto-normalize stale legacy IDs from older user config overrides.
-    # This keeps the configured install target aligned with the bundled/add-on
-    # manifest ID while still cleaning up old legacy IDs on disk.
-    configured_id = str(merged.get('id') or '').strip()
-    default_id = str(defaults.get('id') or '').strip()
-    legacy_ids = [str(v or '').strip() for v in merged.get('legacy_ids') or []]
-    default_legacy_ids = [str(v or '').strip() for v in defaults.get('legacy_ids') or []]
-    all_legacy_ids = []
-    for value in [*legacy_ids, *default_legacy_ids]:
-        if value and value not in all_legacy_ids:
-            all_legacy_ids.append(value)
-    bundle_path = str(merged.get('bundle_path') or defaults.get('bundle_path') or '').strip()
     if name == 'swipe':
-        stale_bundle_names = {'swipe-navigator-minimal.xpi'}
+        bundle_path = str(merged.get('bundle_path') or defaults.get('bundle_path') or '').strip()
         configured_bundle_name = Path(bundle_path).name if bundle_path else ''
-        default_bundle_path = str(defaults.get('bundle_path') or '').strip()
-        if default_id and configured_id and configured_id != default_id and configured_id in all_legacy_ids:
-            merged['id'] = default_id
-            if configured_id not in all_legacy_ids:
-                all_legacy_ids.append(configured_id)
-        if configured_bundle_name in stale_bundle_names or not bundle_path:
-            merged['bundle_path'] = default_bundle_path
+        if configured_bundle_name == 'swipe-navigator-minimal.xpi' or not bundle_path:
+            merged['bundle_path'] = str(defaults.get('bundle_path') or '').strip()
         merged['marker_file'] = defaults.get('marker_file') or merged.get('marker_file')
-        default_markers = [str(v or '').strip() for v in defaults.get('legacy_marker_files') or []]
-        markers = []
-        for value in [*(merged.get('legacy_marker_files') or []), *default_markers]:
-            value = str(value or '').strip()
-            if value and value not in markers:
-                markers.append(value)
-        merged['legacy_marker_files'] = markers
-    merged['legacy_ids'] = all_legacy_ids
     return merged
 
 def get_profile_size_bytes(profile_path):
@@ -400,42 +364,21 @@ def _firefox_extension_candidates(extension_name):
     defaults = DEFAULT_FIREFOX_EXTENSIONS.get(extension_name, {})
     configured_id = (config.get('id') or defaults.get('id') or '').strip()
     configured_marker = (config.get('marker_file') or defaults.get('marker_file') or '').strip()
-    legacy_ids = []
-    for value in [*(config.get('legacy_ids') or []), *(defaults.get('legacy_ids') or [])]:
-        value = (value or '').strip()
-        if value and value != configured_id and value not in legacy_ids:
-            legacy_ids.append(value)
-    legacy_markers = []
-    for value in [*(config.get('legacy_marker_files') or []), *(defaults.get('legacy_marker_files') or [])]:
-        value = (value or '').strip()
-        if value and value != configured_marker and value not in legacy_markers:
-            legacy_markers.append(value)
     return {
         'id': configured_id,
         'bundle_path': (config.get('bundle_path') or defaults.get('bundle_path') or '').strip(),
         'download_url': (config.get('download_url') or defaults.get('download_url') or '').strip(),
         'marker_file': configured_marker,
-        'legacy_ids': legacy_ids,
-        'legacy_marker_files': legacy_markers,
     }
-
 
 def _managed_firefox_extension_paths(profile_dir, extension_name):
     profile_dir = Path(profile_dir)
     extensions_dir = profile_dir / 'extensions'
     candidates = _firefox_extension_candidates(extension_name)
-    ids = []
-    for value in [candidates.get('id'), *(candidates.get('legacy_ids') or [])]:
-        value = (value or '').strip()
-        if value and value not in ids:
-            ids.append(value)
-    marker_names = []
-    for value in [candidates.get('marker_file'), *(candidates.get('legacy_marker_files') or [])]:
-        value = (value or '').strip()
-        if value and value not in marker_names:
-            marker_names.append(value)
-    marker_paths = [extensions_dir / name for name in marker_names]
-    discovered_ids = []
+    configured_id = (candidates.get('id') or '').strip()
+    marker_name = (candidates.get('marker_file') or '').strip()
+    marker_paths = [extensions_dir / marker_name] if marker_name else []
+    ids = [configured_id] if configured_id else []
     for marker_path in marker_paths:
         if not marker_path.exists():
             continue
@@ -443,9 +386,8 @@ def _managed_firefox_extension_paths(profile_dir, extension_name):
             addon_id = marker_path.read_text(encoding='utf-8').strip()
         except Exception:
             addon_id = ''
-        if addon_id and addon_id not in ids and addon_id not in discovered_ids:
-            discovered_ids.append(addon_id)
-    ids.extend(discovered_ids)
+        if addon_id and addon_id not in ids:
+            ids.append(addon_id)
     xpi_paths = [extensions_dir / f'{addon_id}.xpi' for addon_id in ids if addon_id]
     return {
         'extensions_dir': extensions_dir,
@@ -453,11 +395,10 @@ def _managed_firefox_extension_paths(profile_dir, extension_name):
         'marker_paths': marker_paths,
         'ids': ids,
         'xpi_paths': xpi_paths,
-        'configured_id': candidates.get('id') or '',
+        'configured_id': configured_id,
         'bundle_path': candidates.get('bundle_path') or '',
         'download_url': candidates.get('download_url') or '',
     }
-
 
 def _firefox_extension_paths(profile_dir, marker_name, fallback_id):
     profile_dir = Path(profile_dir)
@@ -633,11 +574,8 @@ def _sync_firefox_signed_extension(profile_dir, enabled, logger, extension_name)
         detected_id = _extract_firefox_extension_id(payload, configured_id)
         install_id = configured_id
         if detected_id and detected_id != configured_id:
-            if configured_id in (managed.get('ids') or []):
-                logger.info('Firefox extension %s manifest ID %s differs from configured ID %s; installing under manifest ID and cleaning legacy IDs', extension_name, detected_id, configured_id)
-                install_id = detected_id
-            else:
-                logger.warning('Firefox extension %s manifest ID %s differs from configured ID %s; using configured ID for install target', extension_name, detected_id, configured_id)
+            logger.info('Firefox extension %s manifest ID %s differs from configured ID %s; installing under manifest ID', extension_name, detected_id, configured_id)
+            install_id = detected_id
         target = extensions_dir / f'{install_id}.xpi'
         with tempfile.NamedTemporaryFile(dir=extensions_dir, delete=False) as tmp_file:
             tmp_file.write(payload)
@@ -1162,7 +1100,7 @@ def _copy_profile_contents(source_dir, target_dir, logger):
         except Exception as error:
             logger.warning('Failed to copy profile content from %s to %s: %s', child, destination, error)
 
-def _remove_legacy_profile(profile_path, browser_family, profile_name, logger):
+def _remove_source_profile(profile_path, browser_family, profile_name, logger):
     if not profile_path:
         return
     try:
@@ -1175,13 +1113,13 @@ def _remove_legacy_profile(profile_path, browser_family, profile_name, logger):
             try:
                 shutil.rmtree(profile_dir)
             except OSError as error:
-                logger.warning('Failed to remove legacy Firefox profile %s: %s', profile_dir, error)
+                logger.warning('Failed to remove Firefox profile %s: %s', profile_dir, error)
         return
     if browser_family in {'chrome', 'chromium'} and profile_dir.exists():
         try:
             shutil.rmtree(profile_dir)
         except OSError as error:
-            logger.warning('Failed to remove legacy Chromium profile %s: %s', profile_dir, error)
+            logger.warning('Failed to remove Chromium profile %s: %s', profile_dir, error)
 
 def ensure_browser_profile(title, configured_command, logger, stored_profile_name='', stored_profile_path=''):
     slug = build_safe_slug(title)
@@ -1196,15 +1134,15 @@ def ensure_browser_profile(title, configured_command, logger, stored_profile_nam
             stored_path = None
     managed_existing = bool(stored_path and _is_managed_profile_path(stored_path, family))
     stored_family = _detect_managed_profile_family(stored_path) if stored_path else None
-    allow_profile_migration = bool(
+    allow_profile_copy = bool(
         stored_path
         and not managed_existing
         and stored_path.exists()
         and (stored_family is None or stored_family == family)
     )
     profile_name = _sanitize_profile_id(stored_profile_name) if (stored_profile_name and managed_existing) else _generate_profile_id()
-    legacy_profile_path = str(stored_path) if allow_profile_migration else ''
-    legacy_profile_name = stored_profile_name if legacy_profile_path else ''
+    source_profile_path = str(stored_path) if allow_profile_copy else ''
+    source_profile_name = stored_profile_name if source_profile_path else ''
     profile_migrated = False
     if family == 'firefox':
         FIREFOX_ROOT.mkdir(parents=True, exist_ok=True)
@@ -1212,9 +1150,9 @@ def ensure_browser_profile(title, configured_command, logger, stored_profile_nam
         if managed_existing and stored_path and stored_path.name == profile_name:
             profile_dir = stored_path
         profile_dir.mkdir(parents=True, exist_ok=True)
-        if legacy_profile_path:
-            _copy_profile_contents(legacy_profile_path, profile_dir, logger)
-            _remove_legacy_profile(legacy_profile_path, family, legacy_profile_name, logger)
+        if source_profile_path:
+            _copy_profile_contents(source_profile_path, profile_dir, logger)
+            _remove_source_profile(source_profile_path, family, source_profile_name, logger)
             profile_migrated = True
         _upsert_firefox_profile(profile_name, profile_dir, logger)
         return {
@@ -1230,9 +1168,9 @@ def ensure_browser_profile(title, configured_command, logger, stored_profile_nam
         if managed_existing and stored_path and stored_path.name == profile_name:
             profile_dir = stored_path
         profile_dir.mkdir(parents=True, exist_ok=True)
-        if legacy_profile_path:
-            _copy_profile_contents(legacy_profile_path, profile_dir, logger)
-            _remove_legacy_profile(legacy_profile_path, family, legacy_profile_name, logger)
+        if source_profile_path:
+            _copy_profile_contents(source_profile_path, profile_dir, logger)
+            _remove_source_profile(source_profile_path, family, source_profile_name, logger)
             profile_migrated = True
         return {
             'browser_family': family,

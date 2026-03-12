@@ -3,7 +3,7 @@ from __future__ import annotations
 import shlex
 from pathlib import Path
 
-from app_identity import APP_ID, APP_ICON_NAME, APP_ICON_SOURCE, LEGACY_APP_IDS
+from app_identity import APP_ID, APP_ICON_NAME, APP_ICON_SOURCE
 from i18n import t
 
 
@@ -40,17 +40,6 @@ def ensure_manager_desktop_integration(app_dir: Path, logger) -> None:
                     installed_icon_path.write_bytes(source_bytes)
             except Exception as error:
                 logger.warning('Failed to install manager icon: %s', error)
-
-        for legacy_id in LEGACY_APP_IDS:
-            for legacy_path in (
-                local_applications / f'{legacy_id}.desktop',
-                local_icons / f'{legacy_id}.png',
-            ):
-                if legacy_path.exists():
-                    try:
-                        legacy_path.unlink()
-                    except Exception:
-                        pass
 
         desktop_entry_path = local_applications / f'{APP_ID}.desktop'
         exec_target = (app_dir / 'webapp-manager.py').resolve()

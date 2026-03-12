@@ -105,10 +105,10 @@ def normalize_option_dict(options: dict | None) -> dict[str, str]:
     return normalized
 
 def normalize_option_rows(rows) -> dict[str, str]:
-    """Normalize DB option rows while preferring canonical keys over legacy aliases.
+    """Normalize DB option rows while preferring canonical keys over older aliases.
 
     Rows are expected in the database format: (id, entry_id, option_key, option_value).
-    When both a legacy alias and the canonical key exist for the same logical option,
+    When both an older alias and the canonical key exist for the same logical option,
     the canonical key wins even if the alias row is newer. This prevents old imported
     labels like "Keep Session" or "Allow Notifications" from overriding the current
     stored value for "Previous Session" / "Notifications".
