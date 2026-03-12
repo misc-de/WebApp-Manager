@@ -1,0 +1,113 @@
+{
+  "language": "system",
+  "engines": [
+    {
+      "id": 1,
+      "name": "Firefox",
+      "command": "firefox",
+      "user_agents": [
+        {
+          "name": "Android",
+          "value": "Mozilla/5.0 (Android 15; Mobile; rv:139.0) Gecko/139.0 Firefox/139.0"
+        },
+        {
+          "name": "Linux",
+          "value": "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0"
+        },
+        {
+          "name": "Windows",
+          "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0"
+        },
+        {
+          "name": "iOS",
+          "value": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/139.0 Mobile/15E148 Safari/605.1.15"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Chrome",
+      "command": "chrome",
+      "user_agents": [
+        {
+          "name": "Android",
+          "value": "Mozilla/5.0 (Linux; Android 15; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+        },
+        {
+          "name": "Linux",
+          "value": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        },
+        {
+          "name": "Windows",
+          "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        },
+        {
+          "name": "iOS",
+          "value": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/122.0.0.0 Mobile/15E148 Safari/604.1"
+        }
+      ]
+    }
+  ],
+  "firefox_extensions": {
+    "adblock": {
+      "id": "uBlock0@raymondhill.net",
+      "download_url": "https://addons.mozilla.org/firefox/downloads/latest/uBlock0@raymondhill.net/latest.xpi",
+      "marker_file": ".webapp_adblock_extension_id",
+      "legacy_ids": [],
+      "legacy_marker_files": []
+    },
+    "swipe": {
+      "id": "{6f3ab763-a4c2-4183-b596-984bf5b7ac31}",
+      "download_url": "https://addons.mozilla.org/android/downloads/file/4666831/simple_swipe_navigator-1.6.xpi",
+      "marker_file": ".webapp_simple_swipe_navigator_extension_id",
+      "legacy_ids": [
+        "touch-browser-navigation@webapp",
+        "touch-browser-navigation@h43z",
+        "swipe-navigator@webapp-manager"
+      ],
+      "legacy_marker_files": [
+        ".webapp_touch_browser_navigation_extension_id",
+        ".webapp_simple_swipe_extension_id",
+        ".webapp_swipe_extension_id"
+      ],
+      "bundle_path": "extensions/simple-swipe-navigator-1.6.xpi",
+      "name": "Simple Swipe Navigator",
+      "version": "1.6",
+      "description": "Enables horizontal swipes for Back/Forward navigation on mobile devices.",
+      "amo_listing_url": "https://addons.mozilla.org/en-US/android/addon/simple-swipe-navigator/",
+      "support_url": "https://github.com/usemoslinux/swipe-navigator",
+      "signed_bundle": true
+    }
+  },
+  "settings": {
+    "appearance": "auto"
+  },
+  "window_state": {
+    "width": 500,
+    "height": 600,
+    "maximized": false
+  },
+  "browser_modes": {
+    "default": [
+      "standard",
+      "kiosk",
+      "app"
+    ],
+    "firefox": [
+      "standard",
+      "kiosk",
+      "app",
+      "seamless"
+    ],
+    "chrome": [
+      "standard",
+      "kiosk",
+      "app"
+    ],
+    "chromium": [
+      "standard",
+      "kiosk",
+      "app"
+    ]
+  }
+}

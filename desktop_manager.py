@@ -1,0 +1,56 @@
+from input_validation import (
+    MAX_ICON_FILE_SIZE,
+    build_safe_slug,
+    check_origin_status,
+    is_structurally_valid_url,
+    is_valid_url,
+    load_and_normalize_wapp_payload_from_path,
+    normalize_address,
+    normalize_wapp_payload,
+    sanitize_desktop_value,
+    validate_icon_source_path,
+)
+from webapp_constants import (
+    ADDRESS_KEY,
+    USER_AGENT_NAME_KEY,
+    USER_AGENT_VALUE_KEY,
+    ICON_PATH_KEY,
+    PROFILE_NAME_KEY,
+    PROFILE_PATH_KEY,
+    ONLY_HTTPS_KEY,
+    APP_MODE_KEY,
+    COLOR_SCHEME_KEY,
+    APPLICATIONS_DIR,
+    ICON_THEME_APPS_DIR,
+    FIREFOX_ROOT,
+    CHROMIUM_PROFILE_ROOT,
+)
+from icon_pipeline import (
+    get_managed_icon_name,
+    get_managed_icon_path,
+    get_managed_theme_icon_path,
+    ensure_applications_dir,
+    normalize_icon_to_png,
+)
+from browser_profiles import (
+    normalize_color_scheme,
+    append_unique_csv_arg,
+    get_firefox_extension_config,
+    get_profile_size_bytes,
+    read_profile_settings,
+    apply_profile_settings,
+    resolve_browser_command,
+    ensure_browser_profile,
+    delete_managed_browser_profiles,
+)
+from desktop_entries import (
+    MANAGED_BY_VALUE,
+    exportable_entry,
+    get_expected_desktop_path,
+    infer_engine_id_from_command,
+    parse_desktop_file,
+    is_managed_desktop_file,
+    list_managed_desktop_files,
+    delete_managed_entry_artifacts,
+    export_desktop_file,
+)

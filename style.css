@@ -1,0 +1,236 @@
+.entry-card {
+    background: none;
+    padding: 10px 20px 10px 10px;
+    border-bottom: 1px solid alpha(currentColor, 0.10);
+}
+
+.entry-card:hover {
+    background: alpha(@accent_bg_color,0.08);
+}
+
+.destructive-action {
+    background-color: #f64646;
+    color: white;
+    border-radius: 6px;
+    padding: 6px 12px;
+}
+
+.destructive-action:hover {
+    background-color: #e53939;
+}
+.icon-tile {
+    border-radius: 12px;
+    min-width: 72px;
+    min-height: 72px;
+    padding: 8px;
+}
+
+.icon-tile {
+    border: 1px solid alpha(currentColor, 0.15);
+}
+
+.boolean-switch {
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.entry-subtitle {
+    font-size: 0.88em;
+    opacity: 0.78;
+}
+
+
+.overview-icon-frame {
+    min-width: 58px;
+    min-height: 58px;
+    padding: 4px;
+    border-radius: 10px;
+    border: 1px solid alpha(currentColor, 0.12);
+}
+
+.profile-size-label {
+    font-size: 0.72em;
+    opacity: 0.75;
+    margin-top: 2px;
+}
+
+
+.icon-preview-frame {
+    min-width: 92px;
+    min-height: 92px;
+    padding: 4px;
+    margin-bottom: 0;
+    border-radius: 16px;
+    border: 1px solid alpha(currentColor, 0.12);
+}
+
+
+.warning-button {
+    background-color: #f5c542;
+    color: #1f1f1f;
+    border-radius: 6px;
+    padding: 6px 12px;
+}
+
+.warning-button:hover {
+    background-color: #e3b836;
+}
+
+.engine-indicator {
+    min-width: 26px;
+    min-height: 26px;
+    padding-left: 6px;
+    margin-top: 2px;
+}
+
+listview row:selected,
+listview row:selected:focus,
+listview row:selected:hover {
+    background: transparent;
+}
+
+listview row:focus,
+listview row:focus-within {
+    outline: none;
+    box-shadow: none;
+}
+
+
+listview row,
+listview row:hover,
+listview row:active,
+listview row:selected,
+listview row:selected:hover,
+listview row:selected:focus,
+listview row:focus,
+listview row:focus-within,
+listview row.activatable,
+listview row.activatable:hover,
+listview row.activatable:selected,
+listview row.activatable:selected:hover,
+listview row.activatable:selected:focus {
+    background: transparent;
+    background-image: none;
+    box-shadow: none;
+    outline: none;
+}
+
+listview row > box,
+listview row:selected > box,
+listview row:selected:hover > box,
+listview row:active > box,
+listview row:hover > box {
+    background: transparent;
+    box-shadow: none;
+}
+
+
+.entry-title {
+    margin-top: 2px;
+}
+
+.entry-subtitle {
+    margin-top: 12px;
+}
+
+.overview-status-icon {
+    margin-top: 2px;
+}
+
+.overview-engine-icon {
+    margin-top: 2px;
+    margin-bottom: 2px;
+}
+
+.profile-size-label {
+    margin-top: 2px;
+    min-width: 72px;
+}
+
+
+.busy-overlay {
+    background: alpha(@window_bg_color, 0.65);
+    padding: 18px 22px;
+    border-radius: 16px;
+}
+
+.url-status-subtle {
+    font-weight: 400;
+    color: alpha(currentColor, 0.26);
+}
+
+.url-status-error {
+    color: alpha(currentColor, 0.30);
+    font-weight: 400;
+}
+
+.url-status-ok {
+    color: alpha(currentColor, 0.26);
+    font-weight: 400;
+}
+
+.url-status-warning {
+    color: alpha(currentColor, 0.30);
+    font-weight: 400;
+}
+
+.overview-active-dot {
+    min-width: 10px;
+    min-height: 10px;
+    border-radius: 999px;
+    background: alpha(currentColor, 0.25);
+    border: 1px solid alpha(currentColor, 0.10);
+    margin: 0;
+}
+
+.overview-active-dot.active {
+    background: #33d17a;
+    border-color: alpha(#33d17a, 0.55);
+}
+
+.overview-active-dot.inactive {
+    background: alpha(currentColor, 0.22);
+    border-color: alpha(currentColor, 0.10);
+}
+
+.overview-title {
+    font-size: 0.94em;
+}
+
+.overview-title {
+    font-size: 0.88em;
+}
+
+.overview-title-button {
+    padding: 0;
+    margin: 0;
+}
+
+.overview-icon-button {
+    padding: 0;
+    margin: 0;
+}
+
+
+.detail-toast-label {
+    margin-top: 2px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: @headerbar_bg_color;
+    color: @headerbar_fg_color;
+    border: 1px solid alpha(currentColor, 0.14);
+    opacity: 1;
+}
+
+.detail-scroll-area scrollbar,
+.detail-scroll-area scrollbar slider {
+    min-width: 0;
+    min-height: 0;
+    opacity: 0;
+}
+
+.preferences-group {
+  padding: 12px;
+  border-radius: 12px;
+  background: alpha(currentColor, 0.04);
+}
