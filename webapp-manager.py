@@ -68,7 +68,7 @@ from manager_integration import ensure_manager_desktop_integration, headerbar_de
 
 Adw.init()
 LOG = get_logger(__name__)
-APP_VERSION = '57'
+APP_VERSION = '58'
 
 
 MANAGED_IMPORT_OPTION_KEYS = [
@@ -2036,7 +2036,8 @@ class MainWindow(Adw.ApplicationWindow):
                 try:
                     if detail_page._apply_wapp_payload(payload):
                         detail_page.detail_action_status.set_text(t('import_webapp_success'))
-                        self.refresh_entry_visual(entry.id)
+                        self.refresh_entry_visual(entry)
+                        GLib.idle_add(self._reload_entries)
                     else:
                         detail_page.detail_action_status.set_text(t('import_webapp_failed'))
                 except Exception as error:
