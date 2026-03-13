@@ -14,7 +14,7 @@ def headerbar_decoration_layout_without_icon() -> str:
         from gi.repository import Gtk
         settings = Gtk.Settings.get_default()
         layout = settings.get_property('gtk-decoration-layout') if settings is not None else None
-    except Exception:
+    except (ImportError, ValueError, AttributeError):
         layout = None
     layout = (layout or ':minimize,maximize,close').strip() or ':minimize,maximize,close'
     parts: list[str] = []
@@ -38,7 +38,7 @@ def ensure_manager_desktop_integration(app_dir: Path, logger) -> None:
                 source_bytes = APP_ICON_SOURCE.read_bytes()
                 if (not installed_icon_path.exists()) or installed_icon_path.read_bytes() != source_bytes:
                     installed_icon_path.write_bytes(source_bytes)
-            except Exception as error:
+            except OSError as error:
                 logger.warning('Failed to install manager icon: %s', error)
 
         desktop_entry_path = local_applications / f'{APP_ID}.desktop'
@@ -62,9 +62,9 @@ def ensure_manager_desktop_integration(app_dir: Path, logger) -> None:
         if desktop_entry_path.exists():
             try:
                 current_desktop_entry = desktop_entry_path.read_text(encoding='utf-8')
-            except Exception:
+            except OSError:
                 current_desktop_entry = ''
         if current_desktop_entry != desktop_entry:
             desktop_entry_path.write_text(desktop_entry, encoding='utf-8')
-    except Exception as error:
+    except OSError as error:
         logger.warning('Failed to prepare desktop integration: %s', error)

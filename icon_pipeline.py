@@ -5,7 +5,7 @@ from PIL import Image
 
 try:
     import cairosvg
-except Exception:
+except ImportError:
     cairosvg = None
 
 from input_validation import build_safe_slug, validate_icon_source_path
@@ -42,7 +42,7 @@ def _looks_like_svg(payload: bytes) -> bool:
         return True
     try:
         decoded = head.decode('utf-8', errors='ignore').lower()
-    except Exception:
+    except (UnicodeDecodeError, AttributeError):
         return False
     return '<svg' in decoded
 

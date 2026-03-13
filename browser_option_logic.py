@@ -117,7 +117,7 @@ def normalize_option_rows(rows) -> dict[str, str]:
     for row in rows or ():
         try:
             row_id, _entry_id, raw_key, raw_value = row
-        except Exception:
+        except (TypeError, ValueError):
             continue
         key = option_key_from_any(raw_key)
         if key is None:
@@ -191,7 +191,7 @@ def decode_browser_state(raw: str, family: str) -> dict[str, str]:
         return {}
     try:
         data = json.loads(raw)
-    except Exception:
+    except (TypeError, ValueError, json.JSONDecodeError):
         return {}
     if not isinstance(data, dict):
         return {}

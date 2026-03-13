@@ -1,4 +1,5 @@
 {
+  "_meta_language_name": "Polski",
   "app_title": "WebApp Manager",
   "search_placeholder": "Type to filter the list",
   "search_empty": "No matching WebApps found.",
@@ -44,6 +45,7 @@
   "icon_page_status_url": "You can try to download a icon from the stored URL",
   "icon_page_status_no_url": "No valid URL is stored. Upload an icon from your computer instead.",
   "icon_page_status_downloaded": "Icon downloaded from the website.",
+  "icon_page_status_searching": "Looking for the best icon from the website...",
   "icon_page_status_uploaded": "Local icon selected and stored.",
   "icon_page_status_download_failed": "Could not download an icon from the website.",
   "icon_action_delete": "Delete icon",
@@ -73,7 +75,6 @@
   "dialog_yes": "Yes",
   "dialog_no": "No",
   "wapp_filter_name": "WebApp export (*.wapp)",
-  "url_status_auth": "Domain requires authentication.",
   "option_disable_ai": "Disable AI Features",
   "option_set_privacy": "Enable Enhanced Privacy",
   "label_color_scheme": "Color Scheme",
@@ -138,7 +139,6 @@
   "profile_resync_completed_success": "Profile resync finished for {completed} of {total} profiles.",
   "profile_resync_completed_with_failures": "Profile resync finished for {completed} of {total} profiles. {failures} profile(s) could not be read.",
   "plugin_remove_ready_restart": "Firefox plugin removed. Restart the WebApp if it is already running.",
-  "_meta_language_name": "Polski",
   "settings_language_label": "Język",
   "settings_language_changed": "Język: {language}",
   "language_system": "Język systemu",
@@ -166,5 +166,16 @@
   "language_lt": "Lietuvių",
   "language_bg": "Български",
   "language_uk": "Українська",
-  "language_sr": "Српски"
+  "language_sr": "Српски",
+  "import_progress_title": "Importing WebApps",
+  "import_progress_preparing": "Preparing import…",
+  "import_progress_current": "Importing WebApp {current} of {total}: {title}",
+  "import_progress_completed": "Imported {current} of {total} WebApps.",
+  "import_bundle_cancelled": "Import cancelled. Imported {imported} WebApps and skipped {duplicates} duplicates.",
+  "desktop_detected_import_title": "Importing WebApps",
+  "desktop_detected_import_found": "Found {total} WebApps. Importing now.",
+  "desktop_detected_import_done": "Imported {imported} of {total} detected WebApps.",
+  "desktop_detected_import_cancelled": "Import cancelled. Imported {imported} of {total} detected WebApps.",
+  "url_status_unverified": "URL format looks valid. The site could not be verified right now.",
+  "url_status_blocked": "URL format looks valid. The site blocked the automatic check."
 }

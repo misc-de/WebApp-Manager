@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import zipfile
 import urllib.request
+import urllib.error
 from datetime import datetime
 from pathlib import Path
 
@@ -289,7 +290,7 @@ def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_ses
     if user_js.exists():
         try:
             current_content = user_js.read_text(encoding='utf-8')
-        except Exception:
+        except OSError:
             current_content = None
         if current_content == new_content:
             return
@@ -304,7 +305,7 @@ def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previou
     if prefs_path.exists():
         try:
             data = json.loads(prefs_path.read_text(encoding='utf-8'))
-        except Exception as error:
+        except (OSError, ValueError, json.JSONDecodeError) as error:
             logger.warning('Failed to read Chromium preferences %s: %s', prefs_path, error)
             data = {}
     browser = data.setdefault('browser', {})
@@ -355,7 +356,7 @@ def _extract_firefox_extension_id(xpi_bytes, fallback_id):
                     addon_id = gecko.get('id') or ((manifest.get('applications') or {}).get('gecko', {}) or {}).get('id')
                     if addon_id:
                         return addon_id
-    except Exception:
+    except (zipfile.BadZipFile, OSError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
         pass
     return fallback_id
 
@@ -384,7 +385,7 @@ def _managed_firefox_extension_paths(profile_dir, extension_name):
             continue
         try:
             addon_id = marker_path.read_text(encoding='utf-8').strip()
-        except Exception:
+        except OSError:
             addon_id = ''
         if addon_id and addon_id not in ids:
             ids.append(addon_id)
@@ -408,7 +409,7 @@ def _firefox_extension_paths(profile_dir, marker_name, fallback_id):
     if marker_path.exists():
         try:
             managed_addon_id = marker_path.read_text(encoding='utf-8').strip() or fallback_id
-        except Exception:
+        except OSError:
             managed_addon_id = fallback_id
     target = extensions_dir / f'{managed_addon_id}.xpi'
     return extensions_dir, marker_path, managed_addon_id, target
@@ -431,8 +432,8 @@ def firefox_extension_installed(profile_dir, extension_name):
             # If Firefox has written a state file but the add-on is not active there,
             # do not treat a stale XPI alone as installed.
             return False
-        except Exception:
-            pass
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            logger = None
     return any(path.exists() for path in managed['xpi_paths'])
 
 
@@ -456,7 +457,7 @@ def _xpi_has_signature(xpi_bytes):
     try:
         with zipfile.ZipFile(io.BytesIO(xpi_bytes)) as archive:
             names = {name.upper() for name in archive.namelist()}
-    except Exception:
+    except (zipfile.BadZipFile, OSError):
         return False
     return any(name.startswith('META-INF/') for name in names)
 
@@ -477,7 +478,7 @@ def _load_firefox_extension_payload(managed, logger, extension_name):
         with urllib.request.urlopen(request, timeout=20) as response:
             payload = response.read()
         return payload, download_url, _xpi_has_signature(payload)
-    except Exception as error:
+    except (OSError, ValueError, urllib.error.URLError) as error:
         logger.warning('Failed to download Firefox extension %s from %s: %s', extension_name, download_url, error)
         return None, str(error), False
 
@@ -593,7 +594,7 @@ def _sync_firefox_signed_extension(profile_dir, enabled, logger, extension_name)
         _invalidate_firefox_extension_state(profile_dir, logger)
         logger.info('Installed Firefox extension %s into %s from %s', configured_id, target, payload_source)
         return {'requested': True, 'installed': True, 'changed': True, 'error': None}
-    except Exception as error:
+    except (OSError, ValueError, zipfile.BadZipFile, urllib.error.URLError) as error:
         logger.warning('Failed to install Firefox extension %s from %s: %s', extension_name, bundle_path or download_url, error)
         return {'requested': True, 'installed': False, 'changed': False, 'error': str(error)}
 
@@ -612,7 +613,7 @@ def _sync_firefox_app_mode_css(profile_dir, enabled, frameless, kiosk, logger):
     if css_path.exists():
         try:
             existing = css_path.read_text(encoding='utf-8')
-        except Exception as error:
+        except OSError as error:
             logger.warning('Failed to read Firefox userChrome.css %s: %s', css_path, error)
             existing = ''
     pattern = re.escape(FIREFOX_APP_MODE_START) + r'.*?' + re.escape(FIREFOX_APP_MODE_END)
@@ -695,7 +696,7 @@ def _read_firefox_profile_settings(profile_dir):
             else:
                 try:
                     prefs[key] = json.loads(raw)
-                except Exception:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     prefs[key] = raw.strip('"')
     adblock = firefox_extension_installed(profile_dir, 'adblock')
     swipe = firefox_extension_installed(profile_dir, 'swipe')
@@ -704,7 +705,7 @@ def _read_firefox_profile_settings(profile_dir):
     if css_path.exists():
         try:
             css_text = css_path.read_text(encoding='utf-8', errors='ignore')
-        except Exception:
+        except OSError:
             css_text = ''
     mode_marker = re.search(r'/\* WEBAPP MODE: ([a-z]+) \*/', css_text)
     mode_name = mode_marker.group(1) if mode_marker else ''
@@ -733,7 +734,7 @@ def _read_chromium_profile_settings(profile_dir):
         return {}
     try:
         data = json.loads(prefs_path.read_text(encoding='utf-8'))
-    except Exception:
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
         return {}
     clear_on_exit = (((data.get('browser') or {}).get('clear_data') or {}).get('clear_on_exit') or [])
     session = data.get('session') or {}
@@ -897,10 +898,10 @@ def _backup_profiles_ini(profiles_ini, logger):
         for stale in backups[10:]:
             try:
                 stale.unlink()
-            except Exception as prune_error:
+            except OSError as prune_error:
                 logger.warning('Failed to prune Firefox profiles.ini backup %s: %s', stale, prune_error)
         logger.info('Created Firefox profiles.ini backup %s', backup_path)
-    except Exception as error:
+    except OSError as error:
         logger.warning('Failed to create Firefox profiles.ini backup %s: %s', profiles_ini, error)
 
 def _parse_profiles_ini_sections(raw_text):
@@ -944,7 +945,7 @@ def _write_profiles_ini_sections(profiles_ini, sections, logger):
     if profiles_ini.exists():
         try:
             current = profiles_ini.read_text(encoding='utf-8')
-        except Exception as error:
+        except OSError as error:
             logger.warning('Failed to compare Firefox profiles.ini %s before write: %s', profiles_ini, error)
     if current == content:
         logger.debug('Skipping Firefox profiles.ini write because content is unchanged: %s', profiles_ini)
@@ -959,7 +960,7 @@ def _upsert_firefox_profile(profile_name, profile_dir, logger):
     relative_path = os.path.relpath(profile_dir, FIREFOX_ROOT)
     try:
         raw_text = profiles_ini.read_text(encoding='utf-8') if profiles_ini.exists() else ''
-    except Exception as error:
+    except OSError as error:
         logger.error('Failed to read Firefox profiles.ini %s: %s', profiles_ini, error)
         return
 
@@ -1026,7 +1027,7 @@ def _remove_firefox_profile_registration(profile_name, profile_dir, logger):
     relative_path = os.path.relpath(profile_dir, FIREFOX_ROOT)
     try:
         raw_text = profiles_ini.read_text(encoding='utf-8')
-    except Exception as error:
+    except OSError as error:
         logger.error('Failed to read Firefox profiles.ini %s: %s', profiles_ini, error)
         return
 
@@ -1097,7 +1098,7 @@ def _copy_profile_contents(source_dir, target_dir, logger):
                 shutil.copytree(child, destination, dirs_exist_ok=True)
             else:
                 shutil.copy2(child, destination)
-        except Exception as error:
+        except OSError as error:
             logger.warning('Failed to copy profile content from %s to %s: %s', child, destination, error)
 
 def _remove_source_profile(profile_path, browser_family, profile_name, logger):
