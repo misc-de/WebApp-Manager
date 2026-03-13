@@ -26,7 +26,7 @@ from desktop_entries import (
     get_expected_desktop_path,
     list_managed_desktop_files,
 )
-from icon_pipeline import get_managed_icon_path
+from icon_pipeline import get_managed_icon_path, normalize_icon_to_png
 from input_validation import load_import_payloads_from_path, load_and_normalize_wapp_payload_from_path, sanitize_desktop_value, validate_icon_source_path
 from browser_option_logic import (
     normalize_option_dict,
@@ -68,7 +68,7 @@ from manager_integration import ensure_manager_desktop_integration, headerbar_de
 
 Adw.init()
 LOG = get_logger(__name__)
-APP_VERSION = '58'
+APP_VERSION = '60f'
 
 
 MANAGED_IMPORT_OPTION_KEYS = [
@@ -172,6 +172,11 @@ class MainWindow(Adw.ApplicationWindow):
         self._profile_resync_progress_label = None
         self._profile_resync_progress_bar = None
         self._profile_resync_total = 0
+        self._import_progress_dialog = None
+        self._import_progress_label = None
+        self._import_progress_bar = None
+        self._import_cancel_requested = False
+        self._import_total = 0
 
         self.header_bar = Adw.HeaderBar()
         self.header_bar.set_decoration_layout(headerbar_decoration_layout_without_icon())
@@ -1172,6 +1177,160 @@ class MainWindow(Adw.ApplicationWindow):
         self.db.add_options(entry_id, clean_updates)
         self._cache_options(entry_id, clean_updates)
 
+    def _iter_icon_candidates(self, candidate, base_dir=None):
+        raw = str(candidate or '').strip()
+        if not raw:
+            return []
+        candidate_path = Path(raw).expanduser()
+        suffix = candidate_path.suffix.lower()
+        basenames = [candidate_path.name] if suffix else [f'{candidate_path.name}.svg', f'{candidate_path.name}.png', f'{candidate_path.name}.ico', f'{candidate_path.name}.xpm']
+        search_dirs = []
+        if candidate_path.parent != Path('.'):
+            search_dirs.append(candidate_path.parent)
+        if base_dir:
+            base_path = Path(base_dir).expanduser()
+            if base_path.is_file():
+                base_path = base_path.parent
+            search_dirs.extend([
+                base_path,
+                base_path / 'icons',
+                base_path / 'pixmaps',
+            ])
+        found = []
+        seen = set()
+        direct_candidates = [candidate_path]
+        if not suffix:
+            direct_candidates.extend(candidate_path.with_suffix(ext) for ext in ('.svg', '.png', '.ico', '.xpm'))
+        for direct in direct_candidates:
+            try:
+                resolved = direct.resolve()
+            except Exception:
+                resolved = direct
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            if direct.exists() and direct.is_file():
+                found.append(direct)
+        for root in search_dirs:
+            try:
+                root = root.resolve()
+            except Exception:
+                root = Path(root)
+            if not root.exists() or not root.is_dir():
+                continue
+            for basename in basenames:
+                candidate = root / basename
+                try:
+                    resolved = candidate.resolve()
+                except Exception:
+                    resolved = candidate
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                if candidate.exists() and candidate.is_file():
+                    found.append(candidate)
+        return found
+
+    def _lookup_system_icon_file(self, icon_name, base_dir=None):
+        candidate = str(icon_name or '').strip()
+        if not candidate:
+            return None
+        local_found = self._iter_icon_candidates(candidate, base_dir=base_dir)
+        if local_found:
+            return local_found[0]
+        name = Path(candidate).name
+        stem = Path(name).stem if Path(name).suffix else name
+        explicit_suffix = Path(name).suffix.lower()
+        icon_dirs = [
+            Path.home() / '.local/share/icons',
+            Path.home() / '.icons',
+            Path('/usr/local/share/icons'),
+            Path('/usr/share/icons'),
+            Path('/usr/share/pixmaps'),
+        ]
+        found = []
+        for root in icon_dirs:
+            if not root.exists():
+                continue
+            patterns = [name] if explicit_suffix else [f'{stem}.svg', f'{stem}.png', f'{stem}.ico', f'{stem}.xpm']
+            for pattern in patterns:
+                try:
+                    found.extend(path for path in root.rglob(pattern) if path.is_file())
+                except Exception:
+                    continue
+        if not found:
+            return None
+
+        def score(path):
+            suffix = path.suffix.lower()
+            suffix_score = {'.svg': 0, '.png': 1, '.ico': 2, '.xpm': 3}.get(suffix, 9)
+            size_score = 9999
+            for part in path.parts:
+                if 'x' in part:
+                    try:
+                        size_score = -int(part.split('x', 1)[0])
+                        break
+                    except Exception:
+                        pass
+            return (suffix_score, size_score, len(path.parts), len(str(path)))
+
+        return sorted(found, key=score)[0]
+
+    def _resolve_import_icon_reference(self, file_data, title, entry_id):
+        desktop_path = file_data.get('path')
+        desktop_dir = Path(desktop_path).parent if desktop_path else None
+
+        def _copy_icon_candidate(icon_candidate):
+            managed_target = get_managed_icon_path(title, '.png', entry_id)
+            try:
+                normalize_icon_to_png(icon_candidate, managed_target)
+                return str(managed_target)
+            except Exception:
+                try:
+                    suffix = icon_candidate.suffix or '.png'
+                    fallback_target = get_managed_icon_path(title, suffix, entry_id)
+                    fallback_target.write_bytes(icon_candidate.read_bytes())
+                    return str(fallback_target)
+                except Exception:
+                    return ''
+
+        icon_ref = str(file_data.get('icon_path') or '').strip()
+        if icon_ref:
+            icon_candidates = self._iter_icon_candidates(icon_ref, base_dir=desktop_dir)
+            for icon_candidate in icon_candidates:
+                copied = _copy_icon_candidate(icon_candidate)
+                if copied:
+                    return copied
+
+        icon_name = str(file_data.get('icon_name') or '').strip()
+        if icon_name:
+            resolved = self._lookup_system_icon_file(icon_name, base_dir=desktop_dir)
+            if resolved is not None:
+                copied = _copy_icon_candidate(resolved)
+                if copied:
+                    return copied
+
+        title_candidates = []
+        safe_title = build_safe_slug(title)
+        raw_title = str(title or '').strip()
+        if raw_title:
+            title_candidates.append(raw_title)
+        if safe_title and safe_title not in title_candidates:
+            title_candidates.append(safe_title)
+        if desktop_path:
+            desktop_stem = Path(desktop_path).stem
+            if desktop_stem and desktop_stem not in title_candidates:
+                title_candidates.append(desktop_stem)
+        for candidate_name in title_candidates:
+            resolved = self._lookup_system_icon_file(candidate_name, base_dir=desktop_dir)
+            if resolved is None:
+                continue
+            copied = _copy_icon_candidate(resolved)
+            if copied:
+                return copied
+
+        return ''
+
     def _get_profile_size_text_cached(self, entry_id, profile_path):
         cached = self._profile_size_cache.get(entry_id)
         if cached and cached.get('path') == profile_path:
@@ -1320,17 +1479,8 @@ class MainWindow(Adw.ApplicationWindow):
         option_updates = {}
         if file_data.get('address'):
             option_updates[ADDRESS_KEY] = file_data['address']
-        icon_ref = (file_data.get('icon_path') or '').strip()
+        icon_ref = self._resolve_import_icon_reference(file_data, title, entry_id)
         if icon_ref:
-            icon_candidate = Path(icon_ref).expanduser()
-            if icon_candidate.exists():
-                suffix = icon_candidate.suffix or '.png'
-                managed_target = get_managed_icon_path(title, suffix)
-                try:
-                    managed_target.write_bytes(icon_candidate.read_bytes())
-                    icon_ref = str(managed_target)
-                except OSError:
-                    icon_ref = str(icon_candidate)
             option_updates[ICON_PATH_KEY] = icon_ref
         if file_data.get('engine_id') is not None:
             option_updates['EngineID'] = str(file_data['engine_id'])
@@ -1405,17 +1555,22 @@ class MainWindow(Adw.ApplicationWindow):
         managed_files = list_managed_desktop_files(ENGINES)
         matched_ids = set()
         conflicts = []
+        imports = []
 
         for file_data in managed_files:
             entry = None
             file_entry_id = file_data.get('entry_id')
-            if file_entry_id not in (None, ''):
+            had_explicit_entry_id = file_entry_id not in (None, '')
+            if had_explicit_entry_id:
                 entry = self._find_entry_by_id(file_entry_id)
-            if entry is None and file_data.get('title'):
+            if entry is None and (not had_explicit_entry_id) and file_data.get('title'):
                 matches = self._find_entry_by_title(file_data['title'])
                 if len(matches) == 1:
                     entry = matches[0]
             if entry is None:
+                if had_explicit_entry_id:
+                    imports.append(file_data)
+                    continue
                 conflicts.append({'type': 'orphan_file', 'file': file_data})
                 continue
             matched_ids.add(entry.id)
@@ -1435,8 +1590,58 @@ class MainWindow(Adw.ApplicationWindow):
                 conflicts.append({'type': 'missing_file', 'entry': entry})
 
         self.reconcile_queue = conflicts
+        if imports:
+            self._start_detected_desktop_imports(imports)
+        else:
+            self._show_next_conflict()
+        return False
+
+    def _finish_detected_desktop_imports(self, imported_count, total, cancelled=False):
+        self._destroy_import_progress_dialog()
+        self._import_cancel_requested = False
+        self._reload_entries()
+        if cancelled:
+            self.show_overlay_notification(t('desktop_detected_import_cancelled', imported=imported_count, total=total), timeout_ms=3200)
+        elif imported_count:
+            self.show_overlay_notification(t('desktop_detected_import_done', imported=imported_count, total=total), timeout_ms=2800)
         self._show_next_conflict()
         return False
+
+    def _start_detected_desktop_imports(self, file_datas):
+        items = list(file_datas or [])
+        if not items:
+            self._show_next_conflict()
+            return
+        total = len(items)
+        imported_count = 0
+        state = {'index': 0}
+        self._import_cancel_requested = False
+        self._show_import_progress_dialog(total, title_text=t('desktop_detected_import_title'), preparing_text=t('desktop_detected_import_found', total=total))
+        GLib.idle_add(self._update_import_progress, 0, total, '')
+
+        def process_next():
+            nonlocal imported_count
+            if self._import_cancel_requested:
+                GLib.idle_add(self._finish_detected_desktop_imports, imported_count, total, True)
+                return False
+            if state['index'] >= total:
+                GLib.idle_add(self._finish_detected_desktop_imports, imported_count, total, False)
+                return False
+            file_data = items[state['index']]
+            state['index'] += 1
+            title = str(file_data.get('title') or file_data.get('path') or '').strip()
+            GLib.idle_add(self._update_import_progress, state['index'], total, title)
+            try:
+                self._upsert_entry_from_file(file_data)
+                imported_count += 1
+            except Exception as error:
+                LOG.warning('Failed to import managed desktop file %s: %s', file_data.get('path'), error)
+            self._reload_entries()
+            GLib.idle_add(self._update_import_progress, state['index'], total, '')
+            GLib.idle_add(process_next)
+            return False
+
+        GLib.idle_add(process_next)
 
     def _show_next_conflict(self):
         if not self.reconcile_queue:
@@ -1979,6 +2184,144 @@ class MainWindow(Adw.ApplicationWindow):
             LOG.warning('Failed to copy selected file %s: %s', uri, error)
             return None
 
+    def _destroy_import_progress_dialog(self):
+        dialog = self._import_progress_dialog
+        self._import_progress_dialog = None
+        self._import_progress_label = None
+        self._import_progress_bar = None
+        if dialog is None:
+            return
+        try:
+            dialog.close()
+        except Exception:
+            try:
+                dialog.destroy()
+            except Exception:
+                pass
+
+    def _cancel_import_progress(self, *_args):
+        self._import_cancel_requested = True
+        return False
+
+    def _show_import_progress_dialog(self, total, title_text=None, preparing_text=None):
+        self._destroy_import_progress_dialog()
+        dialog_title = title_text or t('import_progress_title')
+        body_text = preparing_text or t('import_progress_preparing')
+        dialog = Gtk.Dialog(transient_for=self, modal=True)
+        dialog.set_title(dialog_title)
+        dialog.set_resizable(False)
+        dialog.set_default_size(420, 1)
+        dialog.connect('close-request', self._cancel_import_progress)
+        box = dialog.get_content_area()
+        box.set_spacing(12)
+        box.set_margin_top(18)
+        box.set_margin_bottom(18)
+        box.set_margin_start(18)
+        box.set_margin_end(18)
+
+        title = Gtk.Label(label=dialog_title, xalign=0)
+        title.add_css_class('title-4')
+        title.set_wrap(True)
+        body = Gtk.Label(label=body_text, xalign=0)
+        body.set_wrap(True)
+        body.add_css_class('dim-label')
+        progress = Gtk.ProgressBar()
+        progress.set_show_text(False)
+        progress.set_fraction(0.0)
+        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        buttons.set_halign(Gtk.Align.END)
+        cancel_button = Gtk.Button(label=t('dialog_cancel'))
+        cancel_button.connect('clicked', self._cancel_import_progress)
+        buttons.append(cancel_button)
+
+        box.append(title)
+        box.append(body)
+        box.append(progress)
+        box.append(buttons)
+        dialog.present()
+
+        self._import_progress_dialog = dialog
+        self._import_progress_label = body
+        self._import_progress_bar = progress
+        self._import_total = max(int(total or 0), 0)
+
+    def _update_import_progress(self, current, total, title=''):
+        if self._import_progress_label is None or self._import_progress_bar is None:
+            return False
+        safe_total = max(int(total or 0), 1)
+        safe_current = max(0, min(int(current or 0), safe_total))
+        if title:
+            text = t('import_progress_current', current=safe_current, total=safe_total, title=title)
+        else:
+            text = t('import_progress_completed', current=safe_current, total=safe_total)
+        self._import_progress_label.set_text(text)
+        self._import_progress_bar.set_fraction(safe_current / safe_total)
+        return False
+
+    def _finish_import_payloads(self, imported_count, duplicate_count, cancelled=False):
+        self._destroy_import_progress_dialog()
+        self._import_cancel_requested = False
+        self._reload_entries()
+        if cancelled:
+            self.show_overlay_notification(t('import_bundle_cancelled', imported=imported_count, duplicates=duplicate_count), timeout_ms=3400)
+            return False
+        if imported_count and duplicate_count:
+            self.show_overlay_notification(t('import_bundle_result_with_duplicates', imported=imported_count, duplicates=duplicate_count), timeout_ms=3200)
+        elif imported_count > 1:
+            self.show_overlay_notification(t('import_bundle_result', imported=imported_count), timeout_ms=2800)
+        elif imported_count == 1:
+            self.show_overlay_notification(t('import_webapp_success'), timeout_ms=2400)
+        elif duplicate_count and not imported_count:
+            self.show_overlay_notification(t('import_bundle_none_with_duplicates', duplicates=duplicate_count), timeout_ms=3200)
+        return False
+
+    def _start_import_payloads(self, payloads):
+        payloads = list(payloads or [])
+        if not payloads:
+            return
+        importable_payloads = []
+        duplicate_count = 0
+        for payload in payloads:
+            if self._find_import_collision(payload) is not None:
+                duplicate_count += 1
+                continue
+            importable_payloads.append(payload)
+        if not importable_payloads:
+            if duplicate_count:
+                self.show_overlay_notification(t('import_bundle_none_with_duplicates', duplicates=duplicate_count), timeout_ms=3200)
+            return
+        if len(importable_payloads) == 1:
+            self._create_entry_from_wapp_payload(importable_payloads[0], reload_after_success=True)
+            return
+
+        total = len(importable_payloads)
+        imported_count = 0
+        state = {'index': 0}
+        self._import_cancel_requested = False
+        self._show_import_progress_dialog(total)
+        GLib.idle_add(self._update_import_progress, 0, total, '')
+
+        def process_next(success=False, _entry_id=None):
+            nonlocal imported_count
+            if success:
+                imported_count += 1
+            completed = state['index']
+            GLib.idle_add(self._update_import_progress, completed, total, '')
+            if self._import_cancel_requested:
+                GLib.idle_add(self._finish_import_payloads, imported_count, duplicate_count, True)
+                return False
+            if state['index'] >= total:
+                GLib.idle_add(self._finish_import_payloads, imported_count, duplicate_count, False)
+                return False
+            payload = importable_payloads[state['index']]
+            state['index'] += 1
+            title = str(payload.get('title') or payload.get('description') or '').strip()
+            GLib.idle_add(self._update_import_progress, state['index'], total, title)
+            self._create_entry_from_wapp_payload(payload, reload_after_success=True, on_complete=process_next)
+            return False
+
+        GLib.idle_add(process_next, False, None)
+
     def _on_import_wapp_dialog_response(self, result, response=None):
         if isinstance(result, Gio.File):
             file_obj = result
@@ -2001,7 +2344,7 @@ class MainWindow(Adw.ApplicationWindow):
             if temp_path is None:
                 return
             payloads = load_import_payloads_from_path(temp_path)
-            self._create_entries_from_import_payloads(payloads)
+            self._start_import_payloads(payloads)
         except Exception as error:
             path_for_log = local_path or (str(temp_path) if temp_path else '')
             LOG.warning('Failed to import .wapp file %s: %s', path_for_log, error)
@@ -2009,65 +2352,72 @@ class MainWindow(Adw.ApplicationWindow):
             if temp_path is not None and (not local_path or str(temp_path) != local_path):
                 temp_path.unlink(missing_ok=True)
 
-    def _create_entry_from_wapp_payload(self, payload):
+    def _create_entry_from_wapp_payload(self, payload, reload_after_success=True, on_complete=None):
         collision_entry = self._find_import_collision(payload)
         if collision_entry is not None:
             self._show_import_collision(collision_entry, payload)
-            return
+            if on_complete is not None:
+                GLib.idle_add(on_complete, False, None)
+            return False
 
         self._creating_entry = True
         self.add_button.set_sensitive(False)
         try:
             new_id = self.db.add_entry('')
             if new_id is None:
-                return
+                if on_complete is not None:
+                    GLib.idle_add(on_complete, False, None)
+                return False
             entry = Entry(new_id, '')
-            self.entries_store.append(entry)
-            self.on_entry_activated(entry, show_busy=False)
-            try:
-                self.selection.set_selected(Gtk.INVALID_LIST_POSITION)
-            except Exception:
-                pass
 
-            def apply_import():
-                detail_page = self.detail_pages.get(entry.id)
-                if detail_page is None:
-                    return True
-                try:
-                    if detail_page._apply_wapp_payload(payload):
-                        detail_page.detail_action_status.set_text(t('import_webapp_success'))
-                        self.refresh_entry_visual(entry)
-                        GLib.idle_add(self._reload_entries)
-                    else:
-                        detail_page.detail_action_status.set_text(t('import_webapp_failed'))
-                except Exception as error:
-                    LOG.warning('Failed to apply imported .wapp to entry %s: %s', entry.id, error)
-                    detail_page.detail_action_status.set_text(t('import_webapp_failed'))
+            def _complete(success):
+                if reload_after_success:
+                    self._reload_entries()
+                if on_complete is not None:
+                    GLib.idle_add(on_complete, bool(success), entry.id if success else None)
                 return False
 
-            GLib.timeout_add(100, apply_import)
+            def apply_import():
+                detail_page = None
+                try:
+                    detail_page = DetailPage(
+                        entry,
+                        self.db,
+                        on_back=lambda *_args: None,
+                        on_delete=lambda *_args: None,
+                        on_title_changed=lambda *_args: None,
+                        on_visual_changed=lambda *_args: None,
+                        on_overlay_notification=self.show_overlay_notification,
+                    )
+                    if detail_page._apply_wapp_payload(payload):
+                        return _complete(True)
+                    try:
+                        self.db.delete_entry(entry.id)
+                    except Exception:
+                        pass
+                    return _complete(False)
+                except Exception as error:
+                    LOG.warning('Failed to apply imported .wapp to entry %s: %s', entry.id, error)
+                    try:
+                        self.db.delete_entry(entry.id)
+                    except Exception:
+                        pass
+                    return _complete(False)
+                finally:
+                    try:
+                        if detail_page is not None:
+                            detail_page.unparent()
+                    except Exception:
+                        pass
+
+            GLib.idle_add(apply_import)
+            return True
         finally:
             self._creating_entry = False
             self.add_button.set_sensitive(True)
 
     def _create_entries_from_import_payloads(self, payloads):
-        payloads = list(payloads or [])
-        if not payloads:
-            return
-        imported_count = 0
-        duplicate_count = 0
-        for payload in payloads:
-            if self._find_import_collision(payload) is not None:
-                duplicate_count += 1
-                continue
-            self._create_entry_from_wapp_payload(payload)
-            imported_count += 1
-        if imported_count and duplicate_count:
-            self.show_overlay_notification(t('import_bundle_result_with_duplicates', imported=imported_count, duplicates=duplicate_count), timeout_ms=3200)
-        elif imported_count > 1:
-            self.show_overlay_notification(t('import_bundle_result', imported=imported_count), timeout_ms=2800)
-        elif duplicate_count and not imported_count:
-            self.show_overlay_notification(t('import_bundle_none_with_duplicates', duplicates=duplicate_count), timeout_ms=3200)
+        self._start_import_payloads(payloads)
 
 
 class WebAppManager(Adw.Application):
@@ -2081,6 +2431,7 @@ class WebAppManager(Adw.Application):
     def do_activate(self):
         win = MainWindow(self)
         win.present()
+        GLib.timeout_add(200, win.reconcile_desktop_files)
 
 
 app = WebAppManager()

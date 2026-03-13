@@ -221,7 +221,8 @@ def parse_desktop_file(path, engines_list):
             profile_name = Path(profile_path).name
 
     try:
-        entry_id = int(section.get('EntryId', ''))
+        entry_id_raw = section.get('EntryId', section.get('EntryID', ''))
+        entry_id = int(entry_id_raw)
     except ValueError:
         entry_id = None
 
@@ -238,9 +239,12 @@ def parse_desktop_file(path, engines_list):
 
     icon_value = (section.get('Icon') or '').strip()
     icon_path = ''
-    if icon_value and ('/' in icon_value or '\\' in icon_value):
-        if not _is_safe_managed_icon_path(icon_value, entry_id, title):
+    icon_name = ''
+    if icon_value:
+        if '/' in icon_value or '\\' in icon_value or Path(icon_value).expanduser().suffix:
             icon_path = icon_value
+        else:
+            icon_name = icon_value
 
     return {
         'path': Path(path),
@@ -253,6 +257,7 @@ def parse_desktop_file(path, engines_list):
         'user_agent_name': user_agent_name,
         'user_agent_value': user_agent_value,
         'icon_path': icon_path,
+        'icon_name': icon_name,
         'command': command,
         'profile_name': profile_name,
         'profile_path': profile_path,

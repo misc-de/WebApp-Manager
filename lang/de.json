@@ -128,5 +128,9 @@
   "language_lt": "Litauisch",
   "language_bg": "Bulgarisch",
   "language_uk": "Ukrainisch",
-  "language_sr": "Serbisch"
+  "language_sr": "Serbisch",
+  "desktop_detected_import_title": "Importing WebApps",
+  "desktop_detected_import_found": "Found {total} WebApps. Importing now.",
+  "desktop_detected_import_done": "Imported {imported} of {total} detected WebApps.",
+  "desktop_detected_import_cancelled": "Import cancelled. Imported {imported} of {total} detected WebApps."
 }
