@@ -166,5 +166,14 @@
   "language_lt": "Lithuanian",
   "language_bg": "Bulgarian",
   "language_uk": "Ukrainian",
-  "language_sr": "Serbian"
+  "language_sr": "Serbian",
+  "import_progress_title": "Importing WebApps",
+  "import_progress_preparing": "Preparing import…",
+  "import_progress_current": "Importing WebApp {current} of {total}: {title}",
+  "import_progress_completed": "Imported {current} of {total} WebApps.",
+  "import_bundle_cancelled": "Import cancelled. Imported {imported} WebApps and skipped {duplicates} duplicates.",
+  "desktop_detected_import_title": "Importing WebApps",
+  "desktop_detected_import_found": "Found {total} WebApps. Importing now.",
+  "desktop_detected_import_done": "Imported {imported} of {total} detected WebApps.",
+  "desktop_detected_import_cancelled": "Import cancelled. Imported {imported} of {total} detected WebApps."
 }
