@@ -72,7 +72,7 @@ def _discover_language_metadata(force_reload=False):
                 continue
             try:
                 data = _load_json_file(path)
-            except Exception:
+            except (OSError, json.JSONDecodeError):
                 continue
             seen.add(code)
             metadata.append({
@@ -95,13 +95,13 @@ def get_system_language_code():
         loc = locale.getlocale()[0]
         if loc:
             candidates.append(loc)
-    except Exception:
+    except (locale.Error, ValueError, IndexError, TypeError):
         pass
     try:
         loc = locale.getdefaultlocale()[0]
         if loc:
             candidates.append(loc)
-    except Exception:
+    except (AttributeError, ValueError, IndexError, TypeError):
         pass
     env_lang = os.environ.get('LANG')
     if env_lang:

@@ -20,6 +20,44 @@ DESKTOP_CHROME_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 
 ORIGIN_CHECK_TIMEOUT_SECONDS = 2
 
 
+def _coerce_candidate_urls(value: str, prefer_https: bool = True, include_http_fallback: bool = True) -> list[str]:
+    raw = str(value or '').strip()
+    if not raw or len(raw) > MAX_URL_LENGTH or contains_unsafe_text(raw) or any(char.isspace() for char in raw):
+        return []
+    parsed = urlparse(raw)
+    if parsed.scheme:
+        if parsed.scheme not in {'http', 'https'}:
+            return []
+        return [parsed.geturl()] if parsed.netloc else []
+    if raw.startswith('//'):
+        raw = raw.lstrip('/')
+    if not raw:
+        return []
+    candidates = []
+    primary_scheme = 'https' if prefer_https else 'http'
+    candidates.append(f'{primary_scheme}://{raw}')
+    if include_http_fallback:
+        secondary_scheme = 'http' if primary_scheme == 'https' else 'https'
+        fallback = f'{secondary_scheme}://{raw}'
+        if fallback not in candidates:
+            candidates.append(fallback)
+    return candidates
+
+
+def candidate_urls_for_input(value: str, prefer_https: bool = True, include_http_fallback: bool = True) -> list[str]:
+    return _coerce_candidate_urls(value, prefer_https=prefer_https, include_http_fallback=include_http_fallback)
+
+
+def _parsed_candidate_for_validation(value: str):
+    candidates = _coerce_candidate_urls(value, prefer_https=True, include_http_fallback=False)
+    if not candidates:
+        return None
+    try:
+        return urlparse(candidates[0])
+    except (TypeError, ValueError):
+        return None
+
+
 def contains_unsafe_text(value) -> bool:
     if value is None:
         return False
@@ -146,30 +184,54 @@ def build_safe_slug(value) -> str:
     return value.strip('._-')
 
 
+def _origin_request_headers() -> dict[str, str]:
+    return {
+        "User-Agent": DESKTOP_CHROME_USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,de;q=0.8",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Upgrade-Insecure-Requests": "1",
+        "Connection": "close",
+    }
+
+
 def check_origin_status(url):
-    try:
-        parsed = urlparse(url)
-    except Exception:
+    candidates = _coerce_candidate_urls(url, prefer_https=True, include_http_fallback=True)
+    if not candidates:
         return 'invalid'
-    if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
-        return 'invalid'
-    origin = f"{parsed.scheme}://{parsed.netloc}/"
-    request = urllib.request.Request(origin, headers={'User-Agent': DESKTOP_CHROME_USER_AGENT, 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Connection': 'close'})
-    try:
-        with urllib.request.urlopen(request, timeout=ORIGIN_CHECK_TIMEOUT_SECONDS) as response:
-            return 'ok' if response.status == 200 else 'warning'
-    except urllib.error.HTTPError as error:
-        if error.code == 200:
-            return 'ok'
-        if error.code in {401, 403}:
-            return 'auth'
-        return 'warning'
-    except Exception:
-        return 'warning'
+    last_status = 'invalid'
+    for candidate in candidates:
+        try:
+            parsed = urlparse(candidate)
+        except ValueError:
+            continue
+        if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+            continue
+        origin = f"{parsed.scheme}://{parsed.netloc}/"
+        request = urllib.request.Request(origin, headers=_origin_request_headers())
+        try:
+            with urllib.request.urlopen(request, timeout=ORIGIN_CHECK_TIMEOUT_SECONDS) as response:
+                status = getattr(response, 'status', 200) or 200
+                return 'ok' if 200 <= status < 400 else 'unverified'
+        except urllib.error.HTTPError as error:
+            code = int(getattr(error, 'code', 0) or 0)
+            if 200 <= code < 400:
+                return 'ok'
+            if code in {401, 403, 405, 406, 407, 409, 410, 412, 415, 418, 421, 425, 429, 451}:
+                last_status = 'blocked'
+            elif 400 <= code < 600:
+                last_status = 'unverified'
+            else:
+                last_status = 'unverified'
+        except (OSError, ValueError, urllib.error.URLError):
+            if last_status == 'invalid':
+                last_status = 'unverified'
+    return last_status
 
 
 def origin_returns_200(url):
-    return check_origin_status(url) == 'ok'
+    return check_origin_status(url) in {'ok', 'blocked', 'unverified'}
 
 
 def is_structurally_valid_url(value) -> bool:
@@ -180,7 +242,9 @@ def is_structurally_valid_url(value) -> bool:
         return False
     if any(char.isspace() for char in value):
         return False
-    parsed = urlparse(value)
+    parsed = _parsed_candidate_for_validation(value)
+    if parsed is None:
+        return False
     host = (parsed.hostname or '').strip('.').lower()
     if parsed.scheme not in {'http', 'https'} or not host:
         return False
@@ -202,7 +266,7 @@ def is_valid_url(value, check_origin: bool = True) -> bool:
         return False
     if not check_origin:
         return True
-    return origin_returns_200(value)
+    return check_origin_status(value) in {'ok', 'blocked', 'unverified'}
 
 
 def normalize_address(value, force_https: bool = False) -> str:
@@ -210,6 +274,8 @@ def normalize_address(value, force_https: bool = False) -> str:
     if not value or len(value) > MAX_URL_LENGTH or contains_unsafe_text(value):
         return ''
     parsed = urlparse(value)
+    if not parsed.scheme:
+        return value
     if parsed.scheme not in {'http', 'https'} or not parsed.netloc or parsed.username or parsed.password:
         return value
     if force_https and parsed.scheme == 'http':

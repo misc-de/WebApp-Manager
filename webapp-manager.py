@@ -6,6 +6,7 @@ gi.require_version('GioUnix', '2.0')
 
 from pathlib import Path
 import math
+import sqlite3
 import json
 import tempfile
 import shutil
@@ -68,7 +69,7 @@ from manager_integration import ensure_manager_desktop_integration, headerbar_de
 
 Adw.init()
 LOG = get_logger(__name__)
-APP_VERSION = '60f'
+APP_VERSION = '63h'
 
 
 MANAGED_IMPORT_OPTION_KEYS = [
@@ -111,7 +112,7 @@ def format_profile_size(profile_path: str) -> str:
             return f'{gb:.2f} GB'
         mb = total / (1024 ** 2)
         return f'{mb:.0f} MB'
-    except Exception:
+    except OSError:
         return ''
 
 
@@ -123,7 +124,7 @@ css_provider = Gtk.CssProvider()
 try:
     css_provider.load_from_path(str(APP_DIR / 'style.css'))
     Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-except Exception as error:
+except (GLib.Error, TypeError, ValueError, AttributeError) as error:
     LOG.error('Failed to load CSS: %s', error)
 
 
@@ -155,7 +156,7 @@ class MainWindow(Adw.ApplicationWindow):
         )
         try:
             self.set_icon_name(APP_ICON_NAME)
-        except Exception:
+        except (TypeError, ValueError):
             pass
         self.db = Database(str(APP_DB_PATH))
         self.search_text = ''
@@ -335,7 +336,7 @@ class MainWindow(Adw.ApplicationWindow):
             state = data.get('window_state', {}) if isinstance(data, dict) else {}
             if isinstance(state, dict):
                 return state
-        except Exception:
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
             pass
         return {}
 
@@ -343,7 +344,7 @@ class MainWindow(Adw.ApplicationWindow):
         try:
             if bool(self._window_state.get('maximized')):
                 self.maximize()
-        except Exception:
+        except AttributeError:
             pass
 
     def _load_ui_settings(self):
@@ -352,14 +353,14 @@ class MainWindow(Adw.ApplicationWindow):
             settings = data.get('settings', {}) if isinstance(data, dict) else {}
             if isinstance(settings, dict):
                 return {'appearance': str(settings.get('appearance', 'auto') or 'auto')}
-        except Exception:
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
             LOG.debug('Failed to load UI settings', exc_info=True)
         return {'appearance': 'auto'}
 
     def _load_language_setting(self):
         try:
             return get_configured_language_value()
-        except Exception:
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
             LOG.debug('Failed to load language setting', exc_info=True)
         return 'system'
 
@@ -370,7 +371,7 @@ class MainWindow(Adw.ApplicationWindow):
             settings['appearance'] = self._appearance_value()
             config['settings'] = settings
             save_app_config(config)
-        except Exception:
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
             LOG.error('Failed to save UI settings', exc_info=True)
 
     def _appearance_value(self):
@@ -389,7 +390,7 @@ class MainWindow(Adw.ApplicationWindow):
                 'light': Adw.ColorScheme.FORCE_LIGHT,
             }
             style_manager.set_color_scheme(mapping.get(appearance, Adw.ColorScheme.DEFAULT))
-        except Exception:
+        except AttributeError:
             LOG.error('Failed to apply UI appearance', exc_info=True)
 
     def _schedule_window_state_save(self):
@@ -418,7 +419,7 @@ class MainWindow(Adw.ApplicationWindow):
             config = dict(get_app_config(force_reload=True) or {})
             config['window_state'] = state
             save_app_config(config)
-        except Exception as error:
+        except (OSError, TypeError, ValueError) as error:
             LOG.debug('Failed to save window state: %s', error)
 
     def _on_window_size_notify(self, *_args):
@@ -465,13 +466,13 @@ class MainWindow(Adw.ApplicationWindow):
         previous_visible = None
         try:
             previous_visible = self.stack.get_visible_child_name()
-        except Exception:
+        except (AttributeError, TypeError):
             previous_visible = None
         old_page = getattr(self, 'settings_page', None)
         if old_page is not None:
             try:
                 self.stack.remove(old_page)
-            except Exception:
+            except (AttributeError, TypeError):
                 pass
         self.settings_page = self._build_settings_page()
         self.stack.add_named(self.settings_page, 'settings_page')
@@ -481,27 +482,27 @@ class MainWindow(Adw.ApplicationWindow):
     def _refresh_translated_ui(self):
         try:
             self.list_title_widget.set_text(t('app_title'))
-        except Exception:
+        except (AttributeError, TypeError):
             pass
         try:
             self.search_entry.set_placeholder_text(t('search_placeholder'))
-        except Exception:
+        except (AttributeError, TypeError):
             pass
         try:
             self.empty_label.set_text(t('search_empty'))
-        except Exception:
+        except (AttributeError, TypeError):
             pass
         try:
             self.refresh_button.set_tooltip_text(t('resync_profiles_button'))
-        except Exception:
+        except (AttributeError, TypeError):
             pass
         try:
             self.settings_button.set_tooltip_text(t('settings_title'))
-        except Exception:
+        except (AttributeError, TypeError):
             pass
         try:
             self.busy_label.set_text(t('loading'))
-        except Exception:
+        except (AttributeError, TypeError):
             pass
         self._rebuild_settings_page_view()
 
@@ -628,7 +629,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._refresh_translated_ui()
             language_label = self._available_language_rows()[idx][1]
             self.show_overlay_notification(t('settings_language_changed', language=language_label), timeout_ms=2200)
-        except Exception:
+        except (OSError, TypeError, ValueError):
             LOG.error('Failed to save language setting', exc_info=True)
 
     def _build_export_payload_for_entry(self, entry):
@@ -708,7 +709,7 @@ class MainWindow(Adw.ApplicationWindow):
             payload = self._build_export_bundle_payload(entries)
             target.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding='utf-8')
             self.show_overlay_notification(t('settings_export_success', count=len(entries)), timeout_ms=2600)
-        except Exception as error:
+        except (OSError, TypeError, ValueError) as error:
             LOG.error('Failed to export all WebApps into single file: %s', error, exc_info=True)
             self.show_overlay_notification(t('settings_export_failed'), timeout_ms=3200)
 
@@ -716,7 +717,7 @@ class MainWindow(Adw.ApplicationWindow):
         try:
             self.header_bar.set_show_start_title_buttons(bool(start_visible))
             self.header_bar.set_show_end_title_buttons(bool(end_visible))
-        except Exception:
+        except (AttributeError, TypeError):
             LOG.debug('Failed to adjust titlebar button visibility', exc_info=True)
 
     def _show_back_only_header(self):
@@ -745,12 +746,12 @@ class MainWindow(Adw.ApplicationWindow):
             key_file = GLib.KeyFile()
             key_file.load_from_file(str(desktop_path), GLib.KeyFileFlags.NONE)
             exec_line = key_file.get_string('Desktop Entry', 'Exec')
-        except Exception:
+        except (GLib.Error, OSError, TypeError):
             LOG.error('Failed to read Exec line from desktop file %s', desktop_path, exc_info=True)
             return []
         try:
             parts = shlex.split(exec_line)
-        except Exception:
+        except ValueError:
             LOG.error('Failed to parse Exec line %r', exec_line, exc_info=True)
             return []
         cleaned = []
@@ -791,7 +792,7 @@ class MainWindow(Adw.ApplicationWindow):
                 cwd=str(Path.home()),
             )
             return True
-        except Exception:
+        except OSError:
             LOG.error('Failed to launch command: %r', argv, exc_info=True)
             return False
 
@@ -817,12 +818,31 @@ class MainWindow(Adw.ApplicationWindow):
     def _launch_entry_from_icon(self, entry):
         try:
             self.selection.set_selected(Gtk.INVALID_LIST_POSITION)
-        except Exception:
+        except (AttributeError, TypeError):
             pass
         self.launch_entry(entry)
 
+    def _resolve_desktop_path_for_entry(self, entry):
+        entry_id = getattr(entry, 'id', None)
+        title = sanitize_desktop_value(getattr(entry, 'title', ''), getattr(entry, 'title', '')).strip()
+        for desktop_data in list_managed_desktop_files(ENGINES):
+            if entry_id is not None and desktop_data.get('entry_id') == entry_id:
+                path = desktop_data.get('path')
+                if path is not None and path.exists():
+                    return path
+        if title:
+            for desktop_data in list_managed_desktop_files(ENGINES):
+                if (desktop_data.get('title') or '').strip() == title:
+                    path = desktop_data.get('path')
+                    if path is not None and path.exists():
+                        return path
+        desktop_path = get_expected_desktop_path(getattr(entry, 'title', ''))
+        if desktop_path is not None and desktop_path.exists():
+            return desktop_path
+        return None
+
     def launch_entry(self, entry):
-        desktop_path = get_expected_desktop_path(entry.title)
+        desktop_path = self._resolve_desktop_path_for_entry(entry)
         if desktop_path is None or not desktop_path.exists():
             return
         argv = self._read_exec_command_from_desktop(desktop_path)
@@ -833,7 +853,7 @@ class MainWindow(Adw.ApplicationWindow):
             if app_info is None:
                 return
             app_info.launch([], None)
-        except Exception as error:
+        except (GLib.Error, OSError, TypeError, ValueError) as error:
             LOG.error('Failed to launch WebApp %s: %s', entry.id, error)
 
 
@@ -908,10 +928,10 @@ class MainWindow(Adw.ApplicationWindow):
             return
         try:
             dialog.close()
-        except Exception:
+        except (AttributeError, GLib.Error):
             try:
                 dialog.destroy()
-            except Exception:
+            except AttributeError:
                 pass
 
     def _cancel_profile_resync(self, *_args):
@@ -1017,7 +1037,7 @@ class MainWindow(Adw.ApplicationWindow):
                             merged.update(updates)
                             updates[browser_state_key(family)] = encode_browser_state(merged, family)
                             db.add_options(entry_id, updates)
-                    except Exception as error:
+                    except (OSError, TypeError, ValueError) as error:
                         failures += 1
                         LOG.warning('Profile resync failed for entry %s (%s): %s', entry_id, profile_path, error)
                     processed = index
@@ -1028,7 +1048,7 @@ class MainWindow(Adw.ApplicationWindow):
             finally:
                 try:
                     db.close()
-                except Exception:
+                except OSError:
                     pass
 
             def finish():
@@ -1041,7 +1061,7 @@ class MainWindow(Adw.ApplicationWindow):
                 for page in list(self.detail_pages.values()):
                     try:
                         page.reload_from_db()
-                    except Exception:
+                    except (AttributeError, TypeError):
                         pass
                 if cancelled:
                     self.show_overlay_notification(t('profile_resync_cancelled', completed=processed, total=len(items)), timeout_ms=3200)
@@ -1074,11 +1094,11 @@ class MainWindow(Adw.ApplicationWindow):
             try:
                 if child.get_parent() is self.stack:
                     self.stack.remove(child)
-            except Exception:
+            except (AttributeError, TypeError):
                 pass
             try:
                 child.set_visible(False)
-            except Exception:
+            except (AttributeError, TypeError):
                 pass
         return False
 
@@ -1087,7 +1107,7 @@ class MainWindow(Adw.ApplicationWindow):
         if pages:
             try:
                 self.stack.set_visible_child_name('list_page')
-            except Exception:
+            except (AttributeError, TypeError, GLib.Error):
                 pass
             GLib.idle_add(self._cleanup_detail_pages, pages)
         self.detail_pages = {}
@@ -1145,7 +1165,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _show_import_collision(self, entry, payload):
         try:
             self.on_entry_activated(entry, show_busy=False)
-        except Exception:
+        except (AttributeError, TypeError):
             pass
 
         detail_page = self.detail_pages.get(entry.id)
@@ -1204,7 +1224,7 @@ class MainWindow(Adw.ApplicationWindow):
         for direct in direct_candidates:
             try:
                 resolved = direct.resolve()
-            except Exception:
+            except (OSError, RuntimeError):
                 resolved = direct
             if resolved in seen:
                 continue
@@ -1214,7 +1234,7 @@ class MainWindow(Adw.ApplicationWindow):
         for root in search_dirs:
             try:
                 root = root.resolve()
-            except Exception:
+            except (OSError, RuntimeError):
                 root = Path(root)
             if not root.exists() or not root.is_dir():
                 continue
@@ -1222,7 +1242,7 @@ class MainWindow(Adw.ApplicationWindow):
                 candidate = root / basename
                 try:
                     resolved = candidate.resolve()
-                except Exception:
+                except (OSError, RuntimeError):
                     resolved = candidate
                 if resolved in seen:
                     continue
@@ -1256,7 +1276,7 @@ class MainWindow(Adw.ApplicationWindow):
             for pattern in patterns:
                 try:
                     found.extend(path for path in root.rglob(pattern) if path.is_file())
-                except Exception:
+                except OSError:
                     continue
         if not found:
             return None
@@ -1270,7 +1290,7 @@ class MainWindow(Adw.ApplicationWindow):
                     try:
                         size_score = -int(part.split('x', 1)[0])
                         break
-                    except Exception:
+                    except (AttributeError, TypeError):
                         pass
             return (suffix_score, size_score, len(path.parts), len(str(path)))
 
@@ -1285,13 +1305,13 @@ class MainWindow(Adw.ApplicationWindow):
             try:
                 normalize_icon_to_png(icon_candidate, managed_target)
                 return str(managed_target)
-            except Exception:
+            except (OSError, ValueError):
                 try:
                     suffix = icon_candidate.suffix or '.png'
                     fallback_target = get_managed_icon_path(title, suffix, entry_id)
                     fallback_target.write_bytes(icon_candidate.read_bytes())
                     return str(fallback_target)
-                except Exception:
+                except OSError:
                     return ''
 
         icon_ref = str(file_data.get('icon_path') or '').strip()
@@ -1350,7 +1370,7 @@ class MainWindow(Adw.ApplicationWindow):
         def _compute():
             try:
                 size_text = format_profile_size(profile_path)
-            except Exception:
+            except OSError:
                 size_text = ''
             self._profile_size_cache[entry_id] = {'path': profile_path, 'text': size_text}
             self._profile_size_pending.discard(entry_id)
@@ -1430,7 +1450,7 @@ class MainWindow(Adw.ApplicationWindow):
             return {}
         try:
             raw_state = read_profile_settings(profile_path, family)
-        except Exception as error:
+        except (OSError, ValueError, json.JSONDecodeError) as error:
             LOG.warning('Failed to read profile settings for entry %s from %s: %s', entry_id, profile_path, error)
             return {}
         normalized_state = normalize_option_dict(raw_state)
@@ -1528,7 +1548,7 @@ class MainWindow(Adw.ApplicationWindow):
         if entry_id in self.detail_pages:
             try:
                 self.detail_pages[entry_id].reload_from_db()
-            except Exception:
+            except (AttributeError, GLib.Error):
                 pass
 
     def _compare_db_and_file(self, entry, file_data):
@@ -1634,7 +1654,7 @@ class MainWindow(Adw.ApplicationWindow):
             try:
                 self._upsert_entry_from_file(file_data)
                 imported_count += 1
-            except Exception as error:
+            except (OSError, ValueError, json.JSONDecodeError) as error:
                 LOG.warning('Failed to import managed desktop file %s: %s', file_data.get('path'), error)
             self._reload_entries()
             GLib.idle_add(self._update_import_progress, state['index'], total, '')
@@ -1756,6 +1776,12 @@ class MainWindow(Adw.ApplicationWindow):
         icon_button.set_tooltip_text(t('launch_webapp'))
         icon_button.set_child(icon_frame)
 
+        icon_click_gesture = Gtk.GestureClick()
+        icon_click_gesture.set_button(Gdk.BUTTON_PRIMARY)
+        icon_click_gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        icon_click_gesture.connect('pressed', self._on_overview_icon_pressed)
+        icon_button.add_controller(icon_click_gesture)
+
         status_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         status_column.set_halign(Gtk.Align.END)
         status_column.set_valign(Gtk.Align.START)
@@ -1834,17 +1860,44 @@ class MainWindow(Adw.ApplicationWindow):
 
 
 
+    def _on_overview_icon_pressed(self, gesture, _n_press, _x, _y):
+        try:
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        except (AttributeError, TypeError):
+            pass
+
+    def _on_overview_icon_clicked(self, button):
+        entry = getattr(button, '_bound_entry', None)
+        if entry is None:
+            return
+        self._launch_entry_from_icon(entry)
+
+    def _clear_overview_icon_button_handler(self, icon_button):
+        button_handler = getattr(icon_button, '_click_handler_id', None)
+        if button_handler is None:
+            return
+        try:
+            icon_button.disconnect(button_handler)
+        except (AttributeError, TypeError, GLib.Error):
+            pass
+        icon_button._click_handler_id = None
+
+    def _bind_overview_icon_button(self, icon_button, entry):
+        icon_button._bound_entry = entry
+        self._clear_overview_icon_button_handler(icon_button)
+        icon_button._click_handler_id = icon_button.connect('clicked', self._on_overview_icon_clicked)
+
     def on_list_view_activate(self, list_view, position):
         try:
             entry = self.filtered_model.get_item(position)
-        except Exception:
+        except (AttributeError, TypeError):
             entry = None
         if entry is None:
             return
         self.on_entry_activated(entry)
         try:
             self.selection.set_selected(Gtk.INVALID_LIST_POSITION)
-        except Exception:
+        except (AttributeError, TypeError, GLib.Error):
             pass
 
     def on_factory_bind(self, factory, list_item):
@@ -1868,19 +1921,14 @@ class MainWindow(Adw.ApplicationWindow):
             for handler_id in handlers:
                 try:
                     old_entry.disconnect(handler_id)
-                except Exception:
+                except (AttributeError, TypeError):
                     pass
-        button_handler = getattr(icon_button, '_click_handler_id', None)
-        if button_handler is not None:
-            try:
-                icon_button.disconnect(button_handler)
-            except Exception:
-                pass
+        self._clear_overview_icon_button_handler(icon_button)
         list_item._bound_entry = entry
+        self._bind_overview_icon_button(icon_button, entry)
         title_label.set_text(entry.title)
         description_label.set_text(entry.description)
         self._set_overview_icon(icon_frame, entry.id)
-        icon_button._click_handler_id = icon_button.connect('clicked', lambda _b, current=entry: self._launch_entry_from_icon(current))
         self._set_status_indicators(status_box, entry.id, entry.active, engine_image, active_dot)
         self._set_profile_size_label(profile_size_label, entry.id)
         list_item._entry_handlers = [
@@ -1974,7 +2022,7 @@ class MainWindow(Adw.ApplicationWindow):
                     self.detail_pages[entry.id] = detail_page
                     self.stack.add_named(detail_page, f'detail_{entry.id}')
                 self.stack.set_visible_child(self.detail_pages[entry.id])
-            except Exception as error:
+            except (GLib.Error, OSError, TypeError, ValueError) as error:
                 LOG.error('Failed to open detail page for entry %s: %s', entry.id, error, exc_info=True)
                 self.show_overlay_notification(t('detail_view_load_failed'), timeout_ms=3500)
                 self.stack.set_visible_child_name('list_page')
@@ -2014,7 +2062,7 @@ class MainWindow(Adw.ApplicationWindow):
             if self.stack.get_visible_child() is page:
                 try:
                     self.stack.set_visible_child_name('list_page')
-                except Exception:
+                except (AttributeError, TypeError):
                     pass
             GLib.idle_add(self._cleanup_detail_pages, [page])
             del self.detail_pages[entry.id]
@@ -2026,7 +2074,7 @@ class MainWindow(Adw.ApplicationWindow):
             return
         try:
             page.release_resources()
-        except Exception:
+        except (AttributeError, TypeError):
             LOG.debug('Detail page cleanup failed before release', exc_info=True)
         entry_id = getattr(getattr(page, 'entry', None), 'id', None)
         if entry_id in self.detail_pages and self.detail_pages.get(entry_id) is page:
@@ -2092,7 +2140,7 @@ class MainWindow(Adw.ApplicationWindow):
                 self.on_entry_activated(entry, show_busy=False)
             try:
                 self.selection.set_selected(Gtk.INVALID_LIST_POSITION)
-            except Exception:
+            except (AttributeError, TypeError, GLib.Error):
                 pass
         finally:
             self._creating_entry = False
@@ -2168,18 +2216,18 @@ class MainWindow(Adw.ApplicationWindow):
             finally:
                 try:
                     stream.close(None)
-                except Exception:
+                except (AttributeError, TypeError):
                     pass
             return Path(tmp_name)
-        except Exception as error:
+        except (AttributeError, TypeError, OSError, GLib.Error) as error:
             if tmp_name:
                 try:
                     Path(tmp_name).unlink(missing_ok=True)
-                except Exception:
+                except OSError:
                     pass
             try:
                 uri = file_obj.get_uri()
-            except Exception:
+            except (AttributeError, GLib.Error):
                 uri = ''
             LOG.warning('Failed to copy selected file %s: %s', uri, error)
             return None
@@ -2193,10 +2241,10 @@ class MainWindow(Adw.ApplicationWindow):
             return
         try:
             dialog.close()
-        except Exception:
+        except (AttributeError, GLib.Error):
             try:
                 dialog.destroy()
-            except Exception:
+            except AttributeError:
                 pass
 
     def _cancel_import_progress(self, *_args):
@@ -2330,13 +2378,13 @@ class MainWindow(Adw.ApplicationWindow):
             if response != Gtk.ResponseType.ACCEPT:
                 try:
                     dialog.destroy()
-                except Exception:
+                except (AttributeError, GLib.Error):
                     pass
                 return
             file_obj = dialog.get_file()
             try:
                 dialog.destroy()
-            except Exception:
+            except (AttributeError, GLib.Error):
                 pass
         local_path = file_obj.get_path() if file_obj is not None else None
         temp_path = self._copy_gfile_to_temp_path(file_obj, '.wapp')
@@ -2345,7 +2393,7 @@ class MainWindow(Adw.ApplicationWindow):
                 return
             payloads = load_import_payloads_from_path(temp_path)
             self._start_import_payloads(payloads)
-        except Exception as error:
+        except (OSError, ValueError, json.JSONDecodeError) as error:
             path_for_log = local_path or (str(temp_path) if temp_path else '')
             LOG.warning('Failed to import .wapp file %s: %s', path_for_log, error)
         finally:
@@ -2393,21 +2441,21 @@ class MainWindow(Adw.ApplicationWindow):
                         return _complete(True)
                     try:
                         self.db.delete_entry(entry.id)
-                    except Exception:
+                    except sqlite3.Error:
                         pass
                     return _complete(False)
-                except Exception as error:
+                except (GLib.Error, OSError, ValueError, sqlite3.Error) as error:
                     LOG.warning('Failed to apply imported .wapp to entry %s: %s', entry.id, error)
                     try:
                         self.db.delete_entry(entry.id)
-                    except Exception:
+                    except sqlite3.Error:
                         pass
                     return _complete(False)
                 finally:
                     try:
                         if detail_page is not None:
                             detail_page.unparent()
-                    except Exception:
+                    except (AttributeError, TypeError, GLib.Error):
                         pass
 
             GLib.idle_add(apply_import)

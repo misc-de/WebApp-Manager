@@ -4,6 +4,7 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Adw, Gtk, GLib, Gio, Gdk, Pango
 import base64
+import binascii
 import io
 import os
 import json
@@ -12,8 +13,9 @@ import shutil
 import tempfile
 import threading
 import urllib.request
+import urllib.error
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 from PIL import Image, UnidentifiedImageError
 
@@ -41,6 +43,7 @@ from input_validation import (
     MAX_ICON_FILE_SIZE,
     build_safe_slug,
     check_origin_status,
+    candidate_urls_for_input,
     is_structurally_valid_url,
     is_valid_url,
     load_and_normalize_wapp_payload_from_path,
@@ -118,6 +121,7 @@ class DetailPage(Gtk.Box):
         self._plugin_operation_serial = 0
         self._plugin_operation_in_progress = False
         self._detail_toast_timeout_id = 0
+        self._icon_download_in_progress = False
 
         swipe_back = Gtk.GestureSwipe.new()
         swipe_back.connect('swipe', self.on_swipe)
@@ -513,7 +517,7 @@ class DetailPage(Gtk.Box):
         value = self._current_mode_value()
         try:
             return self.mode_values.index(value)
-        except Exception:
+        except ValueError:
             return 0
 
     def _apply_mode_value(self, mode_value):
@@ -533,7 +537,7 @@ class DetailPage(Gtk.Box):
         index = dropdown.get_selected()
         try:
             mode_value = self.mode_values[index]
-        except Exception:
+        except (IndexError, TypeError):
             mode_value = 'standard'
         self._apply_mode_value(mode_value)
         self.save_desktop_file()
@@ -557,7 +561,7 @@ class DetailPage(Gtk.Box):
                 if path and Path(path).exists():
                     GLib.idle_add(self._apply_downloaded_icon_silent, str(path), value)
                     return
-            except Exception as error:
+            except (OSError, ValueError, urllib.error.URLError) as error:
                 LOG.debug('Automatic icon fetch failed for %s: %s', value, error)
             GLib.idle_add(self._reset_auto_icon_fetch, value)
 
@@ -617,15 +621,31 @@ class DetailPage(Gtk.Box):
         self.icon_page_preview_frame.append(self.icon_page_preview_canvas)
         self.icon_page_content.append(self.icon_page_preview_frame)
 
+        self.icon_page_progress_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.icon_page_progress_box.set_halign(Gtk.Align.CENTER)
+        self.icon_page_progress_box.set_valign(Gtk.Align.START)
+        self.icon_page_progress_box.set_hexpand(True)
+        self.icon_page_progress_box.set_vexpand(False)
+        self.icon_page_progress_box.set_margin_top(10)
+        self.icon_page_progress_box.set_margin_bottom(12)
+        self.icon_page_content.append(self.icon_page_progress_box)
+
+        self.icon_page_search_spinner = Gtk.Spinner()
+        self.icon_page_search_spinner.set_size_request(28, 28)
+        self.icon_page_search_spinner.set_halign(Gtk.Align.CENTER)
+        self.icon_page_search_spinner.set_valign(Gtk.Align.START)
+        self.icon_page_search_spinner.set_visible(False)
+        self.icon_page_progress_box.append(self.icon_page_search_spinner)
+
         self.icon_page_status = Gtk.Label(label='', halign=Gtk.Align.CENTER)
         self.icon_page_status.set_vexpand(False)
         self.icon_page_status.set_xalign(0.5)
         self.icon_page_status.set_justify(Gtk.Justification.CENTER)
         self.icon_page_status.set_wrap(True)
         self.icon_page_status.add_css_class('dim-label')
-        self.icon_page_status.set_margin_top(12)
-        self.icon_page_status.set_margin_bottom(12)
-        self.icon_page_content.append(self.icon_page_status)
+        self.icon_page_status.set_margin_top(0)
+        self.icon_page_status.set_margin_bottom(0)
+        self.icon_page_progress_box.append(self.icon_page_status)
 
         self.icon_download_button = Gtk.Button(label=t('icon_action_download'))
         self.icon_download_button.set_margin_top(0)
@@ -756,7 +776,7 @@ class DetailPage(Gtk.Box):
     def _reload_options_cache_from_db(self):
         try:
             rows = self.db.get_options_for_entry(self.entry.id)
-        except Exception:
+        except (TypeError, ValueError, OSError):
             LOG.error('Failed to reload options for entry %s', self.entry.id, exc_info=True)
             return
         self._options_cache = normalize_option_rows(rows)
@@ -823,12 +843,11 @@ class DetailPage(Gtk.Box):
             return False
         if ' ' in value or value.endswith(('.', ':', '/', '?', '#')):
             return False
-        candidate = value if '://' in value else f'https://{value}'
-        if not is_structurally_valid_url(candidate):
+        if not is_structurally_valid_url(value):
             return False
         try:
-            parsed = urlparse(candidate)
-        except Exception:
+            parsed = urlparse(value)
+        except ValueError:
             return False
         host = (parsed.hostname or '').strip().lower()
         if not host:
@@ -883,14 +902,14 @@ class DetailPage(Gtk.Box):
             return False
         if self._icon_upload_dialog_active and not self._address_export_after_validation:
             return False
-        valid = status in {'ok', 'auth', 'warning'}
+        valid = status in {'ok', 'blocked', 'unverified'}
         self._address_last_validated_value = value if valid else ''
         if status == 'ok':
             self._set_url_status(t('url_status_valid'), 'url-status-ok')
-        elif status == 'auth':
-            self._set_url_status(t('url_status_auth'), 'url-status-warning')
-        elif status == 'warning':
-            self._set_url_status(t('url_status_invalid'), 'url-status-error')
+        elif status == 'blocked':
+            self._set_url_status(t('url_status_blocked'), 'url-status-warning')
+        elif status == 'unverified':
+            self._set_url_status(t('url_status_unverified'), 'url-status-warning')
         else:
             self._set_url_status(t('url_status_invalid'), 'url-status-error')
         if valid:
@@ -903,7 +922,7 @@ class DetailPage(Gtk.Box):
 
     def _validate_url_in_background(self, value):
         def worker():
-            status = check_origin_status(value if '://' in value else f'https://{value}')
+            status = check_origin_status(value)
             GLib.idle_add(self._finish_url_validation, value, status)
         threading.Thread(target=worker, daemon=True).start()
 
@@ -962,7 +981,7 @@ class DetailPage(Gtk.Box):
             self._update_export_button_state()
             return
         if debounce:
-            self._schedule_address_processing(value, export_after_validation=True)
+            self._schedule_address_processing(value, export_after_validation=export_after_validation)
         else:
             self._update_url_status(value)
 
@@ -1210,6 +1229,19 @@ class DetailPage(Gtk.Box):
         else:
             self.inline_busy_spinner.stop()
 
+    def _set_icon_download_busy(self, active, message=None):
+        is_active = bool(active)
+        self.icon_page_progress_box.set_visible(True)
+        if is_active:
+            self.icon_page_search_spinner.set_visible(True)
+            self.icon_page_search_spinner.start()
+            self.icon_page_status.set_text(message or t('icon_page_status_searching'))
+            self.icon_download_button.set_sensitive(False)
+            return
+        self.icon_page_search_spinner.stop()
+        self.icon_page_search_spinner.set_visible(False)
+        self.icon_download_button.set_sensitive(True)
+
     def _set_detail_action_status(self, text=''):
         text = text or ''
         self.detail_action_status.set_text(text)
@@ -1257,7 +1289,7 @@ class DetailPage(Gtk.Box):
             if cache_key is not None:
                 self._icon_texture_cache = {cache_key: texture}
             return texture
-        except Exception as error:
+        except (GLib.Error, OSError, ValueError) as error:
             LOG.warning('Failed to load icon texture %s: %s', icon_path, error)
             return None
 
@@ -1268,17 +1300,20 @@ class DetailPage(Gtk.Box):
             source = Path(icon_path)
             target = preview_dir / f'entry-{self.entry.id}-{size}-{int(source.stat().st_mtime_ns)}.png'
             if not target.exists():
-                with Image.open(source) as image:
-                    image = image.convert('RGBA')
-                    image.thumbnail((size, size), Image.Resampling.LANCZOS)
-                    canvas = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-                    x = (size - image.width) // 2
-                    y = (size - image.height) // 2
-                    canvas.alpha_composite(image, (x, y))
-                    canvas.save(target, 'PNG')
+                source_suffix = source.suffix.lower()
+                if source_suffix == '.svg':
+                    normalize_icon_to_png(source, target)
+                else:
+                    with Image.open(source) as image:
+                        image = image.convert('RGBA')
+                        image.thumbnail((size, size), Image.Resampling.LANCZOS)
+                        canvas = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+                        x = (size - image.width) // 2
+                        y = (size - image.height) // 2
+                        canvas.alpha_composite(image, (x, y))
+                        canvas.save(target, 'PNG')
             return target
-        except Exception as error:
-            LOG.warning('Failed to prepare display icon %s: %s', icon_path, error)
+        except (OSError, ValueError, UnidentifiedImageError):
             return Path(icon_path)
 
     def _create_icon_widget(self, size):
@@ -1375,13 +1410,17 @@ class DetailPage(Gtk.Box):
     def refresh_icon_page(self):
         self._set_icon_page_preview_placeholder()
 
-        url = self.address_entry.get_text().strip()
-        if is_valid_url(url):
-            self.icon_download_button.set_sensitive(True)
-            self.icon_page_status.set_text(t('icon_page_status_url'))
+        if self._icon_download_in_progress:
+            self._set_icon_download_busy(True, t('icon_page_status_searching'))
         else:
-            self.icon_download_button.set_sensitive(False)
-            self.icon_page_status.set_text(t('icon_page_status_no_url'))
+            self._set_icon_download_busy(False)
+            url = self.address_entry.get_text().strip()
+            if is_structurally_valid_url(url):
+                self.icon_download_button.set_sensitive(True)
+                self.icon_page_status.set_text(t('icon_page_status_url'))
+            else:
+                self.icon_download_button.set_sensitive(False)
+                self.icon_page_status.set_text(t('icon_page_status_no_url'))
 
         has_icon = self._has_custom_icon()
         self.icon_delete_button.set_sensitive(has_icon)
@@ -1457,51 +1496,278 @@ class DetailPage(Gtk.Box):
             LOG.warning('Failed to normalize icon file %s: %s', source_path, error)
         return False
 
+    def _parse_html_tag_attributes(self, tag):
+        attrs = {}
+        attr_pattern = re.compile(r"([a-zA-Z_:][a-zA-Z0-9_:\-.]*)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>]+))")
+        for match in attr_pattern.finditer(tag):
+            value = match.group(2)
+            if value is None:
+                value = match.group(3)
+            if value is None:
+                value = match.group(4) or ''
+            attrs[match.group(1).lower()] = value
+        return attrs
+
+    def _size_score_from_string(self, sizes_value):
+        size_score = 0
+        saw_any = False
+        for token in str(sizes_value or '').lower().split():
+            token = token.strip()
+            if not token:
+                continue
+            if token == 'any':
+                saw_any = True
+                continue
+            if 'x' in token:
+                try:
+                    width, height = token.split('x', 1)
+                    size_score = max(size_score, min(int(width), int(height)))
+                except ValueError:
+                    continue
+        if saw_any:
+            size_score = max(size_score, 4096)
+        return size_score
+
+    def _infer_size_score_from_url(self, href):
+        href_path = urlparse(str(href or '')).path.lower()
+        for pattern in (r'(\d{2,4})x(\d{2,4})', r'[-_](\d{2,4})[.-](?:png|svg|ico|webp|jpg|jpeg|avif)$'):
+            match = re.search(pattern, href_path)
+            if not match:
+                continue
+            try:
+                if len(match.groups()) >= 2:
+                    return min(int(match.group(1)), int(match.group(2)))
+                return int(match.group(1))
+            except ValueError:
+                continue
+        return 0
+
+    def _icon_type_priority(self, href, rel_value='', type_value='', sizes_value='', purpose_value=''):
+        href_path = urlparse(str(href or '')).path.lower()
+        rel_value = str(rel_value or '').lower()
+        type_value = str(type_value or '').lower()
+        sizes_value = str(sizes_value or '').lower()
+        purpose_value = str(purpose_value or '').lower()
+        if (
+            href_path.endswith('.svg')
+            or 'image/svg+xml' in type_value
+            or 'mask-icon' in rel_value
+            or 'monochrome' in purpose_value
+            or sizes_value.strip() == 'any'
+        ):
+            return 5
+        if any(href_path.endswith(ext) for ext in ('.png', '.webp', '.avif', '.jpg', '.jpeg')) or any(image_type in type_value for image_type in ('image/png', 'image/webp', 'image/avif', 'image/jpeg')):
+            return 4
+        if 'apple-touch-icon' in rel_value or 'fluid-icon' in rel_value:
+            return 4
+        if href_path.endswith('.ico') or 'image/x-icon' in type_value or 'image/vnd.microsoft.icon' in type_value:
+            return 2
+        return 3
+
+    def _source_priority_for_candidate(self, source_kind, rel_value='', media_value=''):
+        rel_value = str(rel_value or '').lower()
+        media_value = str(media_value or '').lower().strip()
+        priority_map = {
+            'manifest_maskable': 65,
+            'manifest': 60,
+            'apple_touch': 58,
+            'icon_link': 56,
+            'mask_icon': 54,
+            'fluid_icon': 52,
+            'browserconfig': 46,
+            'root_fallback': 40,
+            'special_fallback': 38,
+            'meta_image': 10,
+        }
+        priority = priority_map.get(source_kind, 20)
+        if 'apple-touch-icon' in rel_value:
+            priority = max(priority, priority_map['apple_touch'])
+        if 'mask-icon' in rel_value:
+            priority = max(priority, priority_map['mask_icon'])
+        if media_value:
+            if 'print' in media_value:
+                priority -= 20
+            elif 'screen' in media_value or 'all' in media_value:
+                priority += 1
+        return priority
+
+    def _make_icon_candidate(self, href, *, source_kind='icon_link', rel_value='', type_value='', sizes_value='', purpose_value='', media_value='', order=0):
+        return {
+            'href': href,
+            'type_priority': self._icon_type_priority(href, rel_value, type_value, sizes_value, purpose_value),
+            'source_priority': self._source_priority_for_candidate(source_kind, rel_value, media_value),
+            'size_score': self._size_score_from_string(sizes_value) or self._infer_size_score_from_url(href),
+            'order': int(order),
+        }
+
+    def _order_icon_candidates(self, candidates):
+        normalized = []
+        seen = set()
+        for item in candidates:
+            href = str((item or {}).get('href') or '').strip()
+            if not href or href in seen:
+                continue
+            seen.add(href)
+            normalized.append(item)
+        normalized.sort(
+            key=lambda item: (
+                int(item.get('type_priority', 0)),
+                int(item.get('source_priority', 0)),
+                int(item.get('size_score', 0)),
+                int(item.get('order', 0)),
+            ),
+            reverse=True,
+        )
+        return [item['href'] for item in normalized]
+
+    def _extract_base_href(self, html, base_url):
+        pattern = re.compile(r'<base\b[^>]*>', re.IGNORECASE)
+        for match in pattern.finditer(html):
+            attrs = self._parse_html_tag_attributes(match.group(0))
+            href_value = str(attrs.get('href') or '').strip()
+            if href_value:
+                return urljoin(base_url, href_value)
+        return None
+
     def _extract_icon_candidates(self, html, base_url):
         candidates = []
         pattern = re.compile(r'<link\b[^>]*>', re.IGNORECASE)
+        order = 0
         for match in pattern.finditer(html):
             tag = match.group(0)
-            rel_match = re.search(r"rel=[\"']([^\"']+)[\"']", tag, re.IGNORECASE)
-            href_match = re.search(r"href=[\"']([^\"']+)[\"']", tag, re.IGNORECASE)
-            if not href_match:
+            attrs = self._parse_html_tag_attributes(tag)
+            href_value = str(attrs.get('href') or '').strip()
+            if not href_value:
                 continue
-            rel_value = (rel_match.group(1).lower() if rel_match else '')
-            if 'icon' not in rel_value:
+            rel_value = str(attrs.get('rel') or '').lower().strip()
+            href = urljoin(base_url, href_value)
+            source_kind = None
+            if 'manifest' in rel_value:
                 continue
-            href = urljoin(base_url, href_match.group(1))
-            type_match = re.search(r"type=[\"']([^\"']+)[\"']", tag, re.IGNORECASE)
-            type_value = (type_match.group(1).lower() if type_match else '')
-            sizes_match = re.search(r"sizes=[\"']([^\"']+)[\"']", tag, re.IGNORECASE)
-            size_score = 0
-            if sizes_match:
-                for token in sizes_match.group(1).lower().split():
-                    if 'x' in token:
-                        try:
-                            width, height = token.split('x', 1)
-                            size_score = max(size_score, min(int(width), int(height)))
-                        except ValueError:
-                            pass
-            href_lower = href.lower()
-            is_svg = href_lower.endswith('.svg') or 'image/svg+xml' in type_value
-            is_apple = 'apple-touch-icon' in rel_value
-            is_ico = href_lower.endswith('.ico') or 'image/x-icon' in type_value or 'image/vnd.microsoft.icon' in type_value
-            priority = 0
-            if is_svg:
-                priority = 3
-            elif is_apple:
-                priority = 2
-            elif is_ico:
-                priority = 1
-            candidates.append((priority, size_score, href))
-        candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
-        ordered = []
-        seen = set()
-        for _priority, _size_score, href in candidates:
-            if href and href not in seen:
-                seen.add(href)
-                ordered.append(href)
-        return ordered
+            if 'apple-touch-icon' in rel_value:
+                source_kind = 'apple_touch'
+            elif 'mask-icon' in rel_value:
+                source_kind = 'mask_icon'
+            elif 'fluid-icon' in rel_value:
+                source_kind = 'fluid_icon'
+            elif 'icon' in rel_value:
+                source_kind = 'icon_link'
+            if source_kind is None:
+                continue
+            order += 1
+            candidates.append(
+                self._make_icon_candidate(
+                    href,
+                    source_kind=source_kind,
+                    rel_value=rel_value,
+                    type_value=attrs.get('type', ''),
+                    sizes_value=attrs.get('sizes', ''),
+                    media_value=attrs.get('media', ''),
+                    order=order,
+                )
+            )
+        return candidates
+
+    def _extract_manifest_url(self, html, base_url):
+        pattern = re.compile(r'<link\b[^>]*>', re.IGNORECASE)
+        for match in pattern.finditer(html):
+            attrs = self._parse_html_tag_attributes(match.group(0))
+            rel_value = str(attrs.get('rel') or '').lower().strip()
+            href_value = str(attrs.get('href') or '').strip()
+            if href_value and 'manifest' in rel_value:
+                return urljoin(base_url, href_value)
+        return None
+
+    def _extract_manifest_icon_candidates(self, manifest_text, manifest_url):
+        try:
+            manifest = json.loads(manifest_text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return []
+        candidates = []
+        order = 0
+        for icon in manifest.get('icons', []) or []:
+            if not isinstance(icon, dict):
+                continue
+            src = str(icon.get('src') or '').strip()
+            if not src:
+                continue
+            href = urljoin(manifest_url, src)
+            purpose_value = str(icon.get('purpose') or '')
+            order += 1
+            candidates.append(
+                self._make_icon_candidate(
+                    href,
+                    source_kind='manifest_maskable' if 'maskable' in purpose_value.lower() else 'manifest',
+                    type_value=icon.get('type', ''),
+                    sizes_value=icon.get('sizes', ''),
+                    purpose_value=purpose_value,
+                    order=order,
+                )
+            )
+        return candidates
+
+    def _extract_browserconfig_url(self, html, base_url):
+        pattern = re.compile(r'<meta\b[^>]*>', re.IGNORECASE)
+        for match in pattern.finditer(html):
+            attrs = self._parse_html_tag_attributes(match.group(0))
+            key = str(attrs.get('name') or '').lower().strip()
+            content = str(attrs.get('content') or '').strip()
+            if key == 'msapplication-config' and content:
+                return urljoin(base_url, content)
+        return None
+
+    def _extract_browserconfig_icon_candidates(self, browserconfig_text, browserconfig_url):
+        pattern = re.compile(r'<(square\d+x\d+logo|wide\d+x\d+logo|tileimage)\b[^>]*\bsrc=["\']([^"\']+)["\']', re.IGNORECASE)
+        candidates = []
+        order = 0
+        for match in pattern.finditer(browserconfig_text):
+            tag_name = str(match.group(1) or '').lower()
+            href = urljoin(browserconfig_url, str(match.group(2) or '').strip())
+            sizes_value = ''
+            size_match = re.search(r'(\d+x\d+)', tag_name)
+            if size_match:
+                sizes_value = size_match.group(1)
+            order += 1
+            candidates.append(
+                self._make_icon_candidate(
+                    href,
+                    source_kind='browserconfig',
+                    sizes_value=sizes_value,
+                    order=order,
+                )
+            )
+        return candidates
+
+    def _extract_meta_image_candidates(self, html, base_url):
+        candidates = []
+        pattern = re.compile(r'<meta\b[^>]*>', re.IGNORECASE)
+        supported_keys = {
+            'og:image',
+            'og:image:url',
+            'og:image:secure_url',
+            'twitter:image',
+            'twitter:image:src',
+            'msapplication-tileimage',
+        }
+        order = 0
+        for match in pattern.finditer(html):
+            attrs = self._parse_html_tag_attributes(match.group(0))
+            content = str(attrs.get('content') or '').strip()
+            if not content:
+                continue
+            key = str(attrs.get('property') or attrs.get('name') or '').lower().strip()
+            if key not in supported_keys:
+                continue
+            href = urljoin(base_url, content)
+            order += 1
+            candidates.append(
+                self._make_icon_candidate(
+                    href,
+                    source_kind='meta_image',
+                    order=order,
+                )
+            )
+        return candidates
 
     def _download_image_bytes(self, url):
         request = urllib.request.Request(url, headers={'User-Agent': DESKTOP_CHROME_USER_AGENT, 'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', 'Connection': 'close'})
@@ -1519,6 +1785,15 @@ class DetailPage(Gtk.Box):
             content_type = response.headers.get_content_type()
             return payload, content_type
 
+    def _public_root_hosts_for_icon_fallback(self, host):
+        host = (host or '').lower().strip()
+        hosts = []
+        if host:
+            hosts.append(host)
+        if host.startswith('www.'):
+            hosts.append(host[4:])
+        return [item for index, item in enumerate(hosts) if item and item not in hosts[:index]]
+
     def _special_icon_fallback_candidates(self, url):
         parsed = urlparse(url)
         host = (parsed.hostname or '').lower()
@@ -1529,57 +1804,144 @@ class DetailPage(Gtk.Box):
                 'https://www.google.com/images/branding/product/ico/maps15_bnuw3a_32dp.ico',
                 'https://maps.google.com/favicon.ico',
             ])
+        if host.endswith('booking.com'):
+            candidates.extend([
+                'https://cf.bstatic.com/static/img/favicon/9ca83ba2a5a3293ff07452cb24949a5843af4592.svg',
+                'https://cf.bstatic.com/static/img/apple-touch-icon/5db9fd30d96b1796883ee94be7dddce50b73bb38.png',
+                'https://cf.bstatic.com/static/img/favicon/40749a316c45e239a7149b6711ea4c48d10f8d89.ico',
+            ])
         return candidates
+
+    def _icon_source_page_candidates(self, url):
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            return []
+        candidates = []
+
+        def add_candidate(value):
+            value = str(value or '').strip()
+            if value and value not in candidates:
+                candidates.append(value)
+
+        clean = parsed._replace(fragment='')
+        add_candidate(urlunparse(clean))
+
+        normalized = clean._replace(params='', query='')
+        add_candidate(urlunparse(normalized))
+
+        path = normalized.path or '/'
+        if path not in ('', '/'):
+            stripped_path = path.rstrip('/') or '/'
+            if stripped_path != path:
+                add_candidate(urlunparse(normalized._replace(path=stripped_path)))
+            leaf = stripped_path.rsplit('/', 1)[-1]
+            if '.' in leaf:
+                parent_path = stripped_path.rsplit('/', 1)[0] or '/'
+                add_candidate(urlunparse(normalized._replace(path=parent_path)))
+            add_candidate(urlunparse(normalized._replace(path='/')))
+
+        return candidates
+
+    def _download_text_response(self, url, accept_header, timeout=8):
+        request = urllib.request.Request(url, headers={'User-Agent': DESKTOP_CHROME_USER_AGENT, 'Accept': accept_header, 'Accept-Language': 'en-US,en;q=0.9', 'Connection': 'close'})
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            content_type = response.headers.get_content_type()
+            content_length = response.headers.get('Content-Length')
+            if content_length:
+                try:
+                    if int(content_length) > 512 * 1024:
+                        raise OSError('Response too large for icon discovery')
+                except ValueError:
+                    pass
+            body = response.read(512 * 1024 + 1)
+            final_url = response.geturl()
+        if len(body) > 512 * 1024:
+            raise OSError('Response too large for icon discovery')
+        return body.decode('utf-8', errors='ignore'), content_type, final_url
 
     def _download_favicon(self, url):
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             return None
-        base_url = f'{parsed.scheme}://{parsed.netloc}'
-        html = ''
-        try:
-            request = urllib.request.Request(url, headers={'User-Agent': DESKTOP_CHROME_USER_AGENT, 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', 'Connection': 'close'})
-            with urllib.request.urlopen(request, timeout=10) as response:
-                content_type = response.headers.get_content_type()
-                content_length = response.headers.get('Content-Length')
-                if content_length:
-                    try:
-                        if int(content_length) > 512 * 1024:
-                            raise OSError('Page HTML too large for icon discovery')
-                    except ValueError:
-                        pass
-                body = response.read(512 * 1024 + 1)
-            if len(body) > 512 * 1024:
-                raise OSError('Page HTML too large for icon discovery')
-            if 'html' in content_type:
-                html = body.decode('utf-8', errors='ignore')
-        except Exception as error:
-            LOG.warning('Failed to inspect page for favicon: %s', error)
 
-        icon_candidates = []
-        if html:
-            icon_candidates.extend(self._extract_icon_candidates(html, base_url))
-        for fallback in (
-            '/favicon.svg',
-            '/apple-touch-icon.png',
-            '/apple-touch-icon-precomposed.png',
-            '/favicon.ico',
-        ):
-            icon_candidates.append(urljoin(base_url, fallback))
-        icon_candidates.extend(self._special_icon_fallback_candidates(url))
+        primary_icon_candidates = []
+        fallback_meta_candidates = []
+        final_url = url
+        seen_document_urls = set()
 
-        seen = set()
-        for icon_url in icon_candidates:
-            if not icon_url or icon_url in seen:
+        for document_url in self._icon_source_page_candidates(url):
+            if document_url in seen_document_urls:
                 continue
-            seen.add(icon_url)
+            seen_document_urls.add(document_url)
             try:
-                payload, content_type = self._download_image_bytes(icon_url)
-                temp_target = Path(tempfile.mkstemp(suffix='.png')[1])
-                return normalize_icon_bytes_to_png(payload, temp_target, source_name=icon_url, content_type=content_type)
-            except Exception as error:
-                LOG.warning('Failed to download icon candidate %s: %s', icon_url, error)
-        return None
+                html, content_type, resolved_final_url = self._download_text_response(document_url, 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8')
+            except (OSError, urllib.error.URLError, ValueError):
+                continue
+            if 'html' not in content_type:
+                continue
+            final_url = resolved_final_url or document_url
+            document_base_url = final_url
+            base_href = self._extract_base_href(html, document_base_url)
+            if base_href:
+                document_base_url = base_href
+            primary_icon_candidates.extend(self._extract_icon_candidates(html, document_base_url))
+            manifest_url = self._extract_manifest_url(html, document_base_url)
+            if manifest_url:
+                try:
+                    manifest_text, manifest_content_type, resolved_manifest_url = self._download_text_response(manifest_url, 'application/manifest+json,application/json,text/plain;q=0.9,*/*;q=0.8')
+                    if 'json' in manifest_content_type or manifest_text.lstrip().startswith('{'):
+                        primary_icon_candidates.extend(self._extract_manifest_icon_candidates(manifest_text, resolved_manifest_url))
+                except (OSError, urllib.error.URLError, ValueError):
+                    pass
+            browserconfig_url = self._extract_browserconfig_url(html, document_base_url)
+            if browserconfig_url:
+                try:
+                    browserconfig_text, _browserconfig_content_type, resolved_browserconfig_url = self._download_text_response(browserconfig_url, 'application/xml,text/xml,text/plain;q=0.9,*/*;q=0.8')
+                    primary_icon_candidates.extend(self._extract_browserconfig_icon_candidates(browserconfig_text, resolved_browserconfig_url))
+                except (OSError, urllib.error.URLError, ValueError):
+                    pass
+            fallback_meta_candidates.extend(self._extract_meta_image_candidates(html, document_base_url))
+
+        root_hosts = self._public_root_hosts_for_icon_fallback(urlparse(final_url).hostname or parsed.hostname or '')
+        order = 0
+        for host in root_hosts:
+            for fallback in (
+                '/favicon.svg',
+                '/favicon.png',
+                '/favicon-512x512.png',
+                '/favicon-192x192.png',
+                '/favicon-180x180.png',
+                '/favicon-64x64.png',
+                '/favicon-32x32.png',
+                '/favicon-16x16.png',
+                '/apple-touch-icon.png',
+                '/apple-touch-icon-precomposed.png',
+                '/apple-touch-icon-180x180.png',
+                '/favicon.ico',
+            ):
+                href = f'https://{host}{fallback}'
+                order += 1
+                primary_icon_candidates.append(self._make_icon_candidate(href, source_kind='root_fallback', order=order))
+        for href in self._special_icon_fallback_candidates(final_url):
+            order += 1
+            primary_icon_candidates.append(self._make_icon_candidate(href, source_kind='special_fallback', order=order))
+
+        def _try_candidates(candidate_list):
+            for icon_url in self._order_icon_candidates(candidate_list):
+                try:
+                    payload, content_type = self._download_image_bytes(icon_url)
+                    temp_fd, temp_name = tempfile.mkstemp(suffix='.png')
+                    os.close(temp_fd)
+                    temp_target = Path(temp_name)
+                    return normalize_icon_bytes_to_png(payload, temp_target, source_name=icon_url, content_type=content_type)
+                except (OSError, ValueError, urllib.error.URLError, UnidentifiedImageError):
+                    continue
+            return None
+
+        primary_result = _try_candidates(primary_icon_candidates)
+        if primary_result is not None:
+            return primary_result
+        return _try_candidates(fallback_meta_candidates)
 
     def _build_wapp_payload(self):
         raw_options = dict(self._options_dict())
@@ -1687,7 +2049,7 @@ class DetailPage(Gtk.Box):
                     content_type=str(icon_meta.get('mime') or ''),
                 )
                 self._set_option_value(ICON_PATH_KEY, str(target_path))
-            except Exception as error:
+            except (binascii.Error, OSError, ValueError) as error:
                 LOG.warning('Failed to import icon from .wapp: %s', error)
         elif 'icon' in payload and icon_meta is None:
             self._set_option_value(ICON_PATH_KEY, '')
@@ -1732,14 +2094,16 @@ class DetailPage(Gtk.Box):
         self._suspend_change_handlers = False
 
     def on_icon_download_clicked(self, button):
-        url = self.address_entry.get_text().strip()
-        if not self._looks_ready_for_url_check(url):
+        if self._icon_download_in_progress:
+            return
+        raw_url = self.address_entry.get_text().strip()
+        if not self._looks_ready_for_url_check(raw_url):
             self.refresh_icon_page()
             self._update_export_button_state()
             return
-        self.icon_page_status.set_text(t('icon_page_status_url'))
-        self.icon_download_button.set_sensitive(False)
-        thread = threading.Thread(target=self._load_icon_from_url, args=(url,), daemon=True)
+        self._icon_download_in_progress = True
+        self._set_icon_download_busy(True, t('icon_page_status_searching'))
+        thread = threading.Thread(target=self._load_icon_from_url, args=(raw_url,), daemon=True)
         thread.start()
 
     def _present_choice_dialog(self, anchor, message, on_result, destructive=False):
@@ -1802,18 +2166,28 @@ class DetailPage(Gtk.Box):
         self.save_desktop_file()
 
     def _load_icon_from_url(self, url):
-        try:
-            path = self._download_favicon(url)
-            if path and Path(path).exists():
-                GLib.idle_add(self._apply_downloaded_icon, str(path))
-                return
-        except Exception as error:
-            LOG.warning('Failed to download favicon: %s', error)
-        GLib.idle_add(self._set_icon_page_status, t('icon_page_status_download_failed'))
+        for candidate_url in candidate_urls_for_input(url, prefer_https=True, include_http_fallback=True):
+            try:
+                path = self._download_favicon(candidate_url)
+                if path and Path(path).exists():
+                    GLib.idle_add(self._apply_downloaded_icon, str(path))
+                    return
+            except (OSError, ValueError, urllib.error.URLError) as error:
+                LOG.debug('Failed to download favicon for %s: %s', candidate_url, error)
+        GLib.idle_add(self._finish_icon_download, t('icon_page_status_download_failed'))
+
+    def _finish_icon_download(self, status_text=None):
+        self._icon_download_in_progress = False
+        self._set_icon_download_busy(False)
+        self.refresh_icon_page()
+        self.icon_download_button.set_sensitive(True)
+        if status_text is not None:
+            self.icon_page_status.set_text(status_text)
+        self._update_export_button_state()
+        return False
 
     def _set_icon_page_status(self, text):
         self.icon_page_status.set_text(text)
-        self.refresh_icon_page()
         self._update_export_button_state()
         return False
 
@@ -1824,12 +2198,9 @@ class DetailPage(Gtk.Box):
             target_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(temp_path), str(target_path))
             self._apply_icon_path(target_path)
-            self.icon_page_status.set_text(t('icon_page_status_downloaded'))
-            self.refresh_icon_page()
-            self._update_export_button_state()
         finally:
             temp_path.unlink(missing_ok=True)
-        return False
+        return self._finish_icon_download(t('icon_page_status_downloaded'))
 
     def _copy_gfile_to_temp_path(self, file_obj, suffix=''):
         if file_obj is None:
@@ -1851,18 +2222,18 @@ class DetailPage(Gtk.Box):
             finally:
                 try:
                     stream.close(None)
-                except Exception:
+                except GLib.Error:
                     pass
             return Path(tmp_name)
-        except Exception as error:
+        except (GLib.Error, OSError, AttributeError) as error:
             if tmp_name:
                 try:
                     Path(tmp_name).unlink(missing_ok=True)
-                except Exception:
+                except OSError:
                     pass
             try:
                 uri = file_obj.get_uri()
-            except Exception:
+            except GLib.Error:
                 uri = ''
             LOG.warning('Failed to copy selected file %s: %s', uri, error)
             return None
@@ -1888,10 +2259,10 @@ class DetailPage(Gtk.Box):
             stream.write_all(payload, None)
             stream.close(None)
             return True
-        except Exception as error:
+        except (GLib.Error, OSError, AttributeError) as error:
             try:
                 uri = file_obj.get_uri()
-            except Exception:
+            except GLib.Error:
                 uri = ''
             LOG.warning('Failed to write selected file %s: %s', uri, error)
             return False
@@ -2057,7 +2428,7 @@ class DetailPage(Gtk.Box):
                     self._set_detail_action_status(t('import_webapp_failed'))
             else:
                 self._set_detail_action_status(t('import_webapp_failed'))
-        except Exception as error:
+        except (OSError, ValueError, json.JSONDecodeError) as error:
             path_for_log = local_path or (str(temp_path) if temp_path else '')
             LOG.warning('Failed to import .wapp file %s: %s', path_for_log, error)
             self._set_detail_action_status(t('import_webapp_failed'))
@@ -2096,7 +2467,7 @@ class DetailPage(Gtk.Box):
             self._set_detail_action_status(t('profile_delete_success'))
             self.save_desktop_file()
             GLib.idle_add(self._emit_visual_changed)
-        except Exception as error:
+        except (OSError, ValueError) as error:
             LOG.warning('Failed to delete managed profile for entry %s: %s', self.entry.id, error)
             self._set_detail_action_status(t('profile_delete_failed'))
 
@@ -2163,7 +2534,7 @@ class DetailPage(Gtk.Box):
             except OSError as error:
                 error_text = str(error)
                 LOG.error('Failed to apply Firefox plugin change for entry %s: %s', self.entry.id, error)
-            except Exception as error:
+            except (ValueError, OSError) as error:
                 error_text = str(error)
                 LOG.error('Unexpected Firefox plugin failure for entry %s: %s', self.entry.id, error, exc_info=True)
 
@@ -2197,7 +2568,7 @@ class DetailPage(Gtk.Box):
                     try:
                         verified_state = read_profile_settings(plugin_profile, 'firefox')
                         verified_value = '1' if str(verified_state.get(option_key, verified_value)) == '1' else '0'
-                    except Exception as error:
+                    except (OSError, ValueError, json.JSONDecodeError) as error:
                         LOG.warning('Failed to verify Firefox plugin state for entry %s: %s', self.entry.id, error)
                 if verified_value != self._get_option_value(option_key):
                     self._add_options({option_key: verified_value})
@@ -2409,7 +2780,7 @@ class DetailPage(Gtk.Box):
         selected = dropdown.get_selected()
         try:
             value = self.color_scheme_values[selected]
-        except Exception:
+        except IndexError:
             value = 'auto'
         self._set_option_value(COLOR_SCHEME_KEY, value)
         self.save_desktop_file()

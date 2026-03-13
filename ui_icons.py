@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from gi.repository import Gdk, Gtk
+from gi.repository import Gdk, Gtk, GLib
 
 from option_config import overview_status_definitions
 
@@ -11,7 +11,7 @@ APP_DIR = Path(__file__).resolve().parent
 def load_icon_paintable(icon_path: Path):
     try:
         return Gdk.Texture.new_from_filename(str(icon_path))
-    except Exception:
+    except GLib.Error:
         return None
 
 

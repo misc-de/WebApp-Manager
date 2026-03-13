@@ -67,13 +67,13 @@ def _resolve_firefox_profile_reference(value: str) -> str:
     if _looks_like_filesystem_path(candidate):
         try:
             return str(expanded.resolve())
-        except Exception:
+        except OSError:
             return str(expanded)
     direct = FIREFOX_ROOT / candidate
     if direct.exists():
         try:
             return str(direct.resolve())
-        except Exception:
+        except OSError:
             return str(direct)
     profiles_ini = FIREFOX_ROOT / 'profiles.ini'
     if not profiles_ini.exists():
@@ -98,7 +98,7 @@ def _resolve_firefox_profile_reference(value: str) -> str:
         resolved = (base_path / path_value).expanduser() if path_value else (FIREFOX_ROOT / candidate)
         try:
             return str(resolved.resolve())
-        except Exception:
+        except OSError:
             return str(resolved)
     return ''
 
@@ -135,8 +135,9 @@ def _extract_profile_path_from_exec_tokens(tokens: Sequence[str]) -> str:
 
 def exportable_entry(entry, options_dict):
     title = sanitize_desktop_value(entry.title)[:200]
-    address = normalize_address((options_dict.get(ADDRESS_KEY, '') or '').strip(), options_dict.get(ONLY_HTTPS_KEY, '0') == '1')
-    return bool(title) and is_valid_url(address, check_origin=False)
+    raw_address = (options_dict.get(ADDRESS_KEY, '') or '').strip()
+    address = normalize_address(raw_address, options_dict.get(ONLY_HTTPS_KEY, '0') == '1')
+    return bool(title) and is_valid_url(address or raw_address, check_origin=False)
 
 def get_expected_desktop_path(title):
     safe_slug = build_safe_slug(title)
@@ -334,10 +335,11 @@ def _guard_target_path(target_path, engines_list, logger):
 def export_desktop_file(entry, options_dict, engines_list, logger):
     ensure_applications_dir()
     title = (entry.title or '').strip()
-    address = normalize_address((options_dict.get(ADDRESS_KEY, '') or '').strip(), options_dict.get(ONLY_HTTPS_KEY, '0') == '1')
+    raw_address = (options_dict.get(ADDRESS_KEY, '') or '').strip()
+    address = normalize_address(raw_address, options_dict.get(ONLY_HTTPS_KEY, '0') == '1')
     previous_profile_name = options_dict.get(PROFILE_NAME_KEY, '')
     previous_profile_path = options_dict.get(PROFILE_PATH_KEY, '')
-    if not title or not is_valid_url(address, check_origin=False):
+    if not title or not is_valid_url(address or raw_address, check_origin=False):
         logger.info('Skipping desktop export for entry %s because title or URL is invalid', entry.id)
         delete_managed_entry_artifacts(entry.id, title, engines_list, logger, delete_profiles=True, stored_profile_path=previous_profile_path, stored_profile_name=previous_profile_name)
         return None
@@ -440,9 +442,9 @@ def export_desktop_file(entry, options_dict, engines_list, logger):
                     normalize_icon_to_png(icon_resolved, managed_icon_path)
                     icon_field = str(managed_icon_path)
                 else:
-                    logger.warning('Ignoring invalid or missing icon path for entry %s: %s', entry.id, icon_path)
+                    pass
         except OSError:
-            logger.warning('Ignoring invalid icon path for entry %s: %s', entry.id, icon_path)
+            pass
 
     active = bool(entry.active)
 
