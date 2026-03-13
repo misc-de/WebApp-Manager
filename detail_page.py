@@ -93,11 +93,13 @@ class DetailPage(Gtk.Box):
         self.engine_user_agents = self._build_engine_user_agents()
         self._address_validation_source_id = 0
         self._address_export_source_id = 0
+        self._address_persist_source_id = 0
         self._address_validation_serial = 0
         self._address_last_validated_value = ''
         self._initial_address_validation_source_id = 0
         self._icon_upload_dialog_active = False
         self._address_debounce_ms = 1200
+        self._address_persist_ms = 700
         self._suspend_address_processing = False
         self._address_export_after_validation = False
         self._auto_icon_fetch_url = ''
@@ -905,6 +907,13 @@ class DetailPage(Gtk.Box):
             GLib.idle_add(self._finish_url_validation, value, status)
         threading.Thread(target=worker, daemon=True).start()
 
+    def _flush_pending_address_option_write(self):
+        if self._address_persist_source_id:
+            GLib.source_remove(self._address_persist_source_id)
+            self._address_persist_source_id = 0
+        value = self._normalize_address_for_ui(self.address_entry.get_text().strip()) if hasattr(self, 'address_entry') else self._normalize_address_for_ui(self._options_cache.get(ADDRESS_KEY, ''))
+        self.db.add_option(self.entry.id, ADDRESS_KEY, value, commit=True)
+
     def _cancel_address_timers(self):
         if self._address_validation_source_id:
             GLib.source_remove(self._address_validation_source_id)
@@ -912,12 +921,22 @@ class DetailPage(Gtk.Box):
         if self._address_export_source_id:
             GLib.source_remove(self._address_export_source_id)
             self._address_export_source_id = 0
+        if self._address_persist_source_id:
+            GLib.source_remove(self._address_persist_source_id)
+            self._address_persist_source_id = 0
 
     def _schedule_address_processing(self, value, export_after_validation=True):
         self._address_validation_serial += 1
         self._address_export_after_validation = export_after_validation
         serial = self._address_validation_serial
         self._cancel_address_timers()
+
+        def persist_address():
+            if serial != self._address_validation_serial:
+                return False
+            self._address_persist_source_id = 0
+            self.db.add_option(self.entry.id, ADDRESS_KEY, value, commit=True)
+            return False
 
         def run_validation():
             if serial != self._address_validation_serial:
@@ -926,6 +945,7 @@ class DetailPage(Gtk.Box):
             self._update_url_status(value)
             return False
 
+        self._address_persist_source_id = GLib.timeout_add(self._address_persist_ms, persist_address)
         self._address_validation_source_id = GLib.timeout_add(self._address_debounce_ms, run_validation)
 
     def _trigger_address_validation(self, value, debounce=True, export_after_validation=False):
@@ -2273,7 +2293,7 @@ class DetailPage(Gtk.Box):
         if value != entry_widget.get_text():
             entry_widget.set_text(value)
             return
-        self._set_option_value(ADDRESS_KEY, value)
+        self._options_cache[ADDRESS_KEY] = value
         if self._suspend_address_processing:
             self._address_export_after_validation = False
             self._address_last_validated_value = ''
@@ -2464,6 +2484,7 @@ class DetailPage(Gtk.Box):
                 self.on_back()
     def release_resources(self):
         self._cancel_initial_address_validation()
+        self._flush_pending_address_option_write()
         self._cancel_address_timers()
         self._cancel_detail_toast()
         if self._icon_page_preview_refresh_source_id:
