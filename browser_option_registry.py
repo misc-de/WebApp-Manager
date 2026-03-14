@@ -73,7 +73,7 @@ _VISIBLE_BROWSER_OPTION_SPECS: tuple[BrowserOptionSpec, ...] = (
         OPTION_KEEP_IN_BACKGROUND_KEY,
         'option_keep_in_background',
         'profile_setting',
-        _bindings('firefox', storage_kind='profile_setting', notes='Firefox/Furios-specific background preload behavior.'),
+        _bindings('firefox', 'chrome', 'chromium', storage_kind='profile_setting', notes='Map to the engine-specific background-running behavior when supported.'),
     ),
     BrowserOptionSpec(
         OPTION_NOTIFICATIONS_KEY,
