@@ -307,7 +307,7 @@ def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_ses
             return
     user_js.write_text(new_content, encoding='utf-8')
 
-def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previous_session, logger, user_agent_value='', only_https=False, notifications_enabled=False, disable_ai=False, set_privacy=False, color_scheme='auto'):
+def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previous_session, logger, user_agent_value='', only_https=False, notifications_enabled=False, keep_in_background=False, disable_ai=False, set_privacy=False, color_scheme='auto'):
     profile_dir = Path(profile_dir)
     default_dir = profile_dir / 'Default'
     default_dir.mkdir(parents=True, exist_ok=True)
@@ -321,6 +321,7 @@ def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previou
             data = {}
     browser = data.setdefault('browser', {})
     browser['check_default_browser'] = False
+    browser['enable_spellchecking'] = True
     clear_on_exit = []
     if clear_cookies:
         clear_on_exit.append('cookies_and_other_site_data')
@@ -329,14 +330,47 @@ def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previou
     browser['clear_data'] = browser.get('clear_data', {})
     browser['clear_data']['clear_on_exit'] = clear_on_exit
     session = data.setdefault('session', {})
+    effective_only_https = bool(only_https or set_privacy)
     session['restore_on_startup'] = 1 if previous_session else 5
     session['startup_urls'] = []
     profile = data.setdefault('profile', {})
     profile['exit_type'] = 'Normal'
     profile['exited_cleanly'] = True
+    profile['block_third_party_cookies'] = True if set_privacy else profile.get('block_third_party_cookies', False)
     profile.setdefault('default_content_setting_values', {})['notifications'] = 1 if notifications_enabled else 3
-    data['https_only_mode_enabled'] = bool(only_https)
-    data.setdefault('https_upgrades', {})['policy'] = {'upgrades_enabled': bool(only_https)}
+    data['https_only_mode_enabled'] = effective_only_https
+    data.setdefault('https_upgrades', {})['policy'] = {'upgrades_enabled': effective_only_https}
+    background_mode = data.setdefault('background_mode', {})
+    background_mode['enabled'] = bool(keep_in_background)
+    search = data.setdefault('search', {})
+    if set_privacy:
+        search['suggest_enabled'] = False
+    spellcheck = data.setdefault('spellcheck', {})
+    spellcheck['use_spelling_service'] = False
+    translate = data.setdefault('translate', {})
+    if set_privacy:
+        translate['enabled'] = False
+    dns_over_https = data.setdefault('dns_over_https', {})
+    if set_privacy:
+        dns_over_https['mode'] = 'off'
+        dns_over_https['templates'] = ''
+    default_search_provider = data.setdefault('default_search_provider', {})
+    if set_privacy:
+        default_search_provider.update({
+            'enabled': True,
+            'name': 'DuckDuckGo',
+            'keyword': 'duckduckgo.com',
+            'search_url': 'https://duckduckgo.com/?q={searchTerms}',
+            'suggest_url': 'https://duckduckgo.com/ac/?q={searchTerms}&type=list',
+            'icon_url': 'https://duckduckgo.com/favicon.ico',
+            'new_tab_url': 'https://duckduckgo.com/',
+            'encodings': 'UTF-8',
+            'alternate_urls': [
+                'https://duckduckgo.com/?q={searchTerms}',
+                'https://duckduckgo.com/html/?q={searchTerms}',
+            ],
+            'search_terms_replacement_key': 'q',
+        })
     webapp = data.setdefault('webapp_manager', {})
     if user_agent_value:
         webapp['user_agent_override'] = user_agent_value
@@ -346,8 +380,9 @@ def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previou
     webapp['set_privacy'] = bool(set_privacy)
     webapp['color_scheme'] = normalize_color_scheme(color_scheme)
     webapp['notifications_enabled'] = bool(notifications_enabled)
-    webapp['only_https'] = bool(only_https)
+    webapp['only_https'] = effective_only_https
     webapp['previous_session'] = bool(previous_session)
+    webapp['keep_in_background'] = bool(keep_in_background)
     data['enable_do_not_track'] = bool(set_privacy)
     data.setdefault('privacy_sandbox', {})['m1'] = {'topics_enabled': not set_privacy, 'fledge_enabled': not set_privacy, 'ad_measurement_enabled': not set_privacy}
     data.setdefault('safebrowsing', {})['enabled'] = False if set_privacy else data.setdefault('safebrowsing', {}).get('enabled', True)
@@ -355,6 +390,7 @@ def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previou
     data.setdefault('safebrowsing', {})['scout_reporting_enabled'] = False if set_privacy else data.setdefault('safebrowsing', {}).get('scout_reporting_enabled', False)
     data.setdefault('alternate_error_pages', {})['enabled'] = False if set_privacy else data.setdefault('alternate_error_pages', {}).get('enabled', True)
     data.setdefault('optimization_guide', {})['model_execution_enabled'] = False if set_privacy or disable_ai else data.setdefault('optimization_guide', {}).get('model_execution_enabled', True)
+    data.setdefault('browser_labs', {})['enabled_labs_experiments'] = [] if set_privacy or disable_ai else data.setdefault('browser_labs', {}).get('enabled_labs_experiments', [])
     prefs_path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding='utf-8')
 
 def _extract_firefox_extension_id(xpi_bytes, fallback_id):
@@ -764,11 +800,11 @@ def _read_chromium_profile_settings(profile_dir):
         OPTION_CLEAR_COOKIES_ON_EXIT_KEY: '1' if 'cookies_and_other_site_data' in clear_on_exit else '0',
         OPTION_PRESERVE_SESSION_KEY: '1' if ((webapp_manager.get('previous_session')) is True or session.get('restore_on_startup') == 1) else '0',
         OPTION_NOTIFICATIONS_KEY: '1' if ((webapp_manager.get('notifications_enabled')) is True or ((profile.get('default_content_setting_values') or {}).get('notifications') == 1)) else '0',
-        ONLY_HTTPS_KEY: '1' if ((webapp_manager.get('only_https')) is True or data.get('https_only_mode_enabled')) else '0',
+        ONLY_HTTPS_KEY: '1' if ((webapp_manager.get('only_https')) is True or data.get('https_only_mode_enabled') or (webapp_manager.get('set_privacy')) is True or data.get('enable_do_not_track') is True) else '0',
         USER_AGENT_VALUE_KEY: (webapp_manager.get('user_agent_override') or ''),
         OPTION_ADBLOCK_KEY: '0',
         OPTION_SWIPE_KEY: '1' if (webapp_manager.get('swipe_enabled')) is True else '0',
-        OPTION_KEEP_IN_BACKGROUND_KEY: '0',
+        OPTION_KEEP_IN_BACKGROUND_KEY: '1' if ((webapp_manager.get('keep_in_background')) is True or ((data.get('background_mode') or {}).get('enabled') is True)) else '0',
         OPTION_DISABLE_AI_KEY: '1' if (webapp_manager.get('disable_ai')) is True else '0',
         OPTION_FORCE_PRIVACY_KEY: '1' if ((webapp_manager.get('set_privacy')) is True or data.get('enable_do_not_track') is True) else '0',
         APP_MODE_KEY: '0',
@@ -841,6 +877,7 @@ def apply_profile_settings(profile_info, options_dict, logger):
             user_agent_value=user_agent_value,
             only_https=only_https,
             notifications_enabled=notifications_enabled,
+            keep_in_background=keep_in_background,
             disable_ai=disable_ai,
             set_privacy=set_privacy,
             color_scheme=color_scheme,

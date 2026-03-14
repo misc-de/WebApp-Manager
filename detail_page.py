@@ -1120,7 +1120,7 @@ class DetailPage(Gtk.Box):
 
     def _coerce_option_updates(self, updates):
         clean_updates = {key: '' if value is None else str(value) for key, value in updates.items()}
-        if self._current_browser_family() == 'firefox' and clean_updates.get(OPTION_FORCE_PRIVACY_KEY) == '1':
+        if self._current_browser_family() in {'firefox', 'chrome', 'chromium'} and clean_updates.get(OPTION_FORCE_PRIVACY_KEY) == '1':
             clean_updates[ONLY_HTTPS_KEY] = '1'
         return clean_updates
 
@@ -2840,7 +2840,7 @@ class DetailPage(Gtk.Box):
         self._set_option_value(name, '1' if value else '0')
         effective_https_enabled = bool(
             (name == ONLY_HTTPS_KEY and value)
-            or (name == OPTION_FORCE_PRIVACY_KEY and value and self._current_browser_family() == 'firefox')
+            or (name == OPTION_FORCE_PRIVACY_KEY and value and self._current_browser_family() in {'firefox', 'chrome', 'chromium'})
         )
         if effective_https_enabled:
             normalized = self._normalize_address_for_ui(self.address_entry.get_text())

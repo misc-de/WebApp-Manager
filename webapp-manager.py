@@ -69,7 +69,7 @@ from manager_integration import ensure_manager_desktop_integration, headerbar_de
 
 Adw.init()
 LOG = get_logger(__name__)
-APP_VERSION = '63n'
+APP_VERSION = '63o'
 
 
 MANAGED_IMPORT_OPTION_KEYS = [
