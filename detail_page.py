@@ -32,6 +32,7 @@ from webapp_constants import (
     PROFILE_NAME_KEY,
     PROFILE_PATH_KEY,
     ONLY_HTTPS_KEY,
+    OPTION_FORCE_PRIVACY_KEY,
     APP_MODE_KEY,
     COLOR_SCHEME_KEY,
     OPTION_ADBLOCK_KEY,
@@ -766,7 +767,7 @@ class DetailPage(Gtk.Box):
     def _restore_browser_state_for_family(self, family):
         if family == 'generic':
             return
-        state = build_family_option_state({}, family)
+        state = build_family_option_state(self._options_cache, family)
         state.update(decode_browser_state(self._options_cache.get(self._sync_browser_state_key(family), ''), family))
         self._add_options(state)
 
@@ -825,10 +826,14 @@ class DetailPage(Gtk.Box):
         self._update_export_button_state()
 
     def _set_option_value(self, option_key, value, commit=True):
-        normalized = '' if value is None else str(value)
-        self._options_cache[option_key] = normalized
-        self.db.add_option(self.entry.id, option_key, normalized, commit=commit)
-        if option_key in browser_managed_option_keys() and not option_key.startswith('__BrowserState.'):
+        updates = self._coerce_option_updates({option_key: value})
+        self._options_cache.update(updates)
+        if len(updates) == 1:
+            normalized = next(iter(updates.values()))
+            self.db.add_option(self.entry.id, option_key, normalized, commit=commit)
+        else:
+            self.db.add_options(self.entry.id, updates)
+        if any((key in browser_managed_option_keys()) and (not key.startswith('__BrowserState.')) for key in updates):
             self._sync_current_browser_state(commit=commit)
 
     def _safe_int(self, value, default=0):
@@ -1110,8 +1115,17 @@ class DetailPage(Gtk.Box):
     def _options_dict(self):
         return dict(self._options_cache)
 
-    def _add_options(self, updates):
+    def _current_browser_family(self):
+        return browser_family_for_engine(self._get_current_engine())
+
+    def _coerce_option_updates(self, updates):
         clean_updates = {key: '' if value is None else str(value) for key, value in updates.items()}
+        if self._current_browser_family() == 'firefox' and clean_updates.get(OPTION_FORCE_PRIVACY_KEY) == '1':
+            clean_updates[ONLY_HTTPS_KEY] = '1'
+        return clean_updates
+
+    def _add_options(self, updates):
+        clean_updates = self._coerce_option_updates(updates)
         if clean_updates:
             self._options_cache.update(clean_updates)
             self.db.add_options(self.entry.id, clean_updates)
@@ -2824,7 +2838,11 @@ class DetailPage(Gtk.Box):
         option_spec = OPTION_SPEC_BY_KEY.get(name)
         option_kind = option_spec.kind if option_spec else ''
         self._set_option_value(name, '1' if value else '0')
-        if name == ONLY_HTTPS_KEY and value:
+        effective_https_enabled = bool(
+            (name == ONLY_HTTPS_KEY and value)
+            or (name == OPTION_FORCE_PRIVACY_KEY and value and self._current_browser_family() == 'firefox')
+        )
+        if effective_https_enabled:
             normalized = self._normalize_address_for_ui(self.address_entry.get_text())
             if normalized != self.address_entry.get_text():
                 self.address_entry.set_text(normalized)

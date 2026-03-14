@@ -1,53 +1,20 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 
 from i18n import t
-from webapp_constants import (
-    APP_MODE_KEY,
-    COLOR_SCHEME_KEY,
-    ONLY_HTTPS_KEY,
-    OPTION_ADBLOCK_KEY,
-    OPTION_CLEAR_CACHE_ON_EXIT_KEY,
-    OPTION_CLEAR_COOKIES_ON_EXIT_KEY,
-    OPTION_DISABLE_AI_KEY,
-    OPTION_FORCE_PRIVACY_KEY,
-    OPTION_KEEP_IN_BACKGROUND_KEY,
-    OPTION_NOTIFICATIONS_KEY,
-    OPTION_PRESERVE_SESSION_KEY,
-    OPTION_SWIPE_KEY,
-    OPTION_UI_LABEL_ALIASES,
-    OPTION_UI_LABEL_KEYS,
-    USER_AGENT_NAME_KEY,
-    USER_AGENT_VALUE_KEY,
+from browser_option_registry import (
+    BrowserOptionSpec,
+    browser_managed_option_keys as registry_browser_managed_option_keys,
+    default_option_values as registry_default_option_values,
+    supported_option_keys as registry_supported_option_keys,
+    visible_browser_option_specs,
 )
+from webapp_constants import OPTION_UI_LABEL_ALIASES, OPTION_UI_LABEL_KEYS
 
 BROWSER_STATE_PREFIX = '__BrowserState.'
 
-
-@dataclass(frozen=True)
-class BrowserOptionSpec:
-    key: str
-    label_key: str
-    families: tuple[str, ...]
-    kind: str
-    visible: bool = True
-
-
-BROWSER_OPTION_SPECS: tuple[BrowserOptionSpec, ...] = (
-    BrowserOptionSpec(OPTION_PRESERVE_SESSION_KEY, 'option_previous_session', ('firefox', 'chrome', 'chromium', 'generic'), 'app_logic'),
-    BrowserOptionSpec(OPTION_KEEP_IN_BACKGROUND_KEY, 'option_keep_in_background', ('firefox',), 'profile_setting'),
-    BrowserOptionSpec(OPTION_NOTIFICATIONS_KEY, 'option_notifications', ('firefox', 'chrome', 'chromium', 'generic'), 'profile_setting'),
-    BrowserOptionSpec(OPTION_SWIPE_KEY, 'option_swipe', ('firefox',), 'extension_action'),
-    BrowserOptionSpec(OPTION_ADBLOCK_KEY, 'option_adblock', ('firefox',), 'extension_action'),
-    BrowserOptionSpec(ONLY_HTTPS_KEY, 'option_only_https', ('firefox', 'chrome', 'chromium', 'generic'), 'profile_setting'),
-    BrowserOptionSpec(OPTION_CLEAR_CACHE_ON_EXIT_KEY, 'option_delete_cache', ('firefox', 'chrome', 'chromium', 'generic'), 'shutdown_cleanup'),
-    BrowserOptionSpec(OPTION_CLEAR_COOKIES_ON_EXIT_KEY, 'option_delete_cookies', ('firefox', 'chrome', 'chromium', 'generic'), 'shutdown_cleanup'),
-    BrowserOptionSpec(OPTION_DISABLE_AI_KEY, 'option_disable_ai', ('firefox',), 'profile_setting'),
-    BrowserOptionSpec(OPTION_FORCE_PRIVACY_KEY, 'option_set_privacy', ('firefox', 'chrome', 'chromium', 'generic'), 'macro'),
-)
-
+BROWSER_OPTION_SPECS: tuple[BrowserOptionSpec, ...] = visible_browser_option_specs()
 OPTION_SPEC_BY_KEY = {spec.key: spec for spec in BROWSER_OPTION_SPECS}
 
 
@@ -84,13 +51,13 @@ def option_key_from_any(value: str | None) -> str | None:
     text = str(value).strip()
     if not text:
         return None
-    if text in OPTION_SPEC_BY_KEY:
+    if text in registry_browser_managed_option_keys():
         return text
     for key, aliases in OPTION_UI_LABEL_ALIASES.items():
         if text in aliases:
             return key
     for spec in BROWSER_OPTION_SPECS:
-        if text == t(spec.label_key):
+        if spec.label_key and text == t(spec.label_key):
             return spec.key
     return text
 
@@ -103,6 +70,7 @@ def normalize_option_dict(options: dict | None) -> dict[str, str]:
             continue
         normalized[key] = '' if raw_value is None else str(raw_value)
     return normalized
+
 
 def normalize_option_rows(rows) -> dict[str, str]:
     """Normalize DB option rows while preferring canonical keys over older aliases.
@@ -141,44 +109,27 @@ def normalize_option_rows(rows) -> dict[str, str]:
 
 
 def browser_managed_option_keys() -> set[str]:
-    return {
-        *(spec.key for spec in BROWSER_OPTION_SPECS),
-        APP_MODE_KEY,
-        'Frameless',
-        'Kiosk',
-        USER_AGENT_NAME_KEY,
-        USER_AGENT_VALUE_KEY,
-        COLOR_SCHEME_KEY,
-    }
+    return set(registry_browser_managed_option_keys())
 
 
 def supported_browser_option_keys(family: str, *, visible_only: bool = False) -> set[str]:
     family = (family or 'generic').strip().lower() or 'generic'
-    keys = set()
-    for spec in BROWSER_OPTION_SPECS:
-        if visible_only and not spec.visible:
-            continue
-        if family in spec.families or 'generic' in spec.families:
-            keys.add(spec.key)
-    return keys
+    return set(registry_supported_option_keys(family, visible_only=visible_only))
 
 
 def default_browser_option_values(family: str) -> dict[str, str]:
-    defaults = {key: '0' for key in browser_managed_option_keys()}
-    defaults[USER_AGENT_NAME_KEY] = ''
-    defaults[USER_AGENT_VALUE_KEY] = ''
-    defaults[COLOR_SCHEME_KEY] = 'auto'
-    return {key: defaults[key] for key in supported_browser_option_keys(family)}
+    family = (family or 'generic').strip().lower() or 'generic'
+    return dict(registry_default_option_values(family))
 
 
 def project_options_for_family(options: dict, family: str) -> dict[str, str]:
     normalized = normalize_option_dict(options)
     supported = supported_browser_option_keys(family)
-    projected = {key: '' if normalized.get(key) is None else str(normalized.get(key)) for key in supported if key in normalized}
-    for key in (APP_MODE_KEY, 'Frameless', 'Kiosk', USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY, COLOR_SCHEME_KEY):
-        if key in normalized:
-            projected[key] = '' if normalized.get(key) is None else str(normalized.get(key))
-    return projected
+    return {
+        key: '' if normalized.get(key) is None else str(normalized.get(key))
+        for key in supported
+        if key in normalized
+    }
 
 
 def encode_browser_state(options: dict, family: str) -> str:
