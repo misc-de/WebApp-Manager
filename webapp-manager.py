@@ -58,6 +58,7 @@ from webapp_constants import (
     OPTION_SWIPE_KEY,
 )
 from detail_page import DetailPage
+from custom_assets import count_asset_references, detach_asset_from_entries, format_asset_date, import_custom_asset, list_custom_assets, remove_custom_asset
 from i18n import available_languages, get_app_config, get_configured_language_value, invalidate_i18n_cache, save_app_config, t
 from logger_setup import get_logger
 from engine_support import available_engines, engine_icon_name
@@ -69,7 +70,7 @@ from manager_integration import ensure_manager_desktop_integration, headerbar_de
 
 Adw.init()
 LOG = get_logger(__name__)
-APP_VERSION = '63o'
+APP_VERSION = '64c'
 
 
 MANAGED_IMPORT_OPTION_KEYS = [
@@ -277,6 +278,8 @@ class MainWindow(Adw.ApplicationWindow):
 
         self.settings_page = self._build_settings_page()
         self.stack.add_named(self.settings_page, 'settings_page')
+        self.settings_assets_page = self._build_assets_settings_page()
+        self.stack.add_named(self.settings_assets_page, 'settings_assets_page')
 
         self.list_scrolled = Gtk.ScrolledWindow()
         self.list_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -474,9 +477,19 @@ class MainWindow(Adw.ApplicationWindow):
                 self.stack.remove(old_page)
             except (AttributeError, TypeError):
                 pass
+        old_assets_page = getattr(self, 'settings_assets_page', None)
+        if old_assets_page is not None:
+            try:
+                self.stack.remove(old_assets_page)
+            except (AttributeError, TypeError):
+                pass
         self.settings_page = self._build_settings_page()
         self.stack.add_named(self.settings_page, 'settings_page')
-        if previous_visible == 'settings_page':
+        self.settings_assets_page = self._build_assets_settings_page()
+        self.stack.add_named(self.settings_assets_page, 'settings_assets_page')
+        if previous_visible == 'settings_assets_page':
+            self.stack.set_visible_child_name('settings_assets_page')
+        elif previous_visible == 'settings_page':
             self.stack.set_visible_child_name('settings_page')
 
     def _refresh_translated_ui(self):
@@ -587,6 +600,24 @@ class MainWindow(Adw.ApplicationWindow):
         export_group.append(export_zip_button)
         content.append(export_group)
 
+        assets_group = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        assets_group.add_css_class('preferences-group')
+        assets_header = Gtk.Label(label=t('settings_assets_header'))
+        assets_header.add_css_class('heading')
+        assets_header.set_xalign(0)
+        assets_group.append(assets_header)
+
+        assets_hint = Gtk.Label(label=t('settings_assets_hint'))
+        assets_hint.add_css_class('dim-label')
+        assets_hint.set_wrap(True)
+        assets_hint.set_xalign(0)
+        assets_group.append(assets_hint)
+
+        assets_button = Gtk.Button(label=t('settings_assets_button'))
+        assets_button.connect('clicked', self.show_assets_settings_page)
+        assets_group.append(assets_button)
+        content.append(assets_group)
+
         about_group = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         about_group.add_css_class('preferences-group')
         about_header = Gtk.Label(label=t('settings_about_header'))
@@ -600,6 +631,155 @@ class MainWindow(Adw.ApplicationWindow):
         content.append(about_group)
 
         return outer
+
+    def _build_assets_settings_page(self):
+        outer = Gtk.ScrolledWindow()
+        outer.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        outer.set_vexpand(True)
+
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        content.set_margin_top(18)
+        content.set_margin_bottom(18)
+        content.set_margin_start(18)
+        content.set_margin_end(18)
+        outer.set_child(content)
+
+        swipe_back = Gtk.GestureSwipe.new()
+        swipe_back.connect('swipe', lambda _g, vx, _vy: self.show_settings_page() if vx > 0 else None)
+        outer.add_controller(swipe_back)
+
+        title = Gtk.Label(label=t('settings_assets_title'))
+        title.add_css_class('heading')
+        title.set_xalign(0)
+        content.append(title)
+
+        hint = Gtk.Label(label=t('settings_assets_subpage_hint'))
+        hint.add_css_class('dim-label')
+        hint.set_wrap(True)
+        hint.set_xalign(0)
+        content.append(hint)
+
+        upload_button = Gtk.Button(label=t('settings_assets_upload_button'))
+        upload_button.connect('clicked', self.on_upload_custom_asset_clicked)
+        content.append(upload_button)
+
+        self.settings_assets_empty_label = Gtk.Label(label=t('settings_assets_empty'))
+        self.settings_assets_empty_label.add_css_class('dim-label')
+        self.settings_assets_empty_label.set_wrap(True)
+        self.settings_assets_empty_label.set_xalign(0)
+        content.append(self.settings_assets_empty_label)
+
+        self.settings_assets_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        content.append(self.settings_assets_list)
+
+        self._refresh_assets_settings_list()
+        return outer
+
+    def _refresh_assets_settings_list(self):
+        assets_box = getattr(self, 'settings_assets_list', None)
+        if assets_box is None:
+            return
+        child = assets_box.get_first_child()
+        while child is not None:
+            next_child = child.get_next_sibling()
+            assets_box.remove(child)
+            child = next_child
+        assets = list_custom_assets()
+        if hasattr(self, 'settings_assets_empty_label'):
+            self.settings_assets_empty_label.set_visible(not assets)
+        for asset in assets:
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row.set_hexpand(True)
+            row.add_css_class('preferences-group')
+
+            name_label = Gtk.Label(label=str(asset.get('name') or ''), xalign=0)
+            name_label.set_hexpand(True)
+            name_label.set_wrap(True)
+            row.append(name_label)
+
+            type_label = Gtk.Label(label=str(asset.get('type') or '').upper(), xalign=0)
+            type_label.add_css_class('dim-label')
+            row.append(type_label)
+
+            date_label = Gtk.Label(label=format_asset_date(asset.get('imported_at')), xalign=0)
+            date_label.add_css_class('dim-label')
+            row.append(date_label)
+
+            delete_button = Gtk.Button(icon_name='user-trash-symbolic')
+            delete_button.add_css_class('flat')
+            delete_button.connect('clicked', lambda button, current_asset_id=asset['id']: self._confirm_delete_custom_asset(button, current_asset_id))
+            row.append(delete_button)
+            assets_box.append(row)
+
+    def show_assets_settings_page(self, *args):
+        current_child = self.stack.get_visible_child()
+        if isinstance(current_child, DetailPage):
+            return
+        self._show_back_only_header()
+        self._refresh_assets_settings_list()
+        self.stack.set_visible_child_name('settings_assets_page')
+
+    def on_upload_custom_asset_clicked(self, _button):
+        dialog = Gtk.FileDialog(title=t('settings_assets_upload_dialog_title'), modal=True)
+        try:
+            dialog.open(self, None, self._on_upload_custom_asset_selected)
+        except TypeError:
+            dialog.open(self, None, self._on_upload_custom_asset_selected)
+
+    def _on_upload_custom_asset_selected(self, dialog, result):
+        file_obj = None
+        temp_path = None
+        try:
+            if isinstance(result, Gio.File):
+                file_obj = result
+            else:
+                file_obj = dialog.open_finish(result)
+        except (AttributeError, GLib.Error, TypeError):
+            return
+        try:
+            temp_path = self._copy_gfile_to_temp_path(file_obj, suffix=Path(file_obj.get_path() or '').suffix)
+            if temp_path is None:
+                self.show_overlay_notification(t('settings_assets_upload_failed'), timeout_ms=3200)
+                return
+            asset = import_custom_asset(temp_path)
+            self._refresh_assets_settings_list()
+            self.show_overlay_notification(t('settings_assets_upload_success', name=str(asset.get('name') or '')), timeout_ms=2600)
+        except (FileNotFoundError, OSError, ValueError) as error:
+            LOG.warning('Failed to import custom asset: %s', error)
+            self.show_overlay_notification(t('settings_assets_upload_failed'), timeout_ms=3200)
+        finally:
+            if temp_path is not None and (not file_obj or not file_obj.get_path() or str(temp_path) != file_obj.get_path()):
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+    def _confirm_delete_custom_asset(self, anchor, asset_id):
+        asset = next((item for item in list_custom_assets() if item.get('id') == asset_id), None)
+        if asset is None:
+            return
+        count = count_asset_references(self.db, asset_id)
+        message = t('settings_assets_delete_confirm', name=str(asset.get('name') or ''), count=count)
+        self._present_choice_dialog(message, lambda confirmed: self._delete_custom_asset(asset_id) if confirmed else None, destructive=True)
+
+    def _delete_custom_asset(self, asset_id):
+        affected_entry_ids = detach_asset_from_entries(self.db, asset_id)
+        removed = remove_custom_asset(asset_id)
+        if removed is None:
+            return
+        self._options_cache = {}
+        for entry_id in affected_entry_ids:
+            entry = self._entry_by_id(entry_id)
+            if entry is None:
+                row = self.db.cursor.execute('SELECT id, title, description, active FROM entries WHERE id=?', (entry_id,)).fetchone()
+                if row is None:
+                    continue
+                entry = Entry(int(row[0]), str(row[1] or ''), str(row[2] or ''), bool(row[3]))
+            options = self._get_options_dict(entry_id)
+            if exportable_entry(entry, options):
+                export_desktop_file(entry, options, ENGINES, LOG)
+        self._refresh_assets_settings_list()
+        self.show_overlay_notification(t('settings_assets_delete_success', name=str(removed.get('name') or '')), timeout_ms=2600)
 
     def _read_app_version_label(self):
         return APP_VERSION
@@ -1391,6 +1571,17 @@ class MainWindow(Adw.ApplicationWindow):
         self._options_cache[entry_id] = dict(loaded)
         return loaded
 
+    def _entry_by_id(self, entry_id):
+        for index in range(self.filtered_model.get_n_items()):
+            candidate = self.filtered_model.get_item(index)
+            if candidate is not None and int(getattr(candidate, 'id', -1)) == int(entry_id):
+                return candidate
+        for index in range(self.entries_store.get_n_items()):
+            candidate = self.entries_store.get_item(index)
+            if candidate is not None and int(getattr(candidate, 'id', -1)) == int(entry_id):
+                return candidate
+        return None
+
     def _profile_display_name(self, options):
         profile_path = (options.get(PROFILE_PATH_KEY) or '').strip()
         if profile_path:
@@ -1611,7 +1802,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         self.reconcile_queue = conflicts
         if imports:
-            self._start_detected_desktop_imports(imports)
+            self._prompt_detected_desktop_imports(imports)
         else:
             self._show_next_conflict()
         return False
@@ -1626,6 +1817,22 @@ class MainWindow(Adw.ApplicationWindow):
             self.show_overlay_notification(t('desktop_detected_import_done', imported=imported_count, total=total), timeout_ms=2800)
         self._show_next_conflict()
         return False
+
+    def _prompt_detected_desktop_imports(self, file_datas):
+        items = list(file_datas or [])
+        if not items:
+            self._show_next_conflict()
+            return
+        total = len(items)
+        message = t('desktop_detected_import_prompt', total=total)
+
+        def handle_import_choice(accepted):
+            if accepted:
+                self._start_detected_desktop_imports(items)
+                return
+            self._reload_entries()
+
+        self._present_choice_dialog(message, handle_import_choice, destructive=False)
 
     def _start_detected_desktop_imports(self, file_datas):
         items = list(file_datas or [])
@@ -2083,8 +2290,17 @@ class MainWindow(Adw.ApplicationWindow):
 
     def show_list_page(self, *args):
         current_child = self.stack.get_visible_child()
-        if isinstance(current_child, DetailPage) and current_child.is_icon_page_visible():
+        current_name = None
+        try:
+            current_name = self.stack.get_visible_child_name()
+        except (AttributeError, TypeError):
+            current_name = None
+        if isinstance(current_child, DetailPage) and current_child.is_subpage_visible():
             current_child.show_main_page()
+            return
+        if current_name == 'settings_assets_page':
+            self._show_back_only_header()
+            self.stack.set_visible_child_name('settings_page')
             return
         self._restore_overview_header_actions()
         if isinstance(current_child, DetailPage):

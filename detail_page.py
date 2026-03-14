@@ -20,6 +20,16 @@ from urllib.parse import urljoin, urlparse, urlunparse
 from PIL import Image, UnidentifiedImageError
 
 from browser_profiles import delete_managed_browser_profiles, get_profile_size_bytes, firefox_extension_installed, apply_profile_settings, ensure_browser_profile, read_profile_settings
+from custom_assets import (
+    ASSET_OPTION_KEY_BY_TYPE,
+    CUSTOM_CSS_LINKS_KEY,
+    CUSTOM_JS_LINKS_KEY,
+    encode_linked_asset_ids,
+    format_asset_date,
+    get_custom_asset,
+    list_custom_assets,
+    normalize_linked_asset_ids,
+)
 from distro_utils import is_furios_distribution
 from desktop_entries import export_desktop_file, get_expected_desktop_path
 from icon_pipeline import get_managed_icon_path, normalize_icon_bytes_to_png, normalize_icon_to_png
@@ -364,6 +374,22 @@ class DetailPage(Gtk.Box):
         self.detail_action_status.set_visible(False)
         self.content_box.append(self.detail_action_status)
 
+        self.custom_assets_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        self.custom_assets_row.set_homogeneous(True)
+        self.custom_assets_row.set_margin_top(6)
+
+        self.add_css_button = Gtk.Button(label=t('detail_add_css_button'))
+        self.add_css_button.set_hexpand(True)
+        self.add_css_button.connect('clicked', lambda _button: self.show_asset_page('css'))
+        self.custom_assets_row.append(self.add_css_button)
+
+        self.add_js_button = Gtk.Button(label=t('detail_add_javascript_button'))
+        self.add_js_button.set_hexpand(True)
+        self.add_js_button.connect('clicked', lambda _button: self.show_asset_page('javascript'))
+        self.custom_assets_row.append(self.add_js_button)
+
+        self.content_box.append(self.custom_assets_row)
+
         self.export_import_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self.export_import_row.set_homogeneous(True)
         self.export_import_row.set_margin_top(6)
@@ -395,6 +421,9 @@ class DetailPage(Gtk.Box):
         self._option_row_widgets = {}
 
         self._build_icon_page()
+        self._asset_page_state = {}
+        self._build_asset_page('css')
+        self._build_asset_page('javascript')
         self.refresh_icon_preview()
         self._update_export_button_state()
         self._update_browser_dependent_controls()
@@ -667,6 +696,182 @@ class DetailPage(Gtk.Box):
 
         self.page_stack.add_named(self.icon_page, 'icon')
 
+    def _asset_option_key(self, asset_type):
+        return ASSET_OPTION_KEY_BY_TYPE['css' if asset_type == 'css' else 'javascript']
+
+    def _linked_asset_ids(self, asset_type):
+        key = self._asset_option_key(asset_type)
+        return normalize_linked_asset_ids(self._get_option_value(key), asset_type=asset_type)
+
+    def _linked_assets(self, asset_type):
+        items = []
+        for asset_id in self._linked_asset_ids(asset_type):
+            asset = get_custom_asset(asset_id)
+            if asset is not None:
+                items.append(asset)
+        return items
+
+    def _set_linked_assets(self, asset_type, asset_ids):
+        key = self._asset_option_key(asset_type)
+        encoded = encode_linked_asset_ids(asset_ids, asset_type=asset_type)
+        self._set_option_value(key, encoded)
+        self._refresh_asset_page(asset_type)
+        self.save_desktop_file()
+
+    def _build_asset_page(self, asset_type):
+        page_name = 'css_assets' if asset_type == 'css' else 'javascript_assets'
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        page.set_margin_top(12)
+        page.set_margin_bottom(12)
+        page.set_margin_start(12)
+        page.set_margin_end(12)
+        page.set_valign(Gtk.Align.START)
+        page.set_vexpand(False)
+        page.set_hexpand(True)
+
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        content.set_halign(Gtk.Align.FILL)
+        content.set_margin_top(12)
+        content.set_margin_bottom(12)
+        page.append(content)
+
+        title = Gtk.Label(label=t('detail_asset_page_title_css' if asset_type == 'css' else 'detail_asset_page_title_javascript'))
+        title.add_css_class('heading')
+        title.set_xalign(0)
+        content.append(title)
+
+        hint = Gtk.Label(label=t('detail_asset_page_hint_css' if asset_type == 'css' else 'detail_asset_page_hint_javascript'))
+        hint.set_xalign(0)
+        hint.set_wrap(True)
+        hint.add_css_class('dim-label')
+        content.append(hint)
+
+        selector_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        selector_row.set_hexpand(True)
+        content.append(selector_row)
+
+        dropdown = Gtk.DropDown.new_from_strings([t('detail_asset_dropdown_none')])
+        dropdown.set_hexpand(True)
+        selector_row.append(dropdown)
+
+        add_button = Gtk.Button(label=t('detail_asset_add_selected_css' if asset_type == 'css' else 'detail_asset_add_selected_javascript'))
+        add_button.connect('clicked', lambda _button, current_type=asset_type: self._add_selected_asset(current_type))
+        selector_row.append(add_button)
+
+        current_header = Gtk.Label(label=t('detail_asset_linked_css' if asset_type == 'css' else 'detail_asset_linked_javascript'))
+        current_header.add_css_class('heading')
+        current_header.set_xalign(0)
+        current_header.set_margin_top(4)
+        content.append(current_header)
+
+        empty_label = Gtk.Label(label=t('detail_asset_empty_css' if asset_type == 'css' else 'detail_asset_empty_javascript'))
+        empty_label.set_xalign(0)
+        empty_label.add_css_class('dim-label')
+        empty_label.set_wrap(True)
+        content.append(empty_label)
+
+        selected_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        content.append(selected_list)
+
+        note_label = Gtk.Label(label='')
+        note_label.set_xalign(0)
+        note_label.set_wrap(True)
+        note_label.add_css_class('dim-label')
+        note_label.set_visible(False)
+        content.append(note_label)
+
+        self._asset_page_state[asset_type] = {
+            'page': page,
+            'dropdown': dropdown,
+            'dropdown_ids': [],
+            'selected_list': selected_list,
+            'empty_label': empty_label,
+            'note_label': note_label,
+        }
+        self.page_stack.add_named(page, page_name)
+
+    def _refresh_asset_pages(self):
+        for asset_type in list(getattr(self, '_asset_page_state', {}).keys()):
+            self._refresh_asset_page(asset_type)
+
+    def _refresh_asset_page(self, asset_type):
+        state = getattr(self, '_asset_page_state', {}).get(asset_type)
+        if not state:
+            return
+        available_assets = [asset for asset in list_custom_assets() if asset.get('type') == asset_type]
+        labels = [t('detail_asset_dropdown_none')] + [f"{asset['name']} ({asset.get('type', '').upper()})" for asset in available_assets]
+        dropdown_ids = [''] + [asset['id'] for asset in available_assets]
+        new_dropdown = Gtk.DropDown.new_from_strings(labels)
+        new_dropdown.set_hexpand(True)
+        try:
+            old_dropdown = state['dropdown']
+            parent = old_dropdown.get_parent()
+            if parent is not None:
+                parent.remove(old_dropdown)
+                parent.prepend(new_dropdown)
+        except (AttributeError, TypeError):
+            pass
+        state['dropdown'] = new_dropdown
+        state['dropdown_ids'] = dropdown_ids
+
+        selected_list = state['selected_list']
+        child = selected_list.get_first_child()
+        while child is not None:
+            next_child = child.get_next_sibling()
+            selected_list.remove(child)
+            child = next_child
+
+        linked_assets = self._linked_assets(asset_type)
+        state['empty_label'].set_visible(not linked_assets)
+        for asset in linked_assets:
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            row.set_hexpand(True)
+
+            text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            text_box.set_hexpand(True)
+            name_label = Gtk.Label(label=str(asset.get('name') or ''), xalign=0)
+            name_label.set_wrap(True)
+            meta_label = Gtk.Label(label=f"{asset.get('type', '').upper()} - {format_asset_date(asset.get('imported_at'))}", xalign=0)
+            meta_label.add_css_class('dim-label')
+            text_box.append(name_label)
+            text_box.append(meta_label)
+            row.append(text_box)
+
+            delete_button = Gtk.Button(icon_name='user-trash-symbolic')
+            delete_button.add_css_class('flat')
+            delete_button.connect('clicked', lambda button, current_type=asset_type, current_asset_id=asset['id'], current_name=str(asset.get('name') or ''): self._confirm_remove_linked_asset(button, current_type, current_asset_id, current_name))
+            row.append(delete_button)
+            selected_list.append(row)
+
+        note_label = state['note_label']
+        if asset_type == 'javascript' and self._current_browser_family() == 'firefox':
+            note_label.set_text(t('detail_asset_firefox_js_note'))
+            note_label.set_visible(True)
+        else:
+            note_label.set_visible(False)
+
+    def _add_selected_asset(self, asset_type):
+        state = self._asset_page_state.get(asset_type)
+        if not state:
+            return
+        dropdown = state['dropdown']
+        index = int(dropdown.get_selected())
+        if index <= 0 or index >= len(state['dropdown_ids']):
+            return
+        asset_id = state['dropdown_ids'][index]
+        current = self._linked_asset_ids(asset_type)
+        if asset_id not in current:
+            current.append(asset_id)
+            self._set_linked_assets(asset_type, current)
+
+    def _confirm_remove_linked_asset(self, anchor, asset_type, asset_id, asset_name):
+        label_key = 'detail_asset_remove_css_confirm' if asset_type == 'css' else 'detail_asset_remove_javascript_confirm'
+        self._present_choice_dialog(anchor, t(label_key, name=asset_name), lambda confirmed: self._remove_linked_asset(asset_type, asset_id) if confirmed else None, destructive=True)
+
+    def _remove_linked_asset(self, asset_type, asset_id):
+        current = [item for item in self._linked_asset_ids(asset_type) if item != asset_id]
+        self._set_linked_assets(asset_type, current)
+
     def _build_engine_user_agents(self):
         by_engine = {}
         for engine in self.engines_list:
@@ -823,6 +1028,7 @@ class DetailPage(Gtk.Box):
         self._refresh_profile_button_label()
         self._refresh_header_meta()
         self._update_browser_dependent_controls()
+        self._refresh_asset_pages()
         self._update_export_button_state()
 
     def _set_option_value(self, option_key, value, commit=True):
@@ -1213,8 +1419,9 @@ class DetailPage(Gtk.Box):
     def _supported_option_names(self, engine):
         if not engine:
             return set()
-        supported = supported_browser_option_keys(browser_family_for_engine(engine), visible_only=True)
-        if OPTION_KEEP_IN_BACKGROUND_KEY in supported and not is_furios_distribution():
+        family = browser_family_for_engine(engine)
+        supported = supported_browser_option_keys(family, visible_only=True)
+        if family == 'firefox' and OPTION_KEEP_IN_BACKGROUND_KEY in supported and not is_furios_distribution():
             supported.discard(OPTION_KEEP_IN_BACKGROUND_KEY)
         return {name for name in self._option_names_in_order() if name in supported}
 
@@ -2103,9 +2310,17 @@ class DetailPage(Gtk.Box):
     def is_icon_page_visible(self):
         return self.page_stack.get_visible_child_name() == 'icon'
 
+    def is_subpage_visible(self):
+        return self.page_stack.get_visible_child_name() != 'main'
+
     def show_main_page(self):
         self.page_stack.set_visible_child_name('main')
         self._suspend_change_handlers = False
+
+    def show_asset_page(self, asset_type):
+        page_name = 'css_assets' if asset_type == 'css' else 'javascript_assets'
+        self.page_stack.set_visible_child_name(page_name)
+        self._refresh_asset_page(asset_type)
 
     def on_icon_download_clicked(self, button):
         if self._icon_download_in_progress:
@@ -2867,7 +3082,7 @@ class DetailPage(Gtk.Box):
 
     def on_swipe(self, gesture, velocity_x, velocity_y):
         if velocity_x > 0:
-            if self.is_icon_page_visible():
+            if self.is_subpage_visible():
                 self.show_main_page()
             else:
                 self.on_back()

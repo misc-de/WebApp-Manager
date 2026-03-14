@@ -21,6 +21,7 @@ from browser_profiles import (
     normalize_color_scheme,
     resolve_browser_command,
 )
+from custom_assets import chromium_runtime_extension_args
 from icon_pipeline import (
     _allowed_managed_icon_stems,
     _is_safe_managed_icon_path,
@@ -389,6 +390,7 @@ def export_desktop_file(entry, options_dict, engines_list, logger):
     color_scheme = normalize_color_scheme(merged_options.get(COLOR_SCHEME_KEY, 'auto'))
     if profile_info:
         exec_parts.extend(profile_info['exec_args'])
+        exec_parts.extend(chromium_runtime_extension_args(profile_info, merged_options))
     if merged_options.get('Kiosk', '0') == '1':
         exec_parts.append('--kiosk')
     chrome_feature_flags = []

@@ -9,6 +9,8 @@ PROFILE_PATH_KEY = 'ProfilePath'
 ONLY_HTTPS_KEY = 'Only HTTPS'
 APP_MODE_KEY = 'App Mode'
 COLOR_SCHEME_KEY = 'Color Scheme'
+CUSTOM_CSS_LINKS_KEY = 'Custom CSS Links'
+CUSTOM_JS_LINKS_KEY = 'Custom JavaScript Links'
 
 OPTION_PRESERVE_SESSION_KEY = 'Previous Session'
 OPTION_KEEP_IN_BACKGROUND_KEY = 'Keep in Background'
@@ -35,7 +37,7 @@ OPTION_UI_LABEL_KEYS = {
 
 OPTION_UI_LABEL_ALIASES = {
     OPTION_PRESERVE_SESSION_KEY: {'Keep Session', 'Previous Session', 'Session nach dem Schließen erhalten'},
-    OPTION_KEEP_IN_BACKGROUND_KEY: {'Keep in Background', 'Keep Firefox in the Background'},
+    OPTION_KEEP_IN_BACKGROUND_KEY: {'Keep in Background', 'Keep Firefox in the Background', 'Keep App in the Background'},
     OPTION_NOTIFICATIONS_KEY: {'Allow Notifications', 'Notifications', 'Benachrichtigungen erlauben'},
     OPTION_SWIPE_KEY: {'Add Swipe Plugin', 'Swipe', 'Swipe-Plugin hinzufügen', 'Firefox Swipe-Unterstützung installieren'},
     OPTION_ADBLOCK_KEY: {'Add Adblock Plugin', 'Adblock', 'Adblock-Plugin hinzufügen', 'Firefox Adblock installieren'},
@@ -51,4 +53,4 @@ ICON_THEME_APPS_DIR = Path.home() / '.local/share/icons' / 'hicolor' / '512x512'
 FIREFOX_ROOT = Path.home() / '.mozilla' / 'firefox'
 CHROMIUM_PROFILE_ROOT = Path.home() / '.config' / 'webapp-browser-profiles'
 
-NON_PORTABLE_WAPP_OPTION_KEYS = frozenset({ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY})
+NON_PORTABLE_WAPP_OPTION_KEYS = frozenset({ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, CUSTOM_CSS_LINKS_KEY, CUSTOM_JS_LINKS_KEY})
