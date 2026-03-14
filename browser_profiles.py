@@ -119,6 +119,7 @@ def get_profile_size_bytes(profile_path):
 
 def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_session, user_agent_value='', only_https=False, notifications_enabled=False, swipe_enabled=False, keep_in_background=False, startup_url='', app_mode=False, native_window_frame=False, disable_ai=False, set_privacy=False, color_scheme='auto'):
     profile_dir = Path(profile_dir)
+    only_https = bool(only_https or set_privacy)
     user_js = profile_dir / 'user.js'
     start_marker = '// WEBAPP MANAGED START\n'
     end_marker = '// WEBAPP MANAGED END\n'
@@ -158,6 +159,9 @@ def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_ses
         'browser.gesture.swipe.right': 'Browser:ForwardOrForwardDuplicate' if swipe_enabled else '',
         'toolkit.legacyUserProfileCustomizations.stylesheets': bool(app_mode),
         'browser.tabs.inTitlebar': 0 if native_window_frame else 1,
+        'browser.newtabpage.activity-stream.feeds.topsites': False,
+        'browser.newtabpage.activity-stream.feeds.system.topsites': False,
+        'browser.translations.automaticallyPopup': False,
     }
     if disable_ai:
         prefs.update({
@@ -218,9 +222,16 @@ def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_ses
             'browser.search.region': 'DE',
             'browser.search.countryCode': 'DE',
             'browser.search.defaultenginename': 'DuckDuckGo',
+            'browser.search.defaultenginename.US': 'DuckDuckGo',
             'browser.search.order.1': 'DuckDuckGo',
             'browser.search.selectedEngine': 'DuckDuckGo',
             'browser.search.defaultEngine': 'DuckDuckGo',
+            'browser.urlbar.placeholderName': 'DuckDuckGo',
+            'browser.urlbar.placeholderName.private': 'DuckDuckGo',
+            'layout.spellcheckDefault': 0,
+            'places.history.enabled': False,
+            'browser.formfill.enable': False,
+            'datareporting.usage.uploadEnabled': False,
             'browser.newtabpage.activity-stream.showSearch': False,
             'browser.newtabpage.activity-stream.feeds.section.topstories': False,
             'browser.newtabpage.activity-stream.feeds.section.highlights': False,
@@ -711,6 +722,14 @@ def _read_firefox_profile_settings(profile_dir):
     mode_name = mode_marker.group(1) if mode_marker else ''
     frameless = mode_name in {'seamless', 'kiosk'}
     app_mode_enabled = mode_name in {'app', 'seamless', 'kiosk'}
+    privacy_enabled = bool(
+        prefs.get('toolkit.telemetry.enabled') is False
+        or prefs.get('privacy.globalprivacycontrol.enabled') is True
+        or prefs.get('privacy.donottrackheader.enabled') is True
+        or prefs.get('datareporting.healthreport.uploadEnabled') is False
+        or prefs.get('datareporting.usage.uploadEnabled') is False
+    )
+    only_https_enabled = bool(prefs.get('dom.security.https_only_mode')) or privacy_enabled
     return {
         OPTION_CLEAR_CACHE_ON_EXIT_KEY: '1' if prefs.get('privacy.clearOnShutdown.cache') or prefs.get('privacy.clearOnShutdown_v2.cache') else '0',
         OPTION_CLEAR_COOKIES_ON_EXIT_KEY: '1' if prefs.get('privacy.clearOnShutdown.cookies') or prefs.get('privacy.clearOnShutdown_v2.cookiesAndStorage') else '0',
@@ -718,10 +737,10 @@ def _read_firefox_profile_settings(profile_dir):
         OPTION_PRESERVE_SESSION_KEY: '1' if prefs.get('browser.startup.page') == 3 else '0',
         OPTION_NOTIFICATIONS_KEY: '1' if prefs.get('permissions.default.desktop-notification') == 1 else '0',
         OPTION_SWIPE_KEY: '1' if swipe or bool(prefs.get('browser.gesture.swipe.left')) else '0',
-        ONLY_HTTPS_KEY: '1' if prefs.get('dom.security.https_only_mode') else '0',
+        ONLY_HTTPS_KEY: '1' if only_https_enabled else '0',
         OPTION_KEEP_IN_BACKGROUND_KEY: '1' if (prefs.get('furi.browser.preload.disabled') is False or ('furi.browser.preload.disabled' not in prefs and prefs.get('browser.tabs.closeWindowWithLastTab') is False)) else '0',
         OPTION_DISABLE_AI_KEY: '1' if (prefs.get('browser.ml.chat.enabled') is False or prefs.get('browser.tabs.groups.smart.enabled') is False or prefs.get('browser.ml.linkPreview.enabled') is False) else '0',
-        OPTION_FORCE_PRIVACY_KEY: '1' if (prefs.get('toolkit.telemetry.enabled') is False or prefs.get('privacy.globalprivacycontrol.enabled') is True or prefs.get('privacy.donottrackheader.enabled') is True) else '0',
+        OPTION_FORCE_PRIVACY_KEY: '1' if privacy_enabled else '0',
         APP_MODE_KEY: '1' if app_mode_enabled or prefs.get('toolkit.legacyUserProfileCustomizations.stylesheets') else '0',
         'Frameless': '1' if frameless else '0',
         USER_AGENT_VALUE_KEY: prefs.get('general.useragent.override', '') or '',
@@ -789,6 +808,8 @@ def apply_profile_settings(profile_info, options_dict, logger):
     set_privacy = scoped_options.get(OPTION_FORCE_PRIVACY_KEY, '0') == '1'
     color_scheme = normalize_color_scheme(scoped_options.get(COLOR_SCHEME_KEY, 'auto'))
     if family == 'firefox' and profile_path:
+        if set_privacy:
+            only_https = True
         _write_firefox_user_js(
             profile_path,
             clear_cache,
