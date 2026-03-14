@@ -14,6 +14,7 @@ from pathlib import Path
 from distro_utils import is_furios_distribution
 
 from i18n import get_app_config
+from custom_assets import ensure_profile_customizations, linked_assets_for_options
 from browser_option_logic import normalize_option_dict, project_options_for_family
 from input_validation import build_safe_slug, sanitize_desktop_value
 from webapp_constants import (
@@ -117,7 +118,7 @@ def get_profile_size_bytes(profile_path):
                 pass
     return total
 
-def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_session, user_agent_value='', only_https=False, notifications_enabled=False, swipe_enabled=False, keep_in_background=False, startup_url='', app_mode=False, native_window_frame=False, disable_ai=False, set_privacy=False, color_scheme='auto'):
+def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_session, user_agent_value='', only_https=False, notifications_enabled=False, swipe_enabled=False, keep_in_background=False, startup_url='', app_mode=False, native_window_frame=False, disable_ai=False, set_privacy=False, color_scheme='auto', custom_css_enabled=False, custom_js_enabled=False):
     profile_dir = Path(profile_dir)
     only_https = bool(only_https or set_privacy)
     user_js = profile_dir / 'user.js'
@@ -157,11 +158,12 @@ def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_ses
         'permissions.default.desktop-notification': 1 if notifications_enabled else 0,
         'browser.gesture.swipe.left': 'Browser:BackOrBackDuplicate' if swipe_enabled else '',
         'browser.gesture.swipe.right': 'Browser:ForwardOrForwardDuplicate' if swipe_enabled else '',
-        'toolkit.legacyUserProfileCustomizations.stylesheets': bool(app_mode),
+        'toolkit.legacyUserProfileCustomizations.stylesheets': bool(app_mode or custom_css_enabled),
         'browser.tabs.inTitlebar': 0 if native_window_frame else 1,
         'browser.newtabpage.activity-stream.feeds.topsites': False,
         'browser.newtabpage.activity-stream.feeds.system.topsites': False,
         'browser.translations.automaticallyPopup': False,
+        'xpinstall.signatures.required': False if custom_js_enabled else True,
     }
     if disable_ai:
         prefs.update({
@@ -843,6 +845,8 @@ def apply_profile_settings(profile_info, options_dict, logger):
     disable_ai = scoped_options.get(OPTION_DISABLE_AI_KEY, '0') == '1'
     set_privacy = scoped_options.get(OPTION_FORCE_PRIVACY_KEY, '0') == '1'
     color_scheme = normalize_color_scheme(scoped_options.get(COLOR_SCHEME_KEY, 'auto'))
+    custom_css_enabled = bool(linked_assets_for_options(options_dict, 'css'))
+    custom_js_enabled = bool(linked_assets_for_options(options_dict, 'javascript'))
     if family == 'firefox' and profile_path:
         if set_privacy:
             only_https = True
@@ -862,10 +866,14 @@ def apply_profile_settings(profile_info, options_dict, logger):
             disable_ai=disable_ai,
             set_privacy=set_privacy,
             color_scheme=color_scheme,
+            custom_css_enabled=custom_css_enabled,
+            custom_js_enabled=custom_js_enabled,
         )
         _sync_firefox_app_mode_css(profile_path, app_mode or kiosk, frameless, kiosk, logger)
         _sync_firefox_adblock(profile_path, adblock, logger)
         _sync_firefox_swipe_extension(profile_path, swipe_enabled, logger)
+        ensure_profile_customizations(profile_info, options_dict, logger)
+        _invalidate_firefox_extension_state(profile_path, logger)
         return
     if family in {'chrome', 'chromium'} and profile_path:
         _write_chromium_preferences(
@@ -882,6 +890,7 @@ def apply_profile_settings(profile_info, options_dict, logger):
             set_privacy=set_privacy,
             color_scheme=color_scheme,
         )
+        ensure_profile_customizations(profile_info, options_dict, logger)
         return
 
 def resolve_browser_command(configured_command, logger):
