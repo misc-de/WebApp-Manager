@@ -69,7 +69,7 @@ from manager_integration import ensure_manager_desktop_integration, headerbar_de
 
 Adw.init()
 LOG = get_logger(__name__)
-APP_VERSION = '66l'
+APP_VERSION = '66s'
 
 
 MANAGED_IMPORT_OPTION_KEYS = [
@@ -506,6 +506,15 @@ class MainWindow(Adw.ApplicationWindow):
             return bool(self.overview_split_view.get_show_content())
         except (AttributeError, TypeError):
             return False
+
+    def _adaptive_real_detail_visible(self):
+        current_detail = self._overview_detail_visible_child()
+        return bool(
+            self._adaptive_split_enabled
+            and current_detail is not None
+            and current_detail is not self.detail_placeholder
+            and self._adaptive_overview_showing_content()
+        )
 
     def _is_overview_child_visible(self, child):
         if child is None:
@@ -988,9 +997,8 @@ class MainWindow(Adw.ApplicationWindow):
             assets_box.append(row)
 
     def show_assets_settings_page(self, *args):
-        current_detail = self._overview_detail_visible_child()
         if self._adaptive_split_enabled:
-            if self._adaptive_narrow_mode and isinstance(current_detail, DetailPage):
+            if self._adaptive_narrow_mode and self._adaptive_real_detail_visible() and isinstance(self._overview_detail_visible_child(), DetailPage):
                 return
             self._refresh_assets_settings_list()
             self._set_overview_detail_visible(self.settings_assets_page, t('settings_assets_title'))
@@ -1209,12 +1217,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._show_back_only_header()
             return
         if self._adaptive_split_enabled and self.overview_split_view is not None:
-            is_real_detail = (
-                current_detail is not None
-                and current_detail is not self.detail_placeholder
-                and self._adaptive_overview_showing_content()
-            )
-            if is_real_detail:
+            if self._adaptive_real_detail_visible():
                 self._show_back_only_header()
                 return
             self.header_bar.set_title_widget(None)
@@ -1267,9 +1270,8 @@ class MainWindow(Adw.ApplicationWindow):
             return False
 
     def show_settings_page(self, *args):
-        current_detail = self._overview_detail_visible_child()
         if self._adaptive_split_enabled:
-            if self._adaptive_narrow_mode and isinstance(current_detail, DetailPage):
+            if self._adaptive_narrow_mode and self._adaptive_real_detail_visible() and isinstance(self._overview_detail_visible_child(), DetailPage):
                 return
             self._set_overview_detail_visible(self.settings_page, t('settings_title'))
             self.stack.set_visible_child_name('overview_page')

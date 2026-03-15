@@ -257,7 +257,7 @@ class DetailPage(Gtk.Box):
         self.options_page_content.set_margin_top(12)
         self.options_page_content.set_margin_bottom(12)
         self.options_page.append(self.options_page_content)
-        self.page_stack.add_named(self.options_page, 'options')
+        self.page_stack.add_named(self._adaptive_wrap_page(self.options_page), 'options')
 
         self.top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.top_row.set_valign(Gtk.Align.START)
@@ -538,16 +538,6 @@ class DetailPage(Gtk.Box):
         GLib.idle_add(self._finish_initial_detail_setup)
 
     def _adaptive_wrap_page(self, child, maximum_size=820, tightening_threshold=560):
-        if hasattr(Adw, 'Clamp'):
-            clamp = Adw.Clamp()
-            clamp.set_hexpand(True)
-            clamp.set_valign(Gtk.Align.START)
-            if hasattr(clamp, 'set_maximum_size'):
-                clamp.set_maximum_size(maximum_size)
-            if hasattr(clamp, 'set_tightening_threshold'):
-                clamp.set_tightening_threshold(tightening_threshold)
-            clamp.set_child(child)
-            return clamp
         return child
 
     def _effective_layout_width(self):
@@ -664,26 +654,42 @@ class DetailPage(Gtk.Box):
                 self.grid.attach(self.engine_spacer, 0, row, 2, 1)
                 row += 1
 
+    def _subpage_side_inset(self, compact):
+        return 0
+
     def _apply_subpage_adaptive_layout(self, force=False):
         compact = self._is_compact_layout()
         if not force and self._subpage_compact == compact:
             return
         self._subpage_compact = compact
 
-        main_margin = 8 if compact else 12
+        vertical_margin = 8 if compact else 12
+        side_margin = 20 if compact else 12
         inner_margin = 8 if compact else 12
+        side_inset = self._subpage_side_inset(compact)
 
-        self.content_box.set_margin_top(main_margin)
-        self.content_box.set_margin_bottom(main_margin)
-        self.content_box.set_margin_start(main_margin)
-        self.content_box.set_margin_end(main_margin)
+        self.content_box.set_margin_top(vertical_margin)
+        self.content_box.set_margin_bottom(vertical_margin)
+        self.content_box.set_margin_start(side_margin)
+        self.content_box.set_margin_end(side_margin)
 
-        self.icon_page.set_margin_top(main_margin)
-        self.icon_page.set_margin_bottom(main_margin)
-        self.icon_page.set_margin_start(main_margin)
-        self.icon_page.set_margin_end(main_margin)
+        self.options_page.set_margin_top(vertical_margin)
+        self.options_page.set_margin_bottom(vertical_margin)
+        self.options_page.set_margin_start(side_margin)
+        self.options_page.set_margin_end(side_margin)
+        self.options_page_content.set_margin_top(inner_margin)
+        self.options_page_content.set_margin_bottom(inner_margin)
+        self.options_page_content.set_margin_start(side_inset)
+        self.options_page_content.set_margin_end(side_inset)
+
+        self.icon_page.set_margin_top(vertical_margin)
+        self.icon_page.set_margin_bottom(vertical_margin)
+        self.icon_page.set_margin_start(side_margin)
+        self.icon_page.set_margin_end(side_margin)
         self.icon_page_content.set_margin_top(inner_margin)
         self.icon_page_content.set_margin_bottom(inner_margin)
+        self.icon_page_content.set_margin_start(side_inset)
+        self.icon_page_content.set_margin_end(side_inset)
         self.icon_page_content.set_spacing(8 if compact else 4)
         self.icon_page_progress_box.set_margin_top(8 if compact else 10)
         self.icon_page_progress_box.set_margin_bottom(10 if compact else 12)
@@ -698,12 +704,14 @@ class DetailPage(Gtk.Box):
             content = state['content']
             selector_row = state['selector_row']
             add_button = state['add_button']
-            page.set_margin_top(main_margin)
-            page.set_margin_bottom(main_margin)
-            page.set_margin_start(main_margin)
-            page.set_margin_end(main_margin)
+            page.set_margin_top(vertical_margin)
+            page.set_margin_bottom(vertical_margin)
+            page.set_margin_start(side_margin)
+            page.set_margin_end(side_margin)
             content.set_margin_top(inner_margin)
             content.set_margin_bottom(inner_margin)
+            content.set_margin_start(side_inset)
+            content.set_margin_end(side_inset)
             content.set_spacing(8 if compact else 10)
             selector_row.set_orientation(Gtk.Orientation.VERTICAL if compact else Gtk.Orientation.HORIZONTAL)
             selector_row.set_spacing(8)
@@ -837,11 +845,11 @@ class DetailPage(Gtk.Box):
         column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8 if compact else 6)
         column.set_hexpand(True)
         grouped_option_names = self._grouped_visible_option_names()
-        if compact and grouped_option_names:
-            spacer = Gtk.Box()
-            spacer.set_size_request(-1, 18)
-            spacer.set_hexpand(True)
-            column.append(spacer)
+        if compact:
+            top_spacer = Gtk.Box()
+            top_spacer.set_size_request(-1, 18)
+            top_spacer.set_hexpand(True)
+            column.append(top_spacer)
         first_group = True
         for category_name, option_names in grouped_option_names:
             if not first_group:
@@ -861,6 +869,13 @@ class DetailPage(Gtk.Box):
                 row.set_halign(Gtk.Align.FILL)
                 row.set_valign(Gtk.Align.CENTER)
                 row.set_margin_top(0)
+                row.set_margin_bottom(0)
+                row.set_margin_start(0)
+                row.set_margin_end(0)
+                try:
+                    row.add_css_class('option-row')
+                except Exception:
+                    pass
                 label = Gtk.Label(halign=Gtk.Align.START)
                 label.set_use_markup(True)
                 label.set_markup(option_ui_label_markup(option_name))
@@ -875,6 +890,10 @@ class DetailPage(Gtk.Box):
                 switch_wrap.append(self._create_option_switch(option_name))
                 row.append(label)
                 row.append(switch_wrap)
+                controller = Gtk.EventControllerMotion()
+                controller.connect('enter', lambda ctrl, x, y, current_row=row: current_row.add_css_class('option-row-hover'))
+                controller.connect('leave', lambda ctrl, current_row=row: current_row.remove_css_class('option-row-hover'))
+                row.add_controller(controller)
                 column.append(row)
                 self._option_row_widgets[option_name] = [label, switch_wrap, self.switches[option_name], row]
             first_group = False
@@ -1083,7 +1102,7 @@ class DetailPage(Gtk.Box):
         self.icon_page_content.append(self.icon_delete_button)
         self._icon_page_buttons = [self.icon_download_button, self.icon_upload_button, self.icon_delete_button]
 
-        self.page_stack.add_named(self.icon_page, 'icon')
+        self.page_stack.add_named(self._adaptive_wrap_page(self.icon_page), 'icon')
 
     def _asset_option_key(self, asset_type):
         return ASSET_OPTION_KEY_BY_TYPE['css' if asset_type == 'css' else 'javascript']
@@ -1452,7 +1471,7 @@ class DetailPage(Gtk.Box):
             'inline_buffer': inline_buffer,
             'note_label': note_label,
         }
-        self.page_stack.add_named(page, page_name)
+        self.page_stack.add_named(self._adaptive_wrap_page(page), page_name)
 
     def _refresh_asset_pages(self):
         for asset_type in list(getattr(self, '_asset_page_state', {}).keys()):

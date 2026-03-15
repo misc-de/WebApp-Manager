@@ -267,3 +267,16 @@ listview row:hover > box {
   background-color: @view_bg_color;
   color: @view_fg_color;
 }
+
+
+.option-row {
+    min-height: 34px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    transition: background-color 120ms ease;
+}
+
+.option-row-hover,
+.option-row:hover {
+    background: alpha(currentColor, 0.05);
+}
