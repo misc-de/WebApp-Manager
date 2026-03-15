@@ -69,7 +69,7 @@ from manager_integration import ensure_manager_desktop_integration, headerbar_de
 
 Adw.init()
 LOG = get_logger(__name__)
-APP_VERSION = '65o'
+APP_VERSION = '66l'
 
 
 MANAGED_IMPORT_OPTION_KEYS = [
@@ -212,6 +212,11 @@ class MainWindow(Adw.ApplicationWindow):
             self.settings_button.set_can_shrink(True)
         self.settings_button.set_tooltip_text(t('settings_title'))
         self.settings_button.connect('clicked', self.show_settings_page)
+        self.assets_button = Gtk.Button(icon_name='folder-download-symbolic')
+        if hasattr(self.assets_button, 'set_can_shrink'):
+            self.assets_button.set_can_shrink(True)
+        self.assets_button.set_tooltip_text(t('settings_assets_title'))
+        self.assets_button.connect('clicked', self.show_assets_settings_page)
         self.back_button = Gtk.Button.new_from_icon_name('go-previous-symbolic')
         if hasattr(self.back_button, 'set_can_shrink'):
             self.back_button.set_can_shrink(True)
@@ -220,6 +225,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.header_bar.pack_start(self.refresh_button)
         self.header_bar.pack_start(self.back_button)
         self.header_bar.pack_start(self.settings_button)
+        self.header_bar.pack_end(self.assets_button)
         self.header_bar.pack_end(self.add_button)
         self.list_title_widget = self._build_list_title_widget()
         self.header_bar.set_title_widget(self.list_title_widget)
@@ -561,12 +567,15 @@ class MainWindow(Adw.ApplicationWindow):
     def _show_overview_root_page(self):
         if self._adaptive_split_enabled:
             self._set_overview_placeholder_visible()
+            if not self.search_visible:
+                self._show_overview_header()
             return
         try:
             self.content_stack.set_visible_child_name('list_page')
         except (AttributeError, TypeError, GLib.Error):
             pass
-        self._show_overview_header()
+        if not self.search_visible:
+            self._show_overview_header()
 
     def _configure_adaptive_breakpoints(self):
         if not self._adaptive_split_enabled:
@@ -827,7 +836,7 @@ class MainWindow(Adw.ApplicationWindow):
         content.set_margin_bottom(18)
         content.set_margin_start(18)
         content.set_margin_end(18)
-        outer.set_child(self._wrap_page_with_clamp(content))
+        outer.set_child(content)
 
         swipe_back = Gtk.GestureSwipe.new()
         swipe_back.connect('swipe', lambda _g, vx, _vy: self.show_list_page() if vx > 0 else None)
@@ -880,25 +889,6 @@ class MainWindow(Adw.ApplicationWindow):
         export_group.append(export_zip_button)
         content.append(export_group)
 
-        assets_group = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        assets_group.add_css_class('preferences-group')
-        assets_header = Gtk.Label(label=t('settings_assets_header'))
-        assets_header.add_css_class('heading')
-        assets_header.set_xalign(0)
-        assets_group.append(assets_header)
-
-        assets_hint = Gtk.Label(label=t('settings_assets_hint'))
-        assets_hint.add_css_class('dim-label')
-        assets_hint.set_wrap(True)
-        assets_hint.set_xalign(0)
-        assets_group.append(assets_hint)
-
-        assets_button = Gtk.Button(label=t('settings_assets_button'))
-        assets_button.set_hexpand(True)
-        assets_button.connect('clicked', self.show_assets_settings_page)
-        assets_group.append(assets_button)
-        content.append(assets_group)
-
         about_group = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         about_group.add_css_class('preferences-group')
         about_header = Gtk.Label(label=t('settings_about_header'))
@@ -924,10 +914,10 @@ class MainWindow(Adw.ApplicationWindow):
         content.set_margin_bottom(18)
         content.set_margin_start(18)
         content.set_margin_end(18)
-        outer.set_child(self._wrap_page_with_clamp(content))
+        outer.set_child(content)
 
         swipe_back = Gtk.GestureSwipe.new()
-        swipe_back.connect('swipe', lambda _g, vx, _vy: self.show_settings_page() if vx > 0 else None)
+        swipe_back.connect('swipe', lambda _g, vx, _vy: self._return_to_overview_from_settings_assets() if vx > 0 else None)
         outer.add_controller(swipe_back)
 
         title = Gtk.Label(label=t('settings_assets_title'))
@@ -1147,7 +1137,8 @@ class MainWindow(Adw.ApplicationWindow):
         if not hasattr(Gtk, 'FileDialog'):
             self.show_overlay_notification(t('settings_export_failed'), timeout_ms=3200)
             return
-        dialog = Gtk.FileDialog(title=t('settings_export_dialog_title'), modal=True, initial_name='webapps_export.wapp')
+        export_date = datetime.now().strftime('%Y-%m-%d')
+        dialog = Gtk.FileDialog(title=t('settings_export_dialog_title'), modal=True, initial_name=f'webapps_export_{export_date}.wapp')
 
         def handle_save(_dialog, result):
             try:
@@ -1192,9 +1183,21 @@ class MainWindow(Adw.ApplicationWindow):
             LOG.debug('Failed to adjust titlebar button visibility', exc_info=True)
 
     def _show_back_only_header(self):
+        desktop_mode = bool(self._adaptive_split_enabled and not self._adaptive_narrow_mode)
+        if desktop_mode:
+            self.header_bar.set_title_widget(None)
+            self.search_button.set_visible(True)
+            self.refresh_button.set_visible(True)
+            self.settings_button.set_visible(True)
+            self.assets_button.set_visible(True)
+            self.add_button.set_visible(True)
+            self.back_button.set_visible(False)
+            self._set_titlebar_button_visibility(True, True)
+            return
         self.search_button.set_visible(False)
         self.refresh_button.set_visible(False)
         self.settings_button.set_visible(False)
+        self.assets_button.set_visible(False)
         self.add_button.set_visible(False)
         self.back_button.set_visible(True)
         self.header_bar.set_title_widget(None)
@@ -1202,33 +1205,47 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _show_overview_header(self):
         current_detail = self._overview_detail_visible_child()
+        if self.search_visible:
+            self._show_back_only_header()
+            return
         if self._adaptive_split_enabled and self.overview_split_view is not None:
-            if current_detail is getattr(self, 'settings_assets_page', None):
+            is_real_detail = (
+                current_detail is not None
+                and current_detail is not self.detail_placeholder
+                and self._adaptive_overview_showing_content()
+            )
+            if is_real_detail:
                 self._show_back_only_header()
                 return
-            if isinstance(current_detail, DetailPage) and current_detail.is_subpage_visible():
-                self._show_back_only_header()
-                return
-            if isinstance(current_detail, DetailPage) and self._adaptive_narrow_mode and self._adaptive_overview_showing_content():
-                self._show_back_only_header()
-                return
-            if current_detail is getattr(self, 'settings_page', None) and self._adaptive_narrow_mode:
-                self._show_back_only_header()
-                return
-            show_actions = not self._adaptive_overview_showing_content() or not self._adaptive_narrow_mode
             self.header_bar.set_title_widget(None)
         else:
-            show_actions = True
             self.header_bar.set_title_widget(self.list_title_widget)
-        self.search_button.set_visible(show_actions)
-        self.refresh_button.set_visible(show_actions)
-        self.settings_button.set_visible(show_actions)
-        self.add_button.set_visible(show_actions)
+        self.search_button.set_visible(True)
+        self.refresh_button.set_visible(True)
+        self.settings_button.set_visible(True)
+        self.assets_button.set_visible(True)
+        self.add_button.set_visible(True)
         self.back_button.set_visible(False)
         self._set_titlebar_button_visibility(True, True)
 
     def _restore_overview_header_actions(self):
         self._show_overview_header()
+
+    def _return_to_overview_from_settings_assets(self):
+        self._hide_global_toast()
+        if self._adaptive_split_enabled:
+            self._show_overview_root_page()
+            try:
+                self.stack.set_visible_child_name('overview_page')
+            except (AttributeError, TypeError, GLib.Error):
+                pass
+            self._restore_overview_header_actions()
+            return
+        self._restore_overview_header_actions()
+        try:
+            self.stack.set_visible_child_name('overview_page')
+        except (AttributeError, TypeError, GLib.Error):
+            pass
 
 
     def _launch_command_args(self, argv):
@@ -1345,6 +1362,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.search_visible = not self.search_visible
         self.search_entry.set_visible(self.search_visible)
         if self.search_visible:
+            self._show_back_only_header()
             self.search_entry.grab_focus()
             return
         if self.search_entry.get_text():
@@ -1352,6 +1370,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.search_text = ''
         self.custom_filter.changed(Gtk.FilterChange.DIFFERENT)
         self.update_empty_state()
+        self._restore_overview_header_actions()
 
     def on_refresh_clicked(self, button):
         if self._profile_resync_running:
@@ -2510,6 +2529,13 @@ class MainWindow(Adw.ApplicationWindow):
         if not self._is_overview_child_visible(detail_page):
             return
         if self._adaptive_split_enabled:
+            if not self._adaptive_narrow_mode:
+                try:
+                    self.content_navigation_page.set_title(getattr(getattr(detail_page, 'entry', None), 'title', '') or t('app_title'))
+                except (AttributeError, TypeError):
+                    pass
+                self._restore_overview_header_actions()
+                return
             self._show_overview_header()
 
     def on_entry_activated(self, entry, show_busy=True):
@@ -2601,6 +2627,16 @@ class MainWindow(Adw.ApplicationWindow):
             current_name = self.stack.get_visible_child_name()
         except (AttributeError, TypeError):
             current_name = None
+        if self.search_visible:
+            self.search_visible = False
+            self.search_entry.set_visible(False)
+            if self.search_entry.get_text():
+                self.search_entry.set_text('')
+            self.search_text = ''
+            self.custom_filter.changed(Gtk.FilterChange.DIFFERENT)
+            self.update_empty_state()
+            self._restore_overview_header_actions()
+            return
         current_detail = self._overview_detail_visible_child()
         if isinstance(current_detail, DetailPage) and current_detail.is_subpage_visible():
             current_detail.show_main_page()
@@ -2608,16 +2644,16 @@ class MainWindow(Adw.ApplicationWindow):
             return
         if self._adaptive_split_enabled:
             if current_detail is getattr(self, 'settings_assets_page', None):
-                self.show_settings_page()
+                self._return_to_overview_from_settings_assets()
                 return
             if current_detail is getattr(self, 'settings_page', None):
                 self._hide_global_toast()
                 self._show_overview_root_page()
                 self.stack.set_visible_child_name('overview_page')
+                self._restore_overview_header_actions()
                 return
         if current_name == 'settings_assets_page':
-            self._show_back_only_header()
-            self.stack.set_visible_child_name('settings_page')
+            self._return_to_overview_from_settings_assets()
             return
         if current_name == 'settings_page':
             self._restore_overview_header_actions()
@@ -2628,6 +2664,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._hide_global_toast()
         self._show_overview_root_page()
         self.stack.set_visible_child_name('overview_page')
+        self._restore_overview_header_actions()
 
     def on_add_entry(self, button):
         if self._creating_entry:

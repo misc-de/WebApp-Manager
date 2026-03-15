@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from xml.sax.saxutils import escape
 
 from i18n import t
 from browser_option_registry import (
@@ -43,6 +44,18 @@ def browser_state_key(family: str) -> str:
 def option_ui_label(option_key: str) -> str:
     label_key = OPTION_UI_LABEL_KEYS.get(option_key)
     return t(label_key) if label_key else option_key
+
+
+def option_ui_label_markup(option_key: str) -> str:
+    label = option_ui_label(option_key)
+    prefix, separator, suffix = label.partition(' (')
+    if not separator or not suffix.endswith(')'):
+        return escape(label)
+    suffix_text = f'({suffix[:-1]})'
+    return (
+        f'{escape(prefix)} '
+        f'<span size="smaller" alpha="75%">{escape(suffix_text)}</span>'
+    )
 
 
 def option_key_from_any(value: str | None) -> str | None:
