@@ -15,6 +15,8 @@ LOG = get_logger(__name__)
 
 CUSTOM_CSS_LINKS_KEY = 'Custom CSS Links'
 CUSTOM_JS_LINKS_KEY = 'Custom JavaScript Links'
+INLINE_CUSTOM_CSS_KEY = 'Inline Custom CSS'
+INLINE_CUSTOM_JS_KEY = 'Inline Custom JavaScript'
 CUSTOMIZER_FIREFOX_EXTENSION_ID = 'webapp-manager-customizer@de.cais'
 CUSTOMIZER_FIREFOX_XPI_NAME = f'{CUSTOMIZER_FIREFOX_EXTENSION_ID}.xpi'
 CHROMIUM_CUSTOMIZER_DIRNAME = 'webapp-manager-customizer'
@@ -25,6 +27,7 @@ ASSET_LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
 ASSET_TYPE_LABELS = {'css': 'CSS', 'javascript': 'JavaScript'}
 ASSET_EXTENSION_MAP = {'.css': 'css', '.js': 'javascript'}
 ASSET_OPTION_KEY_BY_TYPE = {'css': CUSTOM_CSS_LINKS_KEY, 'javascript': CUSTOM_JS_LINKS_KEY}
+INLINE_OPTION_KEY_BY_TYPE = {'css': INLINE_CUSTOM_CSS_KEY, 'javascript': INLINE_CUSTOM_JS_KEY}
 
 
 def _settings_dict(config=None):
@@ -190,6 +193,31 @@ def encode_linked_asset_ids(asset_ids, asset_type=None):
     return json.dumps(normalize_linked_asset_ids(asset_ids, asset_type=asset_type), ensure_ascii=False)
 
 
+def _normalize_inline_asset_text(raw_value):
+    if raw_value is None:
+        return ''
+    text = str(raw_value).replace('\r\n', '\n').replace('\r', '\n')
+    return '' if not text.strip() else text
+
+
+def inline_asset_text_for_options(options_dict, asset_type=None):
+    options = dict(options_dict or {})
+    if asset_type:
+        key = INLINE_OPTION_KEY_BY_TYPE[asset_type]
+        return _normalize_inline_asset_text(options.get(key))
+    return {
+        current_type: _normalize_inline_asset_text(options.get(key))
+        for current_type, key in INLINE_OPTION_KEY_BY_TYPE.items()
+    }
+
+
+def has_runtime_customizations(options_dict):
+    if linked_assets_for_options(options_dict):
+        return True
+    inline_values = inline_asset_text_for_options(options_dict)
+    return any(bool(value) for value in inline_values.values())
+
+
 def linked_assets_for_options(options_dict, asset_type=None):
     options = dict(options_dict or {})
     library = {item['id']: item for item in _library_metadata()}
@@ -286,7 +314,7 @@ def _read_asset_text(asset):
     return Path(asset['path']).read_text(encoding='utf-8', errors='ignore')
 
 
-def _write_firefox_user_content(profile_dir, address, css_assets):
+def _write_firefox_user_content(profile_dir, address, css_assets, inline_css_text=''):
     profile_dir = Path(profile_dir)
     chrome_dir = profile_dir / 'chrome'
     chrome_dir.mkdir(parents=True, exist_ok=True)
@@ -303,11 +331,14 @@ def _write_firefox_user_content(profile_dir, address, css_assets):
     cleaned = pattern.sub('', existing).rstrip()
     scope = _css_scope_start(address)
     block = ''
-    if css_assets and scope:
+    inline_css_text = _normalize_inline_asset_text(inline_css_text)
+    if (css_assets or inline_css_text) and scope:
         sections = []
         for asset in css_assets:
             sections.append(f'/* Asset: {asset["name"]} */\n{_read_asset_text(asset).rstrip()}\n')
-        joined = '\n'.join(sections).rstrip()
+        if inline_css_text:
+            sections.append(f'/* Inline CSS */\n{inline_css_text.rstrip()}\n')
+        joined = '\n'.join(section.rstrip() for section in sections if section).rstrip()
         block = (
             start
             + f'@-moz-document url-prefix("{scope}") {{\n{joined}\n}}\n'
@@ -330,13 +361,14 @@ def _remove_firefox_customizer_xpi(profile_dir):
         LOG.debug('Failed to remove Firefox customizer extension', exc_info=True)
 
 
-def _write_firefox_customizer_xpi(profile_dir, address, js_assets):
+def _write_firefox_customizer_xpi(profile_dir, address, js_assets, inline_js_text=''):
     profile_dir = Path(profile_dir)
     extensions_dir = profile_dir / 'extensions'
     extensions_dir.mkdir(parents=True, exist_ok=True)
     target = extensions_dir / CUSTOMIZER_FIREFOX_XPI_NAME
     matches = _content_script_matches(address)
-    if not js_assets or not matches:
+    inline_js_text = _normalize_inline_asset_text(inline_js_text)
+    if not matches or not (js_assets or inline_js_text):
         target.unlink(missing_ok=True)
         return False
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -349,6 +381,12 @@ def _write_firefox_customizer_xpi(profile_dir, address, js_assets):
             target_path.parent.mkdir(parents=True, exist_ok=True)
             target_path.write_text(_read_asset_text(asset), encoding='utf-8')
             asset_rel_paths.append(str(rel_path).replace('\\', '/'))
+        if inline_js_text:
+            inline_rel_path = Path('assets') / 'inline-runtime.js'
+            inline_target = tmp_root / inline_rel_path
+            inline_target.parent.mkdir(parents=True, exist_ok=True)
+            inline_target.write_text(inline_js_text.rstrip() + '\n', encoding='utf-8')
+            asset_rel_paths.append(inline_rel_path.as_posix())
         manifest = {
             'manifest_version': 3,
             'name': 'WebApp Manager Runtime Customizations',
@@ -390,10 +428,12 @@ def _remove_chromium_extension(profile_dir):
         shutil.rmtree(target_dir, ignore_errors=True)
 
 
-def _write_chromium_customizer(profile_dir, address, css_assets, js_assets):
+def _write_chromium_customizer(profile_dir, address, css_assets, js_assets, inline_css_text='', inline_js_text=''):
     target_dir = _chromium_extension_dir(profile_dir)
     matches = _content_script_matches(address)
-    if not matches or not (css_assets or js_assets):
+    inline_css_text = _normalize_inline_asset_text(inline_css_text)
+    inline_js_text = _normalize_inline_asset_text(inline_js_text)
+    if not matches or not (css_assets or js_assets or inline_css_text or inline_js_text):
         _remove_chromium_extension(profile_dir)
         return False
     if target_dir.exists():
@@ -408,6 +448,12 @@ def _write_chromium_customizer(profile_dir, address, css_assets, js_assets):
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_text(_read_asset_text(asset), encoding='utf-8')
         rel_css.append(rel_path.as_posix())
+    if inline_css_text:
+        inline_css_rel = Path('assets') / 'inline-runtime.css'
+        inline_css_target = target_dir / inline_css_rel
+        inline_css_target.parent.mkdir(parents=True, exist_ok=True)
+        inline_css_target.write_text(inline_css_text.rstrip() + '\n', encoding='utf-8')
+        rel_css.append(inline_css_rel.as_posix())
     for index, asset in enumerate(js_assets, start=1):
         filename = _sanitize_extension_filename(asset['id'], asset['name'], f'-{index}.js')
         rel_path = Path('assets') / filename
@@ -415,6 +461,12 @@ def _write_chromium_customizer(profile_dir, address, css_assets, js_assets):
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_text(_read_asset_text(asset), encoding='utf-8')
         rel_js.append(rel_path.as_posix())
+    if inline_js_text:
+        inline_js_rel = Path('assets') / 'inline-runtime.js'
+        inline_js_target = target_dir / inline_js_rel
+        inline_js_target.parent.mkdir(parents=True, exist_ok=True)
+        inline_js_target.write_text(inline_js_text.rstrip() + '\n', encoding='utf-8')
+        rel_js.append(inline_js_rel.as_posix())
     manifest = {
         'manifest_version': 3,
         'name': 'WebApp Manager Runtime Customizations',
@@ -443,25 +495,27 @@ def ensure_profile_customizations(profile_info, options_dict, logger):
     address = (options_dict or {}).get('Address') or ''
     css_assets = linked_assets_for_options(options_dict, 'css')
     js_assets = linked_assets_for_options(options_dict, 'javascript')
+    inline_css_text = inline_asset_text_for_options(options_dict, 'css')
+    inline_js_text = inline_asset_text_for_options(options_dict, 'javascript')
     applied_css = False
     applied_js = False
     if family == 'firefox':
         try:
-            _write_firefox_user_content(profile_path, address, css_assets)
-            applied_css = bool(css_assets and _css_scope_start(address))
+            _write_firefox_user_content(profile_path, address, css_assets, inline_css_text=inline_css_text)
+            applied_css = bool((css_assets or inline_css_text) and _css_scope_start(address))
         except OSError as error:
             logger.warning('Failed to write Firefox custom CSS for %s: %s', profile_path, error)
         try:
-            applied_js = _write_firefox_customizer_xpi(profile_path, address, js_assets)
+            applied_js = _write_firefox_customizer_xpi(profile_path, address, js_assets, inline_js_text=inline_js_text)
         except OSError as error:
             logger.warning('Failed to write Firefox custom JS extension for %s: %s', profile_path, error)
             applied_js = False
         return {'css_applied': applied_css, 'js_applied': applied_js}
     if family in {'chrome', 'chromium'}:
         try:
-            applied = _write_chromium_customizer(profile_path, address, css_assets, js_assets)
-            applied_css = bool(applied and css_assets)
-            applied_js = bool(applied and js_assets)
+            applied = _write_chromium_customizer(profile_path, address, css_assets, js_assets, inline_css_text=inline_css_text, inline_js_text=inline_js_text)
+            applied_css = bool(applied and (css_assets or inline_css_text))
+            applied_js = bool(applied and (js_assets or inline_js_text))
         except OSError as error:
             logger.warning('Failed to write Chromium customizations for %s: %s', profile_path, error)
         return {'css_applied': applied_css, 'js_applied': applied_js}
@@ -471,7 +525,7 @@ def ensure_profile_customizations(profile_info, options_dict, logger):
 def chromium_runtime_extension_args(profile_info, options_dict):
     if not profile_info or str(profile_info.get('browser_family') or '').strip().lower() not in {'chrome', 'chromium'}:
         return []
-    if not linked_assets_for_options(options_dict):
+    if not has_runtime_customizations(options_dict):
         return []
     target_dir = _chromium_extension_dir(profile_info.get('profile_path') or '')
     if not target_dir.exists():

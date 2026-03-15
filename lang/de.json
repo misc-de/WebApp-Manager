@@ -206,5 +206,18 @@
   "detail_asset_remove_css_confirm": "Verknüpftes CSS {name} entfernen?",
   "detail_asset_remove_javascript_confirm": "Verknüpftes JavaScript {name} entfernen?",
   "detail_asset_firefox_js_note": "Firefox kann verknüpftes JavaScript nur ausführen, wenn die verwendete Build-/Profil-Variante unsignierte Runtime-Add-ons erlaubt.",
-  "desktop_detected_import_prompt": "Möchtest du {total} gefundene WebApps importieren?"
+  "desktop_detected_import_prompt": "Möchtest du {total} gefundene WebApps importieren?",
+  "welcome_title": "Willkommen",
+  "welcome_subtitle": "Wähle links eine Web-App aus oder lege eine neue an, um zu starten.",
+  "welcome_new_button": "Web-App erstellen",
+  "welcome_import_button": ".wapp-Datei importieren",
+  "detail_tab_basic": "Basis-Einstellungen",
+  "detail_tab_css": "CSS",
+  "detail_tab_javascript": "JavaScript",
+  "detail_tab_options": "Optionen",
+  "option_startup_booster": "Startbeschleunigung",
+  "detail_asset_inline_css": "Inline-CSS",
+  "detail_asset_inline_javascript": "Inline-JavaScript",
+  "detail_asset_inline_hint_css": "Wird zusätzlich zu den verknüpften CSS-Dateien für diese WebApp angewendet.",
+  "detail_asset_inline_hint_javascript": "Wird zusätzlich zu den verknüpften JavaScript-Dateien für diese WebApp angewendet."
 }

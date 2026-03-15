@@ -14,7 +14,7 @@ from pathlib import Path
 from distro_utils import is_furios_distribution
 
 from i18n import get_app_config
-from custom_assets import ensure_profile_customizations, linked_assets_for_options
+from custom_assets import ensure_profile_customizations, inline_asset_text_for_options, linked_assets_for_options
 from browser_option_logic import normalize_option_dict, project_options_for_family
 from input_validation import build_safe_slug, sanitize_desktop_value
 from webapp_constants import (
@@ -29,6 +29,7 @@ from webapp_constants import (
     OPTION_CLEAR_COOKIES_ON_EXIT_KEY,
     OPTION_DISABLE_AI_KEY,
     OPTION_FORCE_PRIVACY_KEY,
+    OPTION_STARTUP_BOOSTER_KEY,
     OPTION_KEEP_IN_BACKGROUND_KEY,
     OPTION_NOTIFICATIONS_KEY,
     OPTION_PRESERVE_SESSION_KEY,
@@ -118,7 +119,7 @@ def get_profile_size_bytes(profile_path):
                 pass
     return total
 
-def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_session, user_agent_value='', only_https=False, notifications_enabled=False, swipe_enabled=False, keep_in_background=False, startup_url='', app_mode=False, native_window_frame=False, disable_ai=False, set_privacy=False, color_scheme='auto', custom_css_enabled=False, custom_js_enabled=False):
+def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_session, user_agent_value='', only_https=False, notifications_enabled=False, swipe_enabled=False, keep_in_background=False, startup_url='', app_mode=False, native_window_frame=False, disable_ai=False, set_privacy=False, color_scheme='auto', custom_css_enabled=False, custom_js_enabled=False, startup_booster=False):
     profile_dir = Path(profile_dir)
     only_https = bool(only_https or set_privacy)
     user_js = profile_dir / 'user.js'
@@ -184,6 +185,19 @@ def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_ses
             'browser.ai.control.smartTabGroups': 'blocked',
             'browser.ai.control.translations': 'blocked',
         })
+    prefs['webapp.startup_booster.enabled'] = bool(startup_booster)
+    if startup_booster:
+        prefs.update({
+            'browser.newtab.preload': False,
+            'browser.startup.homepage_override.mstone': 'ignore',
+            'browser.shell.checkDefaultBrowser': False,
+            'browser.aboutwelcome.enabled': False,
+            'browser.newtabpage.enabled': False,
+            'browser.sessionstore.restore_on_demand': True if previous_session else prefs.get('browser.sessionstore.restore_on_demand', True),
+            'browser.sessionstore.restore_hidden_tabs': False,
+            'browser.sessionstore.restore_pinned_tabs_on_demand': True if previous_session else prefs.get('browser.sessionstore.restore_pinned_tabs_on_demand', False),
+        })
+
     if is_furios_distribution():
         prefs['furi.browser.preload.disabled'] = False if keep_in_background else True
 
@@ -309,7 +323,7 @@ def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_ses
             return
     user_js.write_text(new_content, encoding='utf-8')
 
-def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previous_session, logger, user_agent_value='', only_https=False, notifications_enabled=False, keep_in_background=False, disable_ai=False, set_privacy=False, color_scheme='auto'):
+def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previous_session, logger, user_agent_value='', only_https=False, notifications_enabled=False, keep_in_background=False, disable_ai=False, set_privacy=False, color_scheme='auto', startup_booster=False):
     profile_dir = Path(profile_dir)
     default_dir = profile_dir / 'Default'
     default_dir.mkdir(parents=True, exist_ok=True)
@@ -333,6 +347,20 @@ def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previou
     browser['clear_data']['clear_on_exit'] = clear_on_exit
     session = data.setdefault('session', {})
     effective_only_https = bool(only_https or set_privacy)
+    if startup_booster:
+        browser['has_seen_welcome_page'] = True
+        browser['first_run_finished'] = True
+        data['show-welcome-page'] = False
+        data.setdefault('sync_promo', {})['show_on_first_run_allowed'] = False
+    else:
+        browser.pop('has_seen_welcome_page', None)
+        browser.pop('first_run_finished', None)
+        data.pop('show-welcome-page', None)
+        sync_promo = data.get('sync_promo')
+        if isinstance(sync_promo, dict):
+            sync_promo.pop('show_on_first_run_allowed', None)
+            if not sync_promo:
+                data.pop('sync_promo', None)
     session['restore_on_startup'] = 1 if previous_session else 5
     session['startup_urls'] = []
     profile = data.setdefault('profile', {})
@@ -385,6 +413,7 @@ def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previou
     webapp['only_https'] = effective_only_https
     webapp['previous_session'] = bool(previous_session)
     webapp['keep_in_background'] = bool(keep_in_background)
+    webapp['startup_booster'] = bool(startup_booster)
     data['enable_do_not_track'] = bool(set_privacy)
     data.setdefault('privacy_sandbox', {})['m1'] = {'topics_enabled': not set_privacy, 'fledge_enabled': not set_privacy, 'ad_measurement_enabled': not set_privacy}
     data.setdefault('safebrowsing', {})['enabled'] = False if set_privacy else data.setdefault('safebrowsing', {}).get('enabled', True)
@@ -779,6 +808,7 @@ def _read_firefox_profile_settings(profile_dir):
         OPTION_KEEP_IN_BACKGROUND_KEY: '1' if (prefs.get('furi.browser.preload.disabled') is False or ('furi.browser.preload.disabled' not in prefs and prefs.get('browser.tabs.closeWindowWithLastTab') is False)) else '0',
         OPTION_DISABLE_AI_KEY: '1' if (prefs.get('browser.ml.chat.enabled') is False or prefs.get('browser.tabs.groups.smart.enabled') is False or prefs.get('browser.ml.linkPreview.enabled') is False) else '0',
         OPTION_FORCE_PRIVACY_KEY: '1' if privacy_enabled else '0',
+        OPTION_STARTUP_BOOSTER_KEY: '1' if prefs.get('webapp.startup_booster.enabled') is True else '0',
         APP_MODE_KEY: '1' if app_mode_enabled or prefs.get('toolkit.legacyUserProfileCustomizations.stylesheets') else '0',
         'Frameless': '1' if frameless else '0',
         USER_AGENT_VALUE_KEY: prefs.get('general.useragent.override', '') or '',
@@ -809,6 +839,7 @@ def _read_chromium_profile_settings(profile_dir):
         OPTION_KEEP_IN_BACKGROUND_KEY: '1' if ((webapp_manager.get('keep_in_background')) is True or ((data.get('background_mode') or {}).get('enabled') is True)) else '0',
         OPTION_DISABLE_AI_KEY: '1' if (webapp_manager.get('disable_ai')) is True else '0',
         OPTION_FORCE_PRIVACY_KEY: '1' if ((webapp_manager.get('set_privacy')) is True or data.get('enable_do_not_track') is True) else '0',
+        OPTION_STARTUP_BOOSTER_KEY: '1' if (webapp_manager.get('startup_booster')) is True else '0',
         APP_MODE_KEY: '0',
         'Frameless': '0',
         'Kiosk': '0',
@@ -844,9 +875,10 @@ def apply_profile_settings(profile_info, options_dict, logger):
     kiosk = scoped_options.get('Kiosk', '0') == '1'
     disable_ai = scoped_options.get(OPTION_DISABLE_AI_KEY, '0') == '1'
     set_privacy = scoped_options.get(OPTION_FORCE_PRIVACY_KEY, '0') == '1'
+    startup_booster = scoped_options.get(OPTION_STARTUP_BOOSTER_KEY, '0') == '1'
     color_scheme = normalize_color_scheme(scoped_options.get(COLOR_SCHEME_KEY, 'auto'))
-    custom_css_enabled = bool(linked_assets_for_options(options_dict, 'css'))
-    custom_js_enabled = bool(linked_assets_for_options(options_dict, 'javascript'))
+    custom_css_enabled = bool(linked_assets_for_options(options_dict, 'css') or inline_asset_text_for_options(options_dict, 'css'))
+    custom_js_enabled = bool(linked_assets_for_options(options_dict, 'javascript') or inline_asset_text_for_options(options_dict, 'javascript'))
     if family == 'firefox' and profile_path:
         if set_privacy:
             only_https = True
@@ -868,6 +900,7 @@ def apply_profile_settings(profile_info, options_dict, logger):
             color_scheme=color_scheme,
             custom_css_enabled=custom_css_enabled,
             custom_js_enabled=custom_js_enabled,
+            startup_booster=startup_booster,
         )
         _sync_firefox_app_mode_css(profile_path, app_mode or kiosk, frameless, kiosk, logger)
         _sync_firefox_adblock(profile_path, adblock, logger)
@@ -889,6 +922,7 @@ def apply_profile_settings(profile_info, options_dict, logger):
             disable_ai=disable_ai,
             set_privacy=set_privacy,
             color_scheme=color_scheme,
+            startup_booster=startup_booster,
         )
         ensure_profile_customizations(profile_info, options_dict, logger)
         return
