@@ -2,7 +2,6 @@ import gi
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-gi.require_version('GioUnix', '2.0')
 
 from pathlib import Path
 import math
@@ -12,15 +11,15 @@ import tempfile
 import shutil
 import base64
 import os
-import shlex
 import subprocess
 import threading
 from datetime import datetime, timezone
 from PIL import Image
-from gi.repository import Adw, Gdk, Gio, GioUnix, GObject, Gtk, GLib, Pango
+from gi.repository import Adw, Gdk, Gio, GObject, Gtk, GLib, Pango
 
 from database import Database
 from desktop_entries import (
+    build_launch_command,
     delete_managed_entry_artifacts,
     export_desktop_file,
     exportable_entry,
@@ -62,7 +61,7 @@ from custom_assets import count_asset_references, detach_asset_from_entries, for
 from i18n import available_languages, get_app_config, get_configured_language_value, invalidate_i18n_cache, save_app_config, t
 from logger_setup import get_logger
 from engine_support import available_engines, engine_icon_name
-from browser_profiles import read_profile_settings
+from browser_profiles import inspect_profile_copy_source, read_profile_settings, rename_unused_managed_profile_directories
 from ui_icons import create_image_from_ref
 from app_state import WebAppState
 from app_identity import APP_DIR, APP_ID, APP_ICON_NAME, APP_DB_PATH
@@ -70,7 +69,7 @@ from manager_integration import ensure_manager_desktop_integration, headerbar_de
 
 Adw.init()
 LOG = get_logger(__name__)
-APP_VERSION = '64c'
+APP_VERSION = '64d'
 
 
 MANAGED_IMPORT_OPTION_KEYS = [
@@ -179,6 +178,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._import_progress_bar = None
         self._import_cancel_requested = False
         self._import_total = 0
+        self._startup_profile_cleanup_done = False
 
         self.header_bar = Adw.HeaderBar()
         self.header_bar.set_decoration_layout(headerbar_decoration_layout_without_icon())
@@ -921,42 +921,6 @@ class MainWindow(Adw.ApplicationWindow):
     def _restore_overview_header_actions(self):
         self._show_overview_header()
 
-    def _read_exec_command_from_desktop(self, desktop_path):
-        try:
-            key_file = GLib.KeyFile()
-            key_file.load_from_file(str(desktop_path), GLib.KeyFileFlags.NONE)
-            exec_line = key_file.get_string('Desktop Entry', 'Exec')
-        except (GLib.Error, OSError, TypeError):
-            LOG.error('Failed to read Exec line from desktop file %s', desktop_path, exc_info=True)
-            return []
-        try:
-            parts = shlex.split(exec_line)
-        except ValueError:
-            LOG.error('Failed to parse Exec line %r', exec_line, exc_info=True)
-            return []
-        cleaned = []
-        for part in parts:
-            token = (part or '').strip()
-            if not token:
-                continue
-            if token in {'%u', '%U', '%f', '%F', '%i', '%c', '%k'}:
-                continue
-            cleaned.append(token.replace('%%', '%'))
-        if not cleaned:
-            return []
-        executable = Path(cleaned[0]).name.strip().lower()
-        allowed = set()
-        engines_source = getattr(self, 'engines_list', None) or ENGINES or []
-        for engine in engines_source:
-            command = str(engine.get('command', '') or '').strip()
-            if not command:
-                continue
-            allowed.add(Path(command).name.lower())
-        allowed.update({'firefox', 'firefox-esr', 'google-chrome', 'google-chrome-stable', 'chrome', 'chromium', 'chromium-browser'})
-        if executable not in allowed:
-            LOG.warning('Refusing to launch unexpected executable from desktop entry: %s', cleaned[0])
-            return []
-        return cleaned
 
     def _launch_command_args(self, argv):
         if not argv:
@@ -1024,17 +988,14 @@ class MainWindow(Adw.ApplicationWindow):
     def launch_entry(self, entry):
         desktop_path = self._resolve_desktop_path_for_entry(entry)
         if desktop_path is None or not desktop_path.exists():
+            LOG.warning('Refusing to launch entry %s because its managed desktop file is missing', getattr(entry, 'id', 'unknown'))
             return
-        argv = self._read_exec_command_from_desktop(desktop_path)
-        if self._launch_command_args(argv):
+        options = self._get_options_dict(entry.id)
+        launch_spec = build_launch_command(entry, options, ENGINES, LOG, prepare_profile=False)
+        if launch_spec is None:
+            LOG.warning('Refusing to launch entry %s because no validated launch command could be built', getattr(entry, 'id', 'unknown'))
             return
-        try:
-            app_info = GioUnix.DesktopAppInfo.new_from_filename(str(desktop_path))
-            if app_info is None:
-                return
-            app_info.launch([], None)
-        except (GLib.Error, OSError, TypeError, ValueError) as error:
-            LOG.error('Failed to launch WebApp %s: %s', entry.id, error)
+        self._launch_command_args(launch_spec['argv'])
 
 
     def _hide_busy(self):
@@ -1670,6 +1631,26 @@ class MainWindow(Adw.ApplicationWindow):
             reset_values.setdefault(key, '0')
         self._add_options(entry_id, reset_values)
 
+    def _collect_active_profile_paths(self):
+        active_paths = []
+        for index in range(self.entries_store.get_n_items()):
+            entry = self.entries_store.get_item(index)
+            options = self._get_options_dict(entry.id)
+            profile_path = str(options.get(PROFILE_PATH_KEY) or '').strip()
+            if profile_path:
+                active_paths.append(profile_path)
+        return active_paths
+
+    def _run_startup_profile_cleanup(self):
+        if self._startup_profile_cleanup_done:
+            return
+        self._startup_profile_cleanup_done = True
+        rename_unused_managed_profile_directories(self._collect_active_profile_paths(), LOG)
+
+    def _finalize_startup_reconcile(self):
+        self._reload_entries()
+        self._run_startup_profile_cleanup()
+
     def _upsert_entry_from_file(self, file_data, existing_entry=None):
         title = (file_data.get('title') or '').strip()
         active = 1 if file_data.get('active', True) else 0
@@ -1706,9 +1687,15 @@ class MainWindow(Adw.ApplicationWindow):
             option_updates[USER_AGENT_NAME_KEY] = file_data.get('user_agent_name', '')
         if file_data.get('user_agent_value') is not None:
             option_updates[USER_AGENT_VALUE_KEY] = file_data.get('user_agent_value', '')
-        if file_data.get('profile_path'):
-            option_updates[PROFILE_PATH_KEY] = file_data['profile_path']
-            option_updates[PROFILE_NAME_KEY] = file_data.get('profile_name') or Path(file_data['profile_path']).name
+        profile_family = self._browser_family_for_options({
+            'EngineID': option_updates.get('EngineID', ''),
+            'EngineName': option_updates.get('EngineName', ''),
+        })
+        if file_data.get('profile_path') and profile_family in {'firefox', 'chrome', 'chromium'}:
+            profile_source = inspect_profile_copy_source(file_data['profile_path'], profile_family, LOG)
+            if profile_source.get('valid'):
+                option_updates[PROFILE_PATH_KEY] = profile_source['profile_path']
+                option_updates[PROFILE_NAME_KEY] = profile_source['profile_name']
         elif file_data.get('profile_name'):
             option_updates[PROFILE_NAME_KEY] = file_data['profile_name']
         for key in ('Kiosk', APP_MODE_KEY, 'Frameless'):
@@ -1831,6 +1818,7 @@ class MainWindow(Adw.ApplicationWindow):
                 self._start_detected_desktop_imports(items)
                 return
             self._reload_entries()
+            self._show_next_conflict()
 
         self._present_choice_dialog(message, handle_import_choice, destructive=False)
 
@@ -1872,7 +1860,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _show_next_conflict(self):
         if not self.reconcile_queue:
-            self._reload_entries()
+            self._finalize_startup_reconcile()
             return
         conflict = self.reconcile_queue.pop(0)
         if conflict['type'] == 'orphan_file':

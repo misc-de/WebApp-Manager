@@ -1168,26 +1168,136 @@ def _copy_profile_contents(source_dir, target_dir, logger):
         except OSError as error:
             logger.warning('Failed to copy profile content from %s to %s: %s', child, destination, error)
 
-def _remove_source_profile(profile_path, browser_family, profile_name, logger):
-    if not profile_path:
-        return
+
+def _firefox_profile_markers(profile_dir):
+    return [
+        profile_dir / 'prefs.js',
+        profile_dir / 'user.js',
+        profile_dir / 'places.sqlite',
+        profile_dir / 'cookies.sqlite',
+        profile_dir / 'extensions.json',
+        profile_dir / 'compatibility.ini',
+        profile_dir / 'sessionstore.jsonlz4',
+    ]
+
+
+def _is_valid_firefox_profile_dir(profile_dir):
+    profile_dir = Path(profile_dir)
+    if not profile_dir.exists() or not profile_dir.is_dir():
+        return False
+    return any(marker.exists() for marker in _firefox_profile_markers(profile_dir))
+
+
+def _is_valid_chromium_user_data_dir(profile_dir):
+    profile_dir = Path(profile_dir)
+    if not profile_dir.exists() or not profile_dir.is_dir():
+        return False
+    local_state = profile_dir / 'Local State'
+    if not local_state.exists() or not local_state.is_file():
+        return False
+    profile_candidates = []
+    default_dir = profile_dir / 'Default'
+    if default_dir.is_dir():
+        profile_candidates.append(default_dir)
     try:
-        profile_dir = Path(profile_path).resolve()
+        profile_candidates.extend(candidate for candidate in profile_dir.iterdir() if candidate.is_dir() and candidate.name.startswith('Profile '))
     except OSError:
-        return
-    if browser_family == 'firefox':
-        _remove_firefox_profile_registration(profile_name or profile_dir.name, profile_dir, logger)
-        if profile_dir.exists():
-            try:
-                shutil.rmtree(profile_dir)
-            except OSError as error:
-                logger.warning('Failed to remove Firefox profile %s: %s', profile_dir, error)
-        return
-    if browser_family in {'chrome', 'chromium'} and profile_dir.exists():
+        return False
+    for candidate in profile_candidates:
+        if (candidate / 'Preferences').is_file():
+            return True
+    return False
+
+
+def inspect_profile_copy_source(profile_path, browser_family, logger=None):
+    if not profile_path:
+        return {'valid': False, 'profile_path': '', 'profile_name': ''}
+    try:
+        resolved = Path(profile_path).expanduser().resolve()
+    except OSError:
+        return {'valid': False, 'profile_path': '', 'profile_name': ''}
+    if not resolved.exists() or not resolved.is_dir():
+        return {'valid': False, 'profile_path': '', 'profile_name': ''}
+
+    family = (browser_family or '').strip().lower()
+    valid = False
+    if family == 'firefox':
+        valid = _is_valid_firefox_profile_dir(resolved)
+    elif family in {'chrome', 'chromium'}:
+        valid = _is_valid_chromium_user_data_dir(resolved)
+
+    if not valid:
+        if logger is not None:
+            logger.warning('Refusing to import browser profile from invalid %s directory %s', family or 'browser', resolved)
+        return {'valid': False, 'profile_path': '', 'profile_name': ''}
+
+    return {
+        'valid': True,
+        'profile_path': str(resolved),
+        'profile_name': resolved.name,
+    }
+
+
+def rename_unused_managed_profile_directories(active_profile_paths, logger):
+    active_paths = set()
+    for raw_path in active_profile_paths or []:
+        if not raw_path:
+            continue
         try:
-            shutil.rmtree(profile_dir)
-        except OSError as error:
-            logger.warning('Failed to remove Chromium profile %s: %s', profile_dir, error)
+            active_paths.add(Path(raw_path).expanduser().resolve())
+        except OSError:
+            continue
+
+    renamed = []
+
+    def next_unused_path(profile_dir):
+        base_name = profile_dir.name
+        suffix = '_unused'
+        candidate = profile_dir.with_name(f'{base_name}{suffix}')
+        counter = 2
+        while candidate.exists():
+            candidate = profile_dir.with_name(f'{base_name}{suffix}_{counter}')
+            counter += 1
+        return candidate
+
+    def should_skip(profile_dir):
+        name = profile_dir.name
+        if not name.startswith('webapp_'):
+            return True
+        if '_unused' in name:
+            return True
+        return profile_dir in active_paths
+
+    roots = [
+        ('firefox', FIREFOX_ROOT),
+        ('chrome', CHROMIUM_PROFILE_ROOT / 'chrome'),
+        ('chromium', CHROMIUM_PROFILE_ROOT / 'chromium'),
+    ]
+    for family, root in roots:
+        if not root.exists() or not root.is_dir():
+            continue
+        try:
+            candidates = sorted(candidate for candidate in root.iterdir() if candidate.is_dir())
+        except OSError:
+            continue
+        for profile_dir in candidates:
+            try:
+                resolved = profile_dir.resolve()
+            except OSError:
+                continue
+            if should_skip(resolved):
+                continue
+            target = next_unused_path(resolved)
+            try:
+                if family == 'firefox':
+                    _remove_firefox_profile_registration(resolved.name, resolved, logger)
+                resolved.rename(target)
+                logger.info('Renamed unused managed %s profile %s -> %s', family, resolved, target)
+                renamed.append({'family': family, 'old_path': str(resolved), 'new_path': str(target)})
+            except OSError as error:
+                logger.warning('Failed to rename unused managed %s profile %s: %s', family, resolved, error)
+    return renamed
+
 
 def ensure_browser_profile(title, configured_command, logger, stored_profile_name='', stored_profile_path=''):
     slug = build_safe_slug(title)
@@ -1202,15 +1312,14 @@ def ensure_browser_profile(title, configured_command, logger, stored_profile_nam
             stored_path = None
     managed_existing = bool(stored_path and _is_managed_profile_path(stored_path, family))
     stored_family = _detect_managed_profile_family(stored_path) if stored_path else None
-    allow_profile_copy = bool(
-        stored_path
-        and not managed_existing
-        and stored_path.exists()
-        and (stored_family is None or stored_family == family)
-    )
+    allow_profile_copy = False
+    source_profile = {'valid': False, 'profile_path': '', 'profile_name': ''}
+    if stored_path and not managed_existing and stored_path.exists() and (stored_family is None or stored_family == family):
+        source_profile = inspect_profile_copy_source(stored_path, family, logger)
+        allow_profile_copy = bool(source_profile.get('valid'))
     profile_name = _sanitize_profile_id(stored_profile_name) if (stored_profile_name and managed_existing) else _generate_profile_id()
-    source_profile_path = str(stored_path) if allow_profile_copy else ''
-    source_profile_name = stored_profile_name if source_profile_path else ''
+    source_profile_path = source_profile.get('profile_path', '') if allow_profile_copy else ''
+    source_profile_name = source_profile.get('profile_name', '') if source_profile_path else ''
     profile_migrated = False
     if family == 'firefox':
         FIREFOX_ROOT.mkdir(parents=True, exist_ok=True)
@@ -1220,7 +1329,6 @@ def ensure_browser_profile(title, configured_command, logger, stored_profile_nam
         profile_dir.mkdir(parents=True, exist_ok=True)
         if source_profile_path:
             _copy_profile_contents(source_profile_path, profile_dir, logger)
-            _remove_source_profile(source_profile_path, family, source_profile_name, logger)
             profile_migrated = True
         _upsert_firefox_profile(profile_name, profile_dir, logger)
         return {
@@ -1238,7 +1346,6 @@ def ensure_browser_profile(title, configured_command, logger, stored_profile_nam
         profile_dir.mkdir(parents=True, exist_ok=True)
         if source_profile_path:
             _copy_profile_contents(source_profile_path, profile_dir, logger)
-            _remove_source_profile(source_profile_path, family, source_profile_name, logger)
             profile_migrated = True
         return {
             'browser_family': family,
