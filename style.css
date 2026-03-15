@@ -234,3 +234,36 @@ listview row:hover > box {
   border-radius: 12px;
   background: alpha(currentColor, 0.04);
 }
+
+.inline-code-editor,
+.inline-code-editor text {
+  font-family: monospace;
+}
+
+.inline-code-editor-frame {
+  background: transparent;
+}
+
+.inline-code-line-number-rail {
+  border-right: 1px solid alpha(currentColor, 0.08);
+  min-width: 52px;
+}
+
+.inline-code-line-numbers,
+.inline-code-line-numbers text {
+  font-family: monospace;
+}
+
+.inline-code-line-numbers text {
+  color: alpha(currentColor, 0.65);
+}
+
+.inline-editor-light text {
+  background-color: @view_bg_color;
+  color: @view_fg_color;
+}
+
+.inline-editor-dark text {
+  background-color: @view_bg_color;
+  color: @view_fg_color;
+}

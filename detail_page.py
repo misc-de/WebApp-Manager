@@ -22,6 +22,7 @@ import tempfile
 import threading
 import urllib.request
 import urllib.error
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, urlunparse
 
@@ -34,6 +35,9 @@ from custom_assets import (
     CUSTOM_JS_LINKS_KEY,
     INLINE_CUSTOM_CSS_KEY,
     INLINE_CUSTOM_JS_KEY,
+    INLINE_CUSTOM_CSS_HASH_KEY,
+    INLINE_CUSTOM_JS_HASH_KEY,
+    asset_content_sha256_from_text,
     encode_linked_asset_ids,
     format_asset_date,
     get_custom_asset,
@@ -56,6 +60,7 @@ from webapp_constants import (
     APP_MODE_KEY,
     COLOR_SCHEME_KEY,
     OPTION_ADBLOCK_KEY,
+    OPTION_DISABLE_AI_KEY,
     OPTION_KEEP_IN_BACKGROUND_KEY,
     OPTION_SWIPE_KEY,
     OPTION_PRESERVE_SESSION_KEY,
@@ -86,10 +91,12 @@ from browser_option_logic import (
     normalize_option_dict,
     normalize_option_rows,
     option_ui_label,
+    option_ui_label_markup,
     supported_browser_option_keys,
     OPTION_SPEC_BY_KEY,
 )
 from option_config import option_names
+from browser_option_registry import OPTION_CATEGORY_ORDER, OPTION_CATEGORY_LABEL_KEYS, option_category
 
 LOG = get_logger(__name__)
 
@@ -148,6 +155,13 @@ class DetailPage(Gtk.Box):
         self._icon_download_in_progress = False
         self._compact_mode_override = None
         self._inline_editor_save_source_ids = {'css': 0, 'javascript': 0}
+        self._code_editors = []
+        self._style_manager = Adw.StyleManager.get_default()
+        if self._style_manager is not None:
+            try:
+                self._style_manager.connect('notify::dark', self._on_style_manager_dark_changed)
+            except Exception:
+                pass
 
         swipe_back = Gtk.GestureSwipe.new()
         swipe_back.connect('swipe', self.on_swipe)
@@ -243,7 +257,7 @@ class DetailPage(Gtk.Box):
         self.options_page_content.set_margin_top(12)
         self.options_page_content.set_margin_bottom(12)
         self.options_page.append(self.options_page_content)
-        self.page_stack.add_named(self._adaptive_wrap_page(self.options_page, maximum_size=720, tightening_threshold=520), 'options')
+        self.page_stack.add_named(self.options_page, 'options')
 
         self.top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.top_row.set_valign(Gtk.Align.START)
@@ -460,7 +474,7 @@ class DetailPage(Gtk.Box):
         self.detail_action_status.set_visible(False)
         self.content_box.append(self.detail_action_status)
 
-        self.custom_assets_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        self.custom_assets_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.custom_assets_row.set_homogeneous(True)
         self.custom_assets_row.set_margin_top(6)
 
@@ -537,7 +551,13 @@ class DetailPage(Gtk.Box):
         return child
 
     def _effective_layout_width(self):
-        return max(int(self.get_width() or 0), int(self.page_stack.get_width() or 0), int(self.grid.get_width() or 0))
+        page_stack = getattr(self, 'page_stack', None)
+        grid = getattr(self, 'grid', None)
+        return max(
+            int(self.get_width() or 0),
+            int(page_stack.get_width() or 0) if page_stack is not None else 0,
+            int(grid.get_width() or 0) if grid is not None else 0,
+        )
 
     def set_compact_mode_override(self, enabled=None):
         override = None if enabled is None else bool(enabled)
@@ -692,6 +712,12 @@ class DetailPage(Gtk.Box):
             inline_scrolled = state.get('inline_scrolled')
             if inline_scrolled is not None:
                 inline_scrolled.set_min_content_height(150 if compact else 220)
+            inline_buffer = state.get('inline_buffer')
+            if inline_buffer is not None:
+                for editor in getattr(self, '_code_editors', []):
+                    if editor.get('buffer') is inline_buffer:
+                        self._sync_code_editor_line_number_visibility(editor)
+                        break
 
     def _apply_adaptive_layout(self, force=False):
         compact = self._is_compact_layout()
@@ -746,6 +772,17 @@ class DetailPage(Gtk.Box):
     def _option_names_in_order(self):
         return list(self.option_names)
 
+    def _ui_boolean_option_active(self, option_name):
+        raw_value = self._get_option_value(option_name) == '1'
+        if option_name == OPTION_DISABLE_AI_KEY:
+            return not raw_value
+        return raw_value
+
+    def _store_boolean_option_value(self, option_name, active):
+        if option_name == OPTION_DISABLE_AI_KEY:
+            return '0' if active else '1'
+        return '1' if active else '0'
+
     def _create_option_switch(self, option_name):
         switch = Gtk.Switch()
         switch.add_css_class('boolean-switch')
@@ -754,9 +791,11 @@ class DetailPage(Gtk.Box):
         switch.set_hexpand(False)
         value = self._get_option_value(option_name)
         if value is not None:
-            switch.set_active(value == '1')
+            switch.set_active(self._ui_boolean_option_active(option_name))
         elif option_name == OPTION_KEEP_IN_BACKGROUND_KEY:
             switch.set_active(False)
+        elif option_name == OPTION_DISABLE_AI_KEY:
+            switch.set_active(True)
         switch.connect('notify::active', lambda s, pspec, name=option_name: self.save_boolean_option(name, s.get_active()))
         self.switches[option_name] = switch
         return switch
@@ -770,38 +809,75 @@ class DetailPage(Gtk.Box):
         self.switches = {}
 
     def _visible_option_names_in_order(self):
+        grouped = self._grouped_visible_option_names()
+        ordered = []
+        for _, option_names in grouped:
+            ordered.extend(option_names)
+        return ordered
+
+    def _grouped_visible_option_names(self):
         engine = self._get_current_engine()
         supported_names = self._supported_option_names(engine)
-        return [name for name in self.option_names if name in supported_names]
+        supported = [name for name in self.option_names if name in supported_names]
+
+        def sort_key(option_name):
+            return option_ui_label(option_name).casefold()
+
+        grouped = {category: [] for category in OPTION_CATEGORY_ORDER}
+        for option_name in supported:
+            grouped.setdefault(option_category(option_name), []).append(option_name)
+        ordered_groups = []
+        for category in OPTION_CATEGORY_ORDER:
+            names = sorted(grouped.get(category, []), key=sort_key)
+            if names:
+                ordered_groups.append((category, names))
+        return ordered_groups
 
     def _build_options_layout(self, compact=False):
-        column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8 if compact else 4)
+        column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8 if compact else 6)
         column.set_hexpand(True)
-        for option_name in self._visible_option_names_in_order():
-            if compact and option_name == OPTION_PRESERVE_SESSION_KEY:
+        grouped_option_names = self._grouped_visible_option_names()
+        if compact and grouped_option_names:
+            spacer = Gtk.Box()
+            spacer.set_size_request(-1, 18)
+            spacer.set_hexpand(True)
+            column.append(spacer)
+        first_group = True
+        for category_name, option_names in grouped_option_names:
+            if not first_group:
                 spacer = Gtk.Box()
                 spacer.set_size_request(-1, 18)
                 spacer.set_hexpand(True)
                 column.append(spacer)
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8 if compact else 10)
-            row.set_hexpand(True)
-            row.set_halign(Gtk.Align.FILL)
-            row.set_valign(Gtk.Align.CENTER)
-            row.set_margin_top(0)
-            label = Gtk.Label(label=option_ui_label(option_name), halign=Gtk.Align.START)
-            label.set_valign(Gtk.Align.CENTER)
-            label.set_wrap(False)
-            label.set_ellipsize(Pango.EllipsizeMode.END)
-            label.set_hexpand(True)
-            switch_wrap = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-            switch_wrap.set_hexpand(False)
-            switch_wrap.set_halign(Gtk.Align.END)
-            switch_wrap.set_valign(Gtk.Align.CENTER)
-            switch_wrap.append(self._create_option_switch(option_name))
-            row.append(label)
-            row.append(switch_wrap)
-            column.append(row)
-            self._option_row_widgets[option_name] = [label, switch_wrap, self.switches[option_name], row]
+            header = Gtk.Label(label=t(OPTION_CATEGORY_LABEL_KEYS.get(category_name, '')), halign=Gtk.Align.START)
+            header.set_xalign(0)
+            header.set_hexpand(True)
+            header.add_css_class('heading')
+            header.add_css_class('dim-label')
+            column.append(header)
+            for option_name in option_names:
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8 if compact else 10)
+                row.set_hexpand(True)
+                row.set_halign(Gtk.Align.FILL)
+                row.set_valign(Gtk.Align.CENTER)
+                row.set_margin_top(0)
+                label = Gtk.Label(halign=Gtk.Align.START)
+                label.set_use_markup(True)
+                label.set_markup(option_ui_label_markup(option_name))
+                label.set_valign(Gtk.Align.CENTER)
+                label.set_wrap(False)
+                label.set_ellipsize(Pango.EllipsizeMode.END)
+                label.set_hexpand(True)
+                switch_wrap = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+                switch_wrap.set_hexpand(False)
+                switch_wrap.set_halign(Gtk.Align.END)
+                switch_wrap.set_valign(Gtk.Align.CENTER)
+                switch_wrap.append(self._create_option_switch(option_name))
+                row.append(label)
+                row.append(switch_wrap)
+                column.append(row)
+                self._option_row_widgets[option_name] = [label, switch_wrap, self.switches[option_name], row]
+            first_group = False
         return column
 
     def _apply_boolean_switch_values(self):
@@ -809,7 +885,7 @@ class DetailPage(Gtk.Box):
         self._suspend_change_handlers = True
         try:
             for option_name, switch in list(self.switches.items()):
-                switch.set_active(self._get_option_value(option_name) == '1')
+                switch.set_active(self._ui_boolean_option_active(option_name))
         finally:
             self._suspend_change_handlers = previous_suspend
 
@@ -842,6 +918,7 @@ class DetailPage(Gtk.Box):
         self._apply_adaptive_layout(force=True)
         self._apply_option_values_to_controls()
         self._update_tabbed_navigation_state()
+        self._schedule_mobile_focus_reset()
         self._suspend_change_handlers = False
         return False
 
@@ -1006,7 +1083,7 @@ class DetailPage(Gtk.Box):
         self.icon_page_content.append(self.icon_delete_button)
         self._icon_page_buttons = [self.icon_download_button, self.icon_upload_button, self.icon_delete_button]
 
-        self.page_stack.add_named(self._adaptive_wrap_page(self.icon_page, maximum_size=720, tightening_threshold=520), 'icon')
+        self.page_stack.add_named(self.icon_page, 'icon')
 
     def _asset_option_key(self, asset_type):
         return ASSET_OPTION_KEY_BY_TYPE['css' if asset_type == 'css' else 'javascript']
@@ -1033,6 +1110,9 @@ class DetailPage(Gtk.Box):
     def _inline_asset_option_key(self, asset_type):
         return INLINE_CUSTOM_CSS_KEY if asset_type == 'css' else INLINE_CUSTOM_JS_KEY
 
+    def _inline_asset_hash_option_key(self, asset_type):
+        return INLINE_CUSTOM_CSS_HASH_KEY if asset_type == 'css' else INLINE_CUSTOM_JS_HASH_KEY
+
     def _get_inline_asset_text(self, asset_type):
         return (self._get_option_value(self._inline_asset_option_key(asset_type)) or '').replace('\r\n', '\n').replace('\r', '\n')
 
@@ -1051,9 +1131,117 @@ class DetailPage(Gtk.Box):
             buffer.set_text(text)
         finally:
             self._suspend_change_handlers = previous_suspend
+        for editor in getattr(self, '_code_editors', []):
+            if editor.get('buffer') is buffer:
+                self._update_code_editor_line_numbers(editor)
+                break
+
+    def _on_style_manager_dark_changed(self, *_args):
+        self._apply_code_editor_theme()
+
+    def _source_style_scheme_name(self):
+        if GtkSource is None:
+            return None
+        try:
+            manager = GtkSource.StyleSchemeManager.get_default()
+        except Exception:
+            return None
+        if manager is None:
+            return None
+        preferred = [
+            'Adwaita-dark', 'adwaita-dark', 'oblivion', 'solarized-dark',
+        ] if self._style_manager is not None and self._style_manager.get_dark() else [
+            'Adwaita', 'adwaita', 'classic', 'solarized-light',
+        ]
+        for name in preferred:
+            try:
+                scheme = manager.get_scheme(name)
+            except Exception:
+                scheme = None
+            if scheme is not None:
+                return name
+        try:
+            scheme_ids = manager.get_scheme_ids()
+        except Exception:
+            scheme_ids = []
+        return scheme_ids[0] if scheme_ids else None
+
+    def _apply_code_editor_theme(self):
+        use_dark = bool(self._style_manager is not None and self._style_manager.get_dark())
+        scheme_name = self._source_style_scheme_name()
+        for editor in getattr(self, '_code_editors', []):
+            view = editor.get('view')
+            buffer = editor.get('buffer')
+            scrolled = editor.get('scrolled')
+            line_number_view = editor.get('line_number_view')
+            line_number_scrolled = editor.get('line_number_scrolled')
+            if view is None or buffer is None or scrolled is None:
+                continue
+            for widget in (view, scrolled, line_number_view, line_number_scrolled):
+                if widget is None:
+                    continue
+                try:
+                    widget.remove_css_class('inline-editor-dark')
+                    widget.remove_css_class('inline-editor-light')
+                except (AttributeError, TypeError):
+                    pass
+                try:
+                    widget.add_css_class('inline-editor-dark' if use_dark else 'inline-editor-light')
+                except (AttributeError, TypeError):
+                    pass
+            if GtkSource is not None and hasattr(buffer, 'set_style_scheme') and scheme_name:
+                try:
+                    manager = GtkSource.StyleSchemeManager.get_default()
+                    scheme = manager.get_scheme(scheme_name) if manager is not None else None
+                    buffer.set_style_scheme(scheme)
+                except (AttributeError, TypeError):
+                    pass
+
+    def _buffer_line_count(self, buffer):
+        text = self._get_buffer_text(buffer)
+        return 1 if not text else text.count('\n') + 1
+
+    def _sync_code_editor_line_number_visibility(self, editor):
+        line_number_scrolled = editor.get('line_number_scrolled')
+        view = editor.get('view')
+        uses_source_view = bool(editor.get('uses_source_view'))
+        show_compact_gutter = self._is_compact_layout() or not uses_source_view
+        if line_number_scrolled is not None:
+            line_number_scrolled.set_visible(show_compact_gutter)
+        if uses_source_view and view is not None and hasattr(view, 'set_show_line_numbers'):
+            try:
+                view.set_show_line_numbers(not show_compact_gutter)
+            except (AttributeError, TypeError):
+                pass
+
+    def _update_code_editor_line_numbers(self, editor):
+        buffer = editor.get('buffer')
+        line_number_buffer = editor.get('line_number_buffer')
+        if buffer is None or line_number_buffer is None:
+            return
+        line_total = self._buffer_line_count(buffer)
+        line_number_buffer.set_text('\n'.join(str(index) for index in range(1, line_total + 1)))
+        self._sync_code_editor_line_number_visibility(editor)
+
+    def _register_code_editor(self, asset_type, view, buffer, scrolled, line_number_view, line_number_buffer, line_number_scrolled, uses_source_view):
+        editor = {
+            'asset_type': asset_type,
+            'view': view,
+            'buffer': buffer,
+            'scrolled': scrolled,
+            'line_number_view': line_number_view,
+            'line_number_buffer': line_number_buffer,
+            'line_number_scrolled': line_number_scrolled,
+            'uses_source_view': uses_source_view,
+        }
+        self._code_editors.append(editor)
+        self._update_code_editor_line_numbers(editor)
+        self._apply_code_editor_theme()
+        return editor
 
     def _build_code_editor(self, asset_type):
-        if GtkSource is not None:
+        uses_source_view = GtkSource is not None
+        if uses_source_view:
             buffer = GtkSource.Buffer()
             try:
                 language_manager = GtkSource.LanguageManager.get_default()
@@ -1062,7 +1250,7 @@ class DetailPage(Gtk.Box):
                     language = language_manager.get_language('javascript')
                 if language is not None:
                     buffer.set_language(language)
-            except Exception:
+            except (AttributeError, TypeError):
                 pass
             view = GtkSource.View.new_with_buffer(buffer)
             try:
@@ -1071,7 +1259,7 @@ class DetailPage(Gtk.Box):
                 view.set_auto_indent(True)
                 view.set_tab_width(2)
                 view.set_insert_spaces_instead_of_tabs(True)
-            except Exception:
+            except (AttributeError, TypeError):
                 pass
         else:
             view = Gtk.TextView()
@@ -1084,16 +1272,61 @@ class DetailPage(Gtk.Box):
         view.set_right_margin(8)
         view.set_hexpand(True)
         view.set_vexpand(True)
+        try:
+            view.add_css_class('inline-code-editor')
+        except (AttributeError, TypeError):
+            pass
+
+        line_number_view = Gtk.TextView()
+        line_number_view.set_editable(False)
+        line_number_view.set_cursor_visible(False)
+        line_number_view.set_focusable(False)
+        line_number_view.set_can_target(False)
+        line_number_view.set_monospace(True)
+        line_number_view.set_wrap_mode(Gtk.WrapMode.NONE)
+        line_number_view.set_justification(Gtk.Justification.RIGHT)
+        line_number_view.set_top_margin(8)
+        line_number_view.set_bottom_margin(8)
+        line_number_view.set_left_margin(6)
+        line_number_view.set_right_margin(6)
+        try:
+            line_number_view.add_css_class('inline-code-line-numbers')
+        except (AttributeError, TypeError):
+            pass
+        line_number_buffer = line_number_view.get_buffer()
+
+        line_number_scrolled = Gtk.ScrolledWindow()
+        line_number_scrolled.set_hexpand(False)
+        line_number_scrolled.set_vexpand(False)
+        line_number_scrolled.set_min_content_width(52)
+        line_number_scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.NEVER)
+        line_number_scrolled.add_css_class('inline-code-line-number-rail')
+        line_number_scrolled.set_child(line_number_view)
+
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_hexpand(True)
         scrolled.set_vexpand(False)
         scrolled.set_min_content_height(180)
         scrolled.add_css_class('card')
+        scrolled.add_css_class('inline-code-editor-frame')
         scrolled.set_child(view)
-        buffer.connect('changed', lambda buf, current_type=asset_type: self._on_inline_editor_changed(current_type, buf))
-        return scrolled, view, buffer
 
-    def _on_inline_editor_changed(self, asset_type, buffer):
+        shared_adjustment = scrolled.get_vadjustment()
+        if shared_adjustment is not None:
+            line_number_scrolled.set_vadjustment(shared_adjustment)
+
+        editor_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        editor_box.set_hexpand(True)
+        editor_box.append(line_number_scrolled)
+        editor_box.append(scrolled)
+
+        editor = self._register_code_editor(asset_type, view, buffer, scrolled, line_number_view, line_number_buffer, line_number_scrolled, uses_source_view)
+        buffer.connect('changed', lambda buf, current_type=asset_type, current_editor=editor: self._on_inline_editor_changed(current_type, buf, current_editor))
+        return editor_box, scrolled, view, buffer
+
+    def _on_inline_editor_changed(self, asset_type, buffer, editor=None):
+        if editor is not None:
+            self._update_code_editor_line_numbers(editor)
         if self._suspend_change_handlers:
             return
         source_id = self._inline_editor_save_source_ids.get(asset_type, 0)
@@ -1118,9 +1351,12 @@ class DetailPage(Gtk.Box):
         if not text_value.strip():
             text_value = ''
         key = self._inline_asset_option_key(asset_type)
-        if (self._get_option_value(key) or '') == text_value:
+        hash_key = self._inline_asset_hash_option_key(asset_type)
+        text_hash = asset_content_sha256_from_text(text_value)
+        if (self._get_option_value(key) or '') == text_value and (self._get_option_value(hash_key) or '') == text_hash:
             return
-        self._set_option_value(key, text_value)
+        self._set_option_value(key, text_value, commit=False)
+        self._set_option_value(hash_key, text_hash, commit=False)
         self.save_desktop_file()
 
     def _build_asset_page(self, asset_type):
@@ -1190,8 +1426,8 @@ class DetailPage(Gtk.Box):
         inline_hint.add_css_class('dim-label')
         content.append(inline_hint)
 
-        inline_scrolled, inline_view, inline_buffer = self._build_code_editor(asset_type)
-        content.append(inline_scrolled)
+        inline_editor_widget, inline_scrolled, inline_view, inline_buffer = self._build_code_editor(asset_type)
+        content.append(inline_editor_widget)
 
         note_label = Gtk.Label(label='')
         note_label.set_xalign(0)
@@ -1216,7 +1452,7 @@ class DetailPage(Gtk.Box):
             'inline_buffer': inline_buffer,
             'note_label': note_label,
         }
-        self.page_stack.add_named(self._adaptive_wrap_page(page, maximum_size=720, tightening_threshold=520), page_name)
+        self.page_stack.add_named(page, page_name)
 
     def _refresh_asset_pages(self):
         for asset_type in list(getattr(self, '_asset_page_state', {}).keys()):
@@ -1452,7 +1688,7 @@ class DetailPage(Gtk.Box):
             self.user_agent_dropdown.set_selected(ua_index)
 
             for option_name, switch in list(self.switches.items()):
-                switch.set_active(self._get_option_value(option_name) == '1')
+                switch.set_active(self._ui_boolean_option_active(option_name))
 
             if hasattr(self, 'mode_dropdown'):
                 self.mode_dropdown.set_selected(self._current_mode_index())
@@ -2744,6 +2980,45 @@ class DetailPage(Gtk.Box):
     def is_icon_page_visible(self):
         return self.page_stack.get_visible_child_name() == 'icon'
 
+    def _focus_mobile_neutral_target(self):
+        if not self._is_compact_layout():
+            return False
+        page_name = self._current_page_name()
+        target = None
+        if page_name == 'main':
+            target = getattr(self, 'icon_button', None)
+        elif page_name == 'icon':
+            buttons = getattr(self, '_icon_page_buttons', [])
+            target = buttons[0] if buttons else getattr(self, 'icon_button', None)
+        elif page_name in {'css_assets', 'javascript_assets'}:
+            asset_type = 'css' if page_name == 'css_assets' else 'javascript'
+            state = getattr(self, '_asset_page_state', {}).get(asset_type, {})
+            target = state.get('add_button') or state.get('dropdown') or getattr(self, 'icon_button', None)
+        else:
+            target = getattr(self, 'icon_button', None)
+        if target is None:
+            return False
+        root = None
+        try:
+            root = self.get_root()
+        except Exception:
+            root = None
+        if root is not None and hasattr(root, 'set_focus'):
+            try:
+                root.set_focus(target)
+            except Exception:
+                pass
+        try:
+            target.grab_focus()
+        except Exception:
+            pass
+        return False
+
+    def _schedule_mobile_focus_reset(self):
+        if not self._is_compact_layout():
+            return
+        GLib.idle_add(self._focus_mobile_neutral_target)
+
     def _notify_navigation_changed(self):
         if callable(self.on_navigation_changed):
             try:
@@ -2752,6 +3027,7 @@ class DetailPage(Gtk.Box):
                 LOG.debug('Failed to notify detail navigation change', exc_info=True)
 
     def _on_page_stack_visible_child_changed(self, *args):
+        self._schedule_mobile_focus_reset()
         self._notify_navigation_changed()
 
     def _update_tabbed_navigation_state(self):
@@ -3070,7 +3346,9 @@ class DetailPage(Gtk.Box):
                 temp_path.unlink(missing_ok=True)
 
     def on_export_webapp_clicked(self, button):
-        suggested_name = f"{(self.entry.title or 'webapp').strip() or 'webapp'}.wapp"
+        export_date = datetime.now().strftime('%Y-%m-%d')
+        base_name = (self.entry.title or 'webapp').strip() or 'webapp'
+        suggested_name = f"{base_name}_{export_date}.wapp"
         self._save_file_dialog(t('export_webapp_button'), suggested_name, self.on_export_wapp_selected)
 
     def on_export_wapp_selected(self, result, response=None):
@@ -3517,7 +3795,7 @@ class DetailPage(Gtk.Box):
             return
         option_spec = OPTION_SPEC_BY_KEY.get(name)
         option_kind = option_spec.kind if option_spec else ''
-        self._set_option_value(name, '1' if value else '0')
+        self._set_option_value(name, self._store_boolean_option_value(name, value))
         effective_https_enabled = bool(
             (name == ONLY_HTTPS_KEY and value)
             or (name == OPTION_FORCE_PRIVACY_KEY and value and self._current_browser_family() in {'firefox', 'chrome', 'chromium'})
@@ -3547,7 +3825,10 @@ class DetailPage(Gtk.Box):
 
     def on_swipe(self, gesture, velocity_x, velocity_y):
         if velocity_x > 0:
-            if self.is_subpage_visible():
+            current_name = self._current_page_name()
+            if current_name in {'css_assets', 'javascript_assets'}:
+                self.on_back()
+            elif self.is_subpage_visible():
                 self.show_main_page()
             else:
                 self.on_back()

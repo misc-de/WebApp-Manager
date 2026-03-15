@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import shutil
@@ -28,6 +29,9 @@ ASSET_TYPE_LABELS = {'css': 'CSS', 'javascript': 'JavaScript'}
 ASSET_EXTENSION_MAP = {'.css': 'css', '.js': 'javascript'}
 ASSET_OPTION_KEY_BY_TYPE = {'css': CUSTOM_CSS_LINKS_KEY, 'javascript': CUSTOM_JS_LINKS_KEY}
 INLINE_OPTION_KEY_BY_TYPE = {'css': INLINE_CUSTOM_CSS_KEY, 'javascript': INLINE_CUSTOM_JS_KEY}
+INLINE_CUSTOM_CSS_HASH_KEY = 'Inline Custom CSS Hash'
+INLINE_CUSTOM_JS_HASH_KEY = 'Inline Custom JavaScript Hash'
+INLINE_HASH_KEY_BY_TYPE = {'css': INLINE_CUSTOM_CSS_HASH_KEY, 'javascript': INLINE_CUSTOM_JS_HASH_KEY}
 
 
 def _settings_dict(config=None):
@@ -62,13 +66,21 @@ def _library_metadata(settings=None):
             'type': asset_type,
             'filename': filename,
             'imported_at': str(item.get('imported_at') or ''),
+            'sha256': str(item.get('sha256') or '').strip().lower(),
         })
     return normalized
 
 
 def _save_library_metadata(library):
     config, settings = _settings_dict()
-    settings['custom_assets'] = list(library)
+    settings['custom_assets'] = [{
+        'id': item['id'],
+        'name': item['name'],
+        'type': item['type'],
+        'filename': item['filename'],
+        'imported_at': item.get('imported_at', ''),
+        'sha256': str(item.get('sha256') or '').strip().lower(),
+    } for item in library]
     save_app_config(config)
     return list(library)
 
@@ -102,6 +114,54 @@ def _asset_type_for_path(path):
     return ASSET_EXTENSION_MAP.get(suffix)
 
 
+def _sha256_bytes(data):
+    digest = hashlib.sha256()
+    digest.update(data)
+    return digest.hexdigest()
+
+
+def asset_content_sha256_from_text(text):
+    normalized = (text or '').replace('\r\n', '\n').replace('\r', '\n')
+    return _sha256_bytes(normalized.encode('utf-8'))
+
+
+def asset_file_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, 'rb') as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def inline_asset_hash_for_options(options_dict, asset_type):
+    option_key = INLINE_HASH_KEY_BY_TYPE.get(asset_type)
+    if not option_key:
+        return ''
+    value = (options_dict or {}).get(option_key)
+    return str(value or '').strip().lower()
+
+
+def verify_asset_integrity(asset, logger=None):
+    path = Path(asset['path'])
+    expected = str(asset.get('sha256') or '').strip().lower()
+    if not expected:
+        return True
+    try:
+        actual = asset_file_sha256(path)
+    except OSError:
+        if logger is not None:
+            logger.warning('Failed to read custom asset for integrity verification: %s', path)
+        return False
+    if actual != expected:
+        if logger is not None:
+            logger.warning('Custom asset hash mismatch for %s: expected=%s actual=%s', path, expected, actual)
+        return False
+    return True
+
+
 def import_custom_asset(source_path):
     source = Path(source_path).expanduser()
     if not source.exists() or not source.is_file():
@@ -121,6 +181,7 @@ def import_custom_asset(source_path):
         'type': asset_type,
         'filename': filename,
         'imported_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+        'sha256': asset_file_sha256(target_path),
     }
     library = _library_metadata()
     library.append(asset)
@@ -234,7 +295,8 @@ def linked_assets_for_options(options_dict, asset_type=None):
                 continue
             item = dict(meta)
             item['path'] = str(path)
-            results.append(item)
+            if verify_asset_integrity(item, logger=LOG):
+                results.append(item)
     return results
 
 
@@ -311,6 +373,8 @@ def _sanitize_extension_filename(asset_id, name, suffix):
 
 
 def _read_asset_text(asset):
+    if not verify_asset_integrity(asset, logger=LOG):
+        raise ValueError(f"custom asset integrity check failed: {asset.get('id')}")
     return Path(asset['path']).read_text(encoding='utf-8', errors='ignore')
 
 

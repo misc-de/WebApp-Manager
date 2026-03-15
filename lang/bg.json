@@ -19,8 +19,8 @@
   "url_status_checking": "Checking domain...",
   "user_agent_none": "Browser default",
   "user_agent_unavailable": "No user agents configured for this engine.",
-  "option_adblock": "Add Adblock Plugin",
-  "option_swipe": "Add Swipe Plugin",
+  "option_adblock": "Adblocker (ublock)",
+  "option_swipe": "Swipe gesten (SimpleSwipeNavigator)",
   "option_notifications": "Allow Notifications",
   "option_delete_cache": "Clear Cache When App Closes",
   "option_kiosk": "Kiosk",
@@ -211,5 +211,6 @@
   "detail_asset_inline_css": "Inline CSS",
   "detail_asset_inline_javascript": "Inline JavaScript",
   "detail_asset_inline_hint_css": "Applied in addition to the linked CSS files for this WebApp.",
-  "detail_asset_inline_hint_javascript": "Applied in addition to the linked JavaScript files for this WebApp."
+  "detail_asset_inline_hint_javascript": "Applied in addition to the linked JavaScript files for this WebApp.",
+  "option_category_performance": "Performance"
 }

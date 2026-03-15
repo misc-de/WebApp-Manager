@@ -42,6 +42,7 @@ class BrowserOptionSpec:
     visible: bool = True
     ui_control: str = 'switch'
     browser_managed: bool = True
+    category: str = 'comfort'
 
     @property
     def families(self) -> tuple[str, ...]:
@@ -69,66 +70,77 @@ _VISIBLE_BROWSER_OPTION_SPECS: tuple[BrowserOptionSpec, ...] = (
         'option_previous_session',
         'app_logic',
         _bindings('firefox', 'chrome', 'chromium', 'generic', storage_kind='app_logic', notes='Restore the previous session when the engine supports a startup/session restore mode.'),
+        category='comfort',
     ),
     BrowserOptionSpec(
         OPTION_KEEP_IN_BACKGROUND_KEY,
         'option_keep_in_background',
         'profile_setting',
         _bindings('firefox', 'chrome', 'chromium', storage_kind='profile_setting', notes='Map to the engine-specific background-running behavior when supported.'),
+        category='comfort',
     ),
     BrowserOptionSpec(
         OPTION_NOTIFICATIONS_KEY,
         'option_notifications',
         'profile_setting',
         _bindings('firefox', 'chrome', 'chromium', 'generic', storage_kind='profile_setting', notes='Map to the engine-specific default notification permission settings.'),
+        category='comfort',
     ),
     BrowserOptionSpec(
         OPTION_SWIPE_KEY,
         'option_swipe',
         'extension_action',
         _bindings('firefox', storage_kind='extension_action', transfer_policy='per_engine_only', notes='Implemented by a Firefox extension bundle.'),
+        category='addons',
     ),
     BrowserOptionSpec(
         OPTION_ADBLOCK_KEY,
         'option_adblock',
         'extension_action',
         _bindings('firefox', storage_kind='extension_action', transfer_policy='per_engine_only', notes='Implemented by a Firefox extension bundle.'),
+        category='addons',
     ),
     BrowserOptionSpec(
         ONLY_HTTPS_KEY,
         'option_only_https',
         'profile_setting',
         _bindings('firefox', 'chrome', 'chromium', 'generic', storage_kind='profile_setting', notes='Enable the closest engine-specific HTTPS-only or HTTPS-upgrade behavior.'),
+        category='security',
     ),
     BrowserOptionSpec(
         OPTION_CLEAR_CACHE_ON_EXIT_KEY,
         'option_delete_cache',
         'shutdown_cleanup',
         _bindings('firefox', 'chrome', 'chromium', 'generic', storage_kind='shutdown_cleanup', notes='Clear cache on shutdown/exit when supported.'),
+        category='cleanup',
     ),
     BrowserOptionSpec(
         OPTION_CLEAR_COOKIES_ON_EXIT_KEY,
         'option_delete_cookies',
         'shutdown_cleanup',
         _bindings('firefox', 'chrome', 'chromium', 'generic', storage_kind='shutdown_cleanup', notes='Clear cookies/site data on shutdown/exit when supported.'),
+        category='cleanup',
     ),
     BrowserOptionSpec(
         OPTION_DISABLE_AI_KEY,
         'option_disable_ai',
         'profile_setting',
         _bindings('firefox', 'chrome', 'chromium', storage_kind='profile_setting', notes='Disable engine-provided AI assistance/features where the engine exposes a manageable toggle.'),
+        category='comfort',
     ),
     BrowserOptionSpec(
         OPTION_STARTUP_BOOSTER_KEY,
         'option_startup_booster',
         'macro',
         _bindings('firefox', 'chrome', 'chromium', storage_kind='macro', notes='Apply engine-specific startup optimizations that skip welcome/default-browser overhead without overriding startup URL, session retention, or extension selections.'),
+        category='performance',
     ),
     BrowserOptionSpec(
         OPTION_FORCE_PRIVACY_KEY,
         'option_set_privacy',
         'macro',
         _bindings('firefox', 'chrome', 'chromium', 'generic', storage_kind='macro', notes='Apply the engine-specific privacy macro/preset.'),
+        category='security',
     ),
 )
 
@@ -186,6 +198,25 @@ _HIDDEN_BROWSER_OPTION_SPECS: tuple[BrowserOptionSpec, ...] = (
         ui_control='dropdown',
     ),
 )
+
+
+
+OPTION_CATEGORY_ORDER: tuple[str, ...] = ('security', 'cleanup', 'performance', 'comfort', 'addons')
+OPTION_CATEGORY_LABEL_KEYS: dict[str, str] = {
+    'security': 'option_category_security',
+    'cleanup': 'option_category_cleanup',
+    'performance': 'option_category_performance',
+    'comfort': 'option_category_comfort',
+    'addons': 'option_category_addons',
+}
+
+
+def option_category(option_key: str) -> str:
+    spec = option_spec(option_key)
+    if spec is None:
+        return 'comfort'
+    category = (spec.category or 'comfort').strip().lower()
+    return category if category in OPTION_CATEGORY_ORDER else 'comfort'
 
 
 ALL_BROWSER_OPTION_SPECS: tuple[BrowserOptionSpec, ...] = _VISIBLE_BROWSER_OPTION_SPECS + _HIDDEN_BROWSER_OPTION_SPECS
