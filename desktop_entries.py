@@ -34,6 +34,7 @@ from webapp_constants import (
     ADDRESS_KEY,
     APP_MODE_KEY,
     APPLICATIONS_DIR,
+    CHROMIUM_PROFILE_ROOT,
     COLOR_SCHEME_KEY,
     FIREFOX_ROOT,
     ICON_PATH_KEY,
@@ -49,6 +50,153 @@ from webapp_constants import (
 )
 
 MANAGED_BY_VALUE = t('managed_by')
+
+
+def _browser_family_for_command(command: str) -> str:
+    lowered = (command or '').strip().lower()
+    if 'firefox' in lowered:
+        return 'firefox'
+    if 'chromium' in lowered:
+        return 'chromium'
+    if 'chrome' in lowered:
+        return 'chrome'
+    return 'generic'
+
+
+def _stored_profile_info(configured_command: str, stored_profile_name: str = '', stored_profile_path: str = ''):
+    family = _browser_family_for_command(configured_command)
+    profile_path = ''
+    profile_name = (stored_profile_name or '').strip()
+    if stored_profile_path:
+        try:
+            profile_path = str(Path(stored_profile_path).expanduser().resolve())
+        except OSError:
+            profile_path = str(Path(stored_profile_path).expanduser())
+        if not profile_name and profile_path:
+            profile_name = Path(profile_path).name
+    elif profile_name:
+        safe_name = Path(profile_name).name
+        if family == 'firefox':
+            profile_path = str(FIREFOX_ROOT / safe_name)
+        elif family in {'chrome', 'chromium'}:
+            profile_path = str((CHROMIUM_PROFILE_ROOT / family) / safe_name)
+        profile_name = safe_name
+
+    exec_args = []
+    if profile_path:
+        if family == 'firefox':
+            exec_args = ['--profile', profile_path, '--new-instance']
+        elif family in {'chrome', 'chromium'}:
+            exec_args = [f'--user-data-dir={profile_path}']
+
+    return {
+        'browser_family': family,
+        'profile_name': profile_name,
+        'profile_path': profile_path,
+        'exec_args': exec_args,
+        'profile_migrated': False,
+    }
+
+
+def _selected_engine(options_dict, engines_list):
+    configured_command = 'firefox'
+    engine_id = options_dict.get('EngineID')
+    try:
+        engine_id = int(engine_id) if engine_id not in (None, '') else None
+    except ValueError:
+        engine_id = None
+    selected_engine = None
+    for engine in engines_list:
+        if engine.get('id') == engine_id:
+            selected_engine = engine
+            configured_command = engine['command']
+            break
+    return selected_engine, configured_command
+
+
+def build_launch_command(entry, options_dict, engines_list, logger, prepare_profile=False):
+    title = (getattr(entry, 'title', '') or '').strip()
+    raw_address = (options_dict.get(ADDRESS_KEY, '') or '').strip()
+    address = normalize_address(raw_address, options_dict.get(ONLY_HTTPS_KEY, '0') == '1')
+    if not title or not is_valid_url(address or raw_address, check_origin=False):
+        logger.warning('Refusing to build launch command for entry %s because title or URL is invalid', getattr(entry, 'id', 'unknown'))
+        return None
+
+    selected_engine, configured_command = _selected_engine(options_dict, engines_list)
+    if selected_engine is None:
+        logger.warning('Refusing to build launch command for entry %s because engine selection is invalid', getattr(entry, 'id', 'unknown'))
+        return None
+
+    engine_command = resolve_browser_command(configured_command, logger)
+    scoped_options = project_options_for_family(options_dict or {}, 'firefox' if 'firefox' in configured_command.lower() else ('chromium' if 'chromium' in configured_command.lower() else ('chrome' if 'chrome' in configured_command.lower() else 'generic')))
+    merged_options = normalize_option_dict(options_dict or {})
+    merged_options.update(scoped_options)
+
+    if prepare_profile:
+        profile_info = ensure_browser_profile(
+            title,
+            configured_command,
+            logger,
+            stored_profile_name=options_dict.get(PROFILE_NAME_KEY, ''),
+            stored_profile_path=options_dict.get(PROFILE_PATH_KEY, ''),
+        )
+        apply_profile_settings(profile_info, merged_options, logger)
+    else:
+        profile_info = _stored_profile_info(
+            configured_command,
+            stored_profile_name=options_dict.get(PROFILE_NAME_KEY, ''),
+            stored_profile_path=options_dict.get(PROFILE_PATH_KEY, ''),
+        )
+
+    exec_parts = [engine_command]
+    app_mode = merged_options.get(APP_MODE_KEY, '0') == '1'
+    frameless = merged_options.get('Frameless', '0') == '1'
+    disable_ai = merged_options.get(OPTION_DISABLE_AI_KEY, '0') == '1'
+    color_scheme = normalize_color_scheme(merged_options.get(COLOR_SCHEME_KEY, 'auto'))
+    if profile_info:
+        exec_parts.extend(profile_info['exec_args'])
+        exec_parts.extend(chromium_runtime_extension_args(profile_info, merged_options))
+    if merged_options.get('Kiosk', '0') == '1':
+        exec_parts.append('--kiosk')
+    chrome_feature_flags = []
+    chrome_disable_feature_flags = []
+    chrome_blink_settings = []
+    is_chromium_family = bool(profile_info and profile_info.get('browser_family') in {'chrome', 'chromium'})
+    if merged_options.get(OPTION_SWIPE_KEY, '0') == '1' and is_chromium_family:
+        chrome_feature_flags.extend(['TouchpadOverscrollHistoryNavigation', 'OverscrollHistoryNavigation'])
+    if disable_ai and is_chromium_family:
+        chrome_disable_feature_flags.extend(['OptimizationGuideModelDownloading', 'OptimizationHintsFetching', 'Compose', 'AutofillAi', 'HistorySearch', 'TabOrganization', 'Glic'])
+    if is_chromium_family:
+        if color_scheme == 'dark':
+            exec_parts.append('--force-dark-mode')
+            chrome_feature_flags.append('WebUIDarkMode')
+            chrome_blink_settings.extend(['preferredColorScheme=0', 'forceDarkModeEnabled=true'])
+        elif color_scheme == 'light':
+            chrome_disable_feature_flags.extend(['WebUIDarkMode', 'AutoWebContentsDarkMode'])
+            chrome_blink_settings.append('preferredColorScheme=1')
+    append_unique_csv_arg(exec_parts, '--enable-features=', chrome_feature_flags)
+    append_unique_csv_arg(exec_parts, '--disable-features=', chrome_disable_feature_flags)
+    append_unique_csv_arg(exec_parts, '--blink-settings=', chrome_blink_settings)
+    append_user_agent_argument(exec_parts, engine_command, merged_options.get(USER_AGENT_VALUE_KEY, '').strip(), logger, getattr(entry, 'id', None))
+    previous_session_enabled = merged_options.get(OPTION_PRESERVE_SESSION_KEY, '0') == '1'
+    if profile_info and profile_info.get('browser_family') in {'chrome', 'chromium'} and app_mode and not previous_session_enabled:
+        exec_parts.append(f'--app={address}')
+        if frameless:
+            exec_parts.append('--start-fullscreen')
+    elif profile_info and profile_info.get('browser_family') == 'firefox' and app_mode:
+        exec_parts.extend(['--new-window', address])
+    elif not previous_session_enabled:
+        if profile_info and profile_info.get('browser_family') == 'firefox':
+            exec_parts.extend(['--new-window', address])
+        else:
+            exec_parts.append(address)
+
+    return {
+        'argv': exec_parts,
+        'normalized_address': address,
+        'profile_info': profile_info,
+        'engine_command': engine_command,
+    }
 
 
 def _looks_like_filesystem_path(value: str) -> bool:
@@ -353,79 +501,13 @@ def export_desktop_file(entry, options_dict, engines_list, logger):
     if not _guard_target_path(target_path, engines_list, logger):
         return None
 
-    configured_command = 'firefox'
-    engine_id = options_dict.get('EngineID')
-    try:
-        engine_id = int(engine_id) if engine_id not in (None, '') else None
-    except ValueError:
-        engine_id = None
-    selected_engine = None
-    for engine in engines_list:
-        if engine['id'] == engine_id:
-            selected_engine = engine
-            configured_command = engine['command']
-            break
-    if selected_engine is None:
+    launch_spec = build_launch_command(entry, options_dict, engines_list, logger, prepare_profile=True)
+    if launch_spec is None:
         delete_managed_entry_artifacts(entry.id, title, engines_list, logger, delete_profiles=False, stored_profile_path=previous_profile_path, stored_profile_name=previous_profile_name)
         return None
-    engine_command = resolve_browser_command(configured_command, logger)
-    scoped_options = project_options_for_family(options_dict or {}, 'firefox' if 'firefox' in configured_command.lower() else ('chromium' if 'chromium' in configured_command.lower() else ('chrome' if 'chrome' in configured_command.lower() else 'generic')))
-    merged_options = normalize_option_dict(options_dict or {})
-    merged_options.update(scoped_options)
-    profile_info = ensure_browser_profile(
-        title,
-        configured_command,
-        logger,
-        stored_profile_name=previous_profile_name,
-        stored_profile_path=previous_profile_path,
-    )
-    apply_profile_settings(profile_info, merged_options, logger)
-
-    exec_parts = [engine_command]
-    app_mode = merged_options.get(APP_MODE_KEY, '0') == '1'
-    frameless = merged_options.get('Frameless', '0') == '1'
-    kiosk = merged_options.get('Kiosk', '0') == '1'
-    disable_ai = merged_options.get(OPTION_DISABLE_AI_KEY, '0') == '1'
-    set_privacy = merged_options.get(OPTION_FORCE_PRIVACY_KEY, '0') == '1'
-    color_scheme = normalize_color_scheme(merged_options.get(COLOR_SCHEME_KEY, 'auto'))
-    if profile_info:
-        exec_parts.extend(profile_info['exec_args'])
-        exec_parts.extend(chromium_runtime_extension_args(profile_info, merged_options))
-    if merged_options.get('Kiosk', '0') == '1':
-        exec_parts.append('--kiosk')
-    chrome_feature_flags = []
-    chrome_disable_feature_flags = []
-    chrome_blink_settings = []
-    is_chromium_family = bool(profile_info and profile_info.get('browser_family') in {'chrome', 'chromium'})
-    if merged_options.get(OPTION_SWIPE_KEY, '0') == '1' and is_chromium_family:
-        chrome_feature_flags.extend(['TouchpadOverscrollHistoryNavigation', 'OverscrollHistoryNavigation'])
-    if merged_options.get(OPTION_DISABLE_AI_KEY, '0') == '1' and is_chromium_family:
-        chrome_disable_feature_flags.extend(['OptimizationGuideModelDownloading', 'OptimizationHintsFetching', 'Compose', 'AutofillAi', 'HistorySearch', 'TabOrganization', 'Glic'])
-    if is_chromium_family:
-        if color_scheme == 'dark':
-            exec_parts.append('--force-dark-mode')
-            chrome_feature_flags.append('WebUIDarkMode')
-            chrome_blink_settings.extend(['preferredColorScheme=0', 'forceDarkModeEnabled=true'])
-        elif color_scheme == 'light':
-            chrome_disable_feature_flags.extend(['WebUIDarkMode', 'AutoWebContentsDarkMode'])
-            chrome_blink_settings.append('preferredColorScheme=1')
-    append_unique_csv_arg(exec_parts, '--enable-features=', chrome_feature_flags)
-    append_unique_csv_arg(exec_parts, '--disable-features=', chrome_disable_feature_flags)
-    append_unique_csv_arg(exec_parts, '--blink-settings=', chrome_blink_settings)
-    append_user_agent_argument(exec_parts, engine_command, merged_options.get(USER_AGENT_VALUE_KEY, '').strip(), logger, entry.id)
-    previous_session_enabled = merged_options.get(OPTION_PRESERVE_SESSION_KEY, '0') == '1'
-    if profile_info and profile_info.get('browser_family') in {'chrome', 'chromium'} and app_mode and not previous_session_enabled:
-        exec_parts.append(f'--app={address}')
-        if frameless:
-            exec_parts.append('--start-fullscreen')
-    elif profile_info and profile_info.get('browser_family') == 'firefox' and app_mode:
-        exec_parts.extend(['--new-window', address])
-    elif not previous_session_enabled:
-        if profile_info and profile_info.get('browser_family') == 'firefox':
-            exec_parts.extend(['--new-window', address])
-        else:
-            exec_parts.append(address)
-    exec_cmd = shlex.join(exec_parts)
+    exec_cmd = shlex.join(launch_spec['argv'])
+    profile_info = launch_spec['profile_info']
+    address = launch_spec['normalized_address']
 
     icon_path = options_dict.get(ICON_PATH_KEY, '').strip()
     icon_field = ''
