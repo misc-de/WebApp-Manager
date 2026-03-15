@@ -206,5 +206,18 @@
   "detail_asset_remove_css_confirm": "Remove linked CSS {name}?",
   "detail_asset_remove_javascript_confirm": "Remove linked JavaScript {name}?",
   "detail_asset_firefox_js_note": "Firefox can only execute linked JavaScript when unsigned runtime add-ons are allowed for the used build/profile.",
-  "desktop_detected_import_prompt": "Do you want to import {total} detected WebApps?"
+  "desktop_detected_import_prompt": "Do you want to import {total} detected WebApps?",
+  "welcome_title": "Welcome",
+  "welcome_subtitle": "Select a web app on the left or create a new one to get started.",
+  "welcome_new_button": "Create web app",
+  "welcome_import_button": "Import .wapp file",
+  "detail_tab_basic": "Basic settings",
+  "detail_tab_css": "CSS",
+  "detail_tab_javascript": "JavaScript",
+  "detail_tab_options": "Options",
+  "option_startup_booster": "Startup Booster",
+  "detail_asset_inline_css": "Inline CSS",
+  "detail_asset_inline_javascript": "Inline JavaScript",
+  "detail_asset_inline_hint_css": "Applied in addition to the linked CSS files for this WebApp.",
+  "detail_asset_inline_hint_javascript": "Applied in addition to the linked JavaScript files for this WebApp."
 }

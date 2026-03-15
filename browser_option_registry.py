@@ -11,6 +11,7 @@ from webapp_constants import (
     OPTION_CLEAR_COOKIES_ON_EXIT_KEY,
     OPTION_DISABLE_AI_KEY,
     OPTION_FORCE_PRIVACY_KEY,
+    OPTION_STARTUP_BOOSTER_KEY,
     OPTION_KEEP_IN_BACKGROUND_KEY,
     OPTION_NOTIFICATIONS_KEY,
     OPTION_PRESERVE_SESSION_KEY,
@@ -116,6 +117,12 @@ _VISIBLE_BROWSER_OPTION_SPECS: tuple[BrowserOptionSpec, ...] = (
         'option_disable_ai',
         'profile_setting',
         _bindings('firefox', 'chrome', 'chromium', storage_kind='profile_setting', notes='Disable engine-provided AI assistance/features where the engine exposes a manageable toggle.'),
+    ),
+    BrowserOptionSpec(
+        OPTION_STARTUP_BOOSTER_KEY,
+        'option_startup_booster',
+        'macro',
+        _bindings('firefox', 'chrome', 'chromium', storage_kind='macro', notes='Apply engine-specific startup optimizations that skip welcome/default-browser overhead without overriding startup URL, session retention, or extension selections.'),
     ),
     BrowserOptionSpec(
         OPTION_FORCE_PRIVACY_KEY,
