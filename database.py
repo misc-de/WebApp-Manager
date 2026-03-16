@@ -118,5 +118,48 @@ class Database:
         self.cursor.execute('SELECT * FROM options WHERE entry_id=?', (entry_id,))
         return self.cursor.fetchall()
 
+    def list_entries(self):
+        self.cursor.execute('SELECT id, title, description, active FROM entries ORDER BY title COLLATE NOCASE ASC')
+        return self.cursor.fetchall()
+
+    def list_option_values(self):
+        self.cursor.execute('SELECT entry_id, option_key, option_value FROM options')
+        return self.cursor.fetchall()
+
+    def get_entry(self, entry_id):
+        self.cursor.execute('SELECT id, title, description, active FROM entries WHERE id=?', (entry_id,))
+        return self.cursor.fetchone()
+
+    def update_entry(self, entry_id, *, title=None, description=None, active=None):
+        updates = []
+        values = []
+        if title is not None:
+            updates.append('title=?')
+            values.append(title)
+        if description is not None:
+            updates.append('description=?')
+            values.append(description)
+        if active is not None:
+            updates.append('active=?')
+            values.append(1 if bool(active) else 0)
+        if not updates:
+            return False
+        values.append(entry_id)
+        self.cursor.execute(f"UPDATE entries SET {', '.join(updates)} WHERE id=?", tuple(values))
+        self.conn.commit()
+        return self.cursor.rowcount > 0
+
+    def delete_entry(self, entry_id):
+        try:
+            self.conn.execute('BEGIN')
+            self.cursor.execute('DELETE FROM entries WHERE id=?', (entry_id,))
+            deleted = self.cursor.rowcount > 0
+            self.conn.commit()
+            return deleted
+        except sqlite3.Error as error:
+            self.conn.rollback()
+            LOG.error('Failed to delete entry %s: %s', entry_id, error)
+            raise
+
     def close(self):
         self.conn.close()
