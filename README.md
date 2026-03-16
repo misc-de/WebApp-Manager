@@ -47,7 +47,7 @@ Current plugin references:
 
 ## Pictures
 
-<img width="1200" alt="desktop" src="https://github.com/user-attachments/assets/cb2ca1d9-2171-4b5f-86a4-5eda046aaaed" />
-<br>
-<img width="300" alt="detail" src="https://github.com/user-attachments/assets/ef80f234-4e66-4cf6-a04b-2c80838ece9f" />
-<img width="300" alt="overview" src="https://github.com/user-attachments/assets/a950d663-34a0-4a29-a778-f5d1da9f7236" />
+<img width="1200" alt="1" src="https://github.com/user-attachments/assets/cbbda8ed-f8ee-4da3-af70-ec60a9840965" /><br />
+<img width="300" alt="2" src="https://github.com/user-attachments/assets/8f9cf499-f55e-4c98-936a-4566c8d62667" />
+<img width="300" alt="3" src="https://github.com/user-attachments/assets/849b8783-0d65-4cf8-8d8f-f9d5848fd514" />
+<img width="300" alt="4" src="https://github.com/user-attachments/assets/5bab28e0-6f1c-4777-af73-e4de47affa21" />
