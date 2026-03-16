@@ -280,3 +280,8 @@ listview row:hover > box {
 .option-row:hover {
     background: alpha(currentColor, 0.05);
 }
+
+
+.detail-desktop-tab-offset {
+  margin-left: 0;
+}
