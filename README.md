@@ -6,7 +6,7 @@ The WebApp Manager is a compact GTK/Libadwaita desktop and mobile tool for creat
 - Create and update web app launchers via a central user interface
 - Manage dedicated Firefox and Chromium/Chrome profiles per web app
 - Import existing launchers and .wapp exports
-- Manage icons, user-agent preferences, and browser-specific options
+- Manage icons, user-agent preferences, modes and browser-specific options
 
 ## Installation
 ```
