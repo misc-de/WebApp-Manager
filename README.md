@@ -46,8 +46,8 @@ Current plugin references:
   Source: https://github.com/usemoslinux/swipe-navigator
 
 ## Pictures
-<img width="1200" height="814" alt="desktop" src="https://github.com/user-attachments/assets/572b694a-12e2-463f-a539-ebf723fa145c" />
-<br>
-<img width="300" alt="overview" src="https://github.com/user-attachments/assets/a950d663-34a0-4a29-a778-f5d1da9f7236" />
+<img width="600" height="814" alt="desktop" src="https://github.com/user-attachments/assets/572b694a-12e2-463f-a539-ebf723fa145c" />
 <br>
 <img width="300" alt="detail" src="https://github.com/user-attachments/assets/ef80f234-4e66-4cf6-a04b-2c80838ece9f" />
+<br>
+<img width="300" alt="overview" src="https://github.com/user-attachments/assets/a950d663-34a0-4a29-a778-f5d1da9f7236" />
