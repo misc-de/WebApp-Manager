@@ -7,7 +7,7 @@ from gi.repository import GLib, Gtk, Pango
 from app_models import Entry
 from app_state import WebAppState
 from browser_profiles import inspect_profile_copy_source, read_profile_settings, rename_unused_managed_profile_directories
-from browser_option_logic import browser_family_for_command, browser_managed_option_keys, browser_state_key, encode_browser_state, normalize_option_dict, normalize_option_rows
+from browser_option_logic import browser_family_for_command, browser_managed_option_keys, browser_state_key, encode_browser_state, mode_option_keys, normalize_option_dict, normalize_option_rows
 from desktop_entries import export_desktop_file, exportable_entry, get_expected_desktop_path, list_managed_desktop_files
 from engine_support import available_engines
 from i18n import t
@@ -366,10 +366,11 @@ class MainWindowEntriesMixin:
 
         GLib.idle_add(_compute, priority=GLib.PRIORITY_LOW)
 
-    def _get_options_dict(self, entry_id):
-        cached = self._options_cache.get(entry_id)
-        if cached is not None:
-            return dict(cached)
+    def _get_options_dict(self, entry_id, force_refresh=False):
+        if not force_refresh:
+            cached = self._options_cache.get(entry_id)
+            if cached is not None:
+                return dict(cached)
         loaded = normalize_option_rows(self.db.get_options_for_entry(entry_id))
         self._options_cache[entry_id] = dict(loaded)
         return loaded
@@ -448,7 +449,7 @@ class MainWindowEntriesMixin:
             LOG.warning('Failed to read profile settings for entry %s from %s: %s', entry_id, profile_path, error)
             return {}
         normalized_state = normalize_option_dict(raw_state)
-        updates = {key: value for key, value in normalized_state.items() if key in browser_managed_option_keys()}
+        updates = {key: value for key, value in normalized_state.items() if key in browser_managed_option_keys() and key not in mode_option_keys()}
         if not updates:
             return {}
         existing = self._get_options_dict(entry_id)

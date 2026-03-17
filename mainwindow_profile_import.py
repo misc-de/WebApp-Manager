@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 from gi.repository import Gio, GLib, Gtk
-from browser_option_logic import browser_managed_option_keys, browser_state_key, encode_browser_state, normalize_option_dict, normalize_option_rows
+from browser_option_logic import browser_managed_option_keys, browser_state_key, encode_browser_state, mode_option_keys, normalize_option_dict, normalize_option_rows
 from database import Database
 from detail_page import DetailPage
 from app_identity import APP_DB_PATH
@@ -141,7 +141,7 @@ class MainWindowProfileImportMixin:
                     try:
                         raw_state = read_profile_settings(profile_path, family)
                         normalized_state = normalize_option_dict(raw_state)
-                        updates = {key: value for key, value in normalized_state.items() if key in browser_managed_option_keys()}
+                        updates = {key: value for key, value in normalized_state.items() if key in browser_managed_option_keys() and key not in mode_option_keys()}
                         if updates:
                             existing = normalize_option_rows(db.get_options_for_entry(entry_id))
                             merged = dict(existing)

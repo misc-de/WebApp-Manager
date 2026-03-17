@@ -5,7 +5,7 @@ from engine_support import available_engines, engine_icon_name
 from i18n import t
 from logger_setup import get_logger
 from ui_icons import create_image_from_ref
-APP_VERSION = '66s'
+APP_VERSION = '67'
 ENGINES = available_engines()
 from app_models import Entry
 from desktop_entries import delete_managed_entry_artifacts

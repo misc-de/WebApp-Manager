@@ -18,6 +18,40 @@ BROWSER_STATE_PREFIX = '__BrowserState.'
 BROWSER_OPTION_SPECS: tuple[BrowserOptionSpec, ...] = visible_browser_option_specs()
 OPTION_SPEC_BY_KEY = {spec.key: spec for spec in BROWSER_OPTION_SPECS}
 
+MODE_OPTION_KEYS = {'Kiosk', 'App Mode', 'Frameless'}
+
+
+def mode_option_keys() -> set[str]:
+    return set(MODE_OPTION_KEYS)
+
+
+def semantic_mode_from_options(options: dict | None) -> str:
+    normalized = normalize_option_dict(options)
+    if normalized.get('Kiosk') == '1':
+        return 'kiosk'
+    if normalized.get('App Mode') == '1' and normalized.get('Frameless') == '1':
+        return 'seamless'
+    if normalized.get('App Mode') == '1':
+        return 'app'
+    return 'standard'
+
+
+def apply_semantic_mode(options: dict | None, mode_value: str) -> dict[str, str]:
+    normalized = normalize_option_dict(options)
+    mapping = {
+        'standard': {'Kiosk': '0', 'App Mode': '0', 'Frameless': '0'},
+        'kiosk': {'Kiosk': '1', 'App Mode': '0', 'Frameless': '0'},
+        'app': {'Kiosk': '0', 'App Mode': '1', 'Frameless': '0'},
+        'seamless': {'Kiosk': '0', 'App Mode': '1', 'Frameless': '1'},
+    }
+    normalized.update(mapping.get((mode_value or 'standard').strip().lower(), mapping['standard']))
+    return normalized
+
+
+def project_browser_state_options(options: dict | None, family: str) -> dict[str, str]:
+    projected = project_options_for_family(options, family)
+    return {key: value for key, value in projected.items() if key not in MODE_OPTION_KEYS}
+
 
 def browser_family_for_command(command: str) -> str:
     lower = (command or '').lower()
@@ -146,7 +180,7 @@ def project_options_for_family(options: dict, family: str) -> dict[str, str]:
 
 
 def encode_browser_state(options: dict, family: str) -> str:
-    payload = project_options_for_family(options, family)
+    payload = project_browser_state_options(options, family)
     return json.dumps(payload, sort_keys=True, separators=(',', ':'))
 
 

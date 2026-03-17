@@ -147,8 +147,8 @@ class MainWindowLaunchExportMixin:
             if desktop_path is None or not desktop_path.exists():
                 LOG.warning('Refusing to launch entry %s because its managed desktop file is missing', getattr(entry, 'id', 'unknown'))
                 return
-            options = self._get_options_dict(entry.id)
-            launch_spec = build_launch_command(entry, options, ENGINES, LOG, prepare_profile=False)
+            options = self._get_options_dict(entry.id, force_refresh=True)
+            launch_spec = build_launch_command(entry, options, ENGINES, LOG, prepare_profile=True)
             if launch_spec is None:
                 LOG.warning('Refusing to launch entry %s because no validated launch command could be built', getattr(entry, 'id', 'unknown'))
                 return

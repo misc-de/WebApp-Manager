@@ -11,7 +11,7 @@ from input_validation import (
     normalize_address,
     sanitize_desktop_value,
 )
-from browser_option_logic import normalize_option_dict, project_options_for_family
+from browser_option_logic import apply_semantic_mode, normalize_option_dict, project_options_for_family, semantic_mode_from_options
 from browser_profiles import (
     append_unique_csv_arg,
     append_user_agent_argument,
@@ -61,6 +61,35 @@ def _browser_family_for_command(command: str) -> str:
     if 'chrome' in lowered:
         return 'chrome'
     return 'generic'
+
+
+
+def _chromium_launch_args_for_mode(mode_value: str, address: str, previous_session_enabled: bool) -> list[str]:
+    mode = (mode_value or 'standard').strip().lower()
+    if mode == 'kiosk':
+        return ['--kiosk', address]
+    if mode in {'app', 'seamless'}:
+        return [f'--app={address}']
+    if previous_session_enabled:
+        return []
+    return ['--new-window', address]
+
+
+def _firefox_launch_args_for_mode(mode_value: str, address: str, previous_session_enabled: bool) -> list[str]:
+    mode = (mode_value or 'standard').strip().lower()
+    if mode == 'kiosk':
+        return ['-kiosk', '-private-window', address]
+    if mode in {'app', 'seamless'}:
+        return ['--new-window', address]
+    if previous_session_enabled:
+        return []
+    return ['--new-window', address]
+
+
+def _generic_launch_args_for_mode(address: str, previous_session_enabled: bool) -> list[str]:
+    if previous_session_enabled:
+        return []
+    return [address]
 
 
 def _stored_profile_info(configured_command: str, stored_profile_name: str = '', stored_profile_path: str = ''):
@@ -149,15 +178,16 @@ def build_launch_command(entry, options_dict, engines_list, logger, prepare_prof
         )
 
     exec_parts = [engine_command]
-    app_mode = merged_options.get(APP_MODE_KEY, '0') == '1'
-    frameless = merged_options.get('Frameless', '0') == '1'
+    mode_value = semantic_mode_from_options(merged_options)
+    kiosk_mode = mode_value == 'kiosk'
+    app_mode = mode_value in {'app', 'seamless'}
+    frameless = mode_value == 'seamless'
     disable_ai = merged_options.get(OPTION_DISABLE_AI_KEY, '0') == '1'
     color_scheme = normalize_color_scheme(merged_options.get(COLOR_SCHEME_KEY, 'auto'))
+    browser_family = profile_info.get('browser_family') if profile_info else ''
     if profile_info:
         exec_parts.extend(profile_info['exec_args'])
         exec_parts.extend(chromium_runtime_extension_args(profile_info, merged_options))
-    if merged_options.get('Kiosk', '0') == '1':
-        exec_parts.append('--kiosk')
     chrome_feature_flags = []
     chrome_disable_feature_flags = []
     chrome_blink_settings = []
@@ -178,18 +208,13 @@ def build_launch_command(entry, options_dict, engines_list, logger, prepare_prof
     append_unique_csv_arg(exec_parts, '--disable-features=', chrome_disable_feature_flags)
     append_unique_csv_arg(exec_parts, '--blink-settings=', chrome_blink_settings)
     append_user_agent_argument(exec_parts, engine_command, merged_options.get(USER_AGENT_VALUE_KEY, '').strip(), logger, getattr(entry, 'id', None))
-    previous_session_enabled = merged_options.get(OPTION_PRESERVE_SESSION_KEY, '0') == '1'
-    if profile_info and profile_info.get('browser_family') in {'chrome', 'chromium'} and app_mode and not previous_session_enabled:
-        exec_parts.append(f'--app={address}')
-        if frameless:
-            exec_parts.append('--start-fullscreen')
-    elif profile_info and profile_info.get('browser_family') == 'firefox' and app_mode:
-        exec_parts.extend(['--new-window', address])
-    elif not previous_session_enabled:
-        if profile_info and profile_info.get('browser_family') == 'firefox':
-            exec_parts.extend(['--new-window', address])
-        else:
-            exec_parts.append(address)
+    previous_session_enabled = (merged_options.get(OPTION_PRESERVE_SESSION_KEY, '0') == '1') and mode_value == 'standard'
+    if browser_family in {'chrome', 'chromium'}:
+        exec_parts.extend(_chromium_launch_args_for_mode(mode_value, address, previous_session_enabled))
+    elif browser_family == 'firefox':
+        exec_parts.extend(_firefox_launch_args_for_mode(mode_value, address, previous_session_enabled))
+    else:
+        exec_parts.extend(_generic_launch_args_for_mode(address, previous_session_enabled))
 
     return {
         'argv': exec_parts,
@@ -340,6 +365,9 @@ def parse_desktop_file(path, engines_list):
         tokens = []
 
     derived_options = {}
+    explicit_mode = (section.get('X-WebApp-Mode', '') or '').strip().lower()
+    if explicit_mode in {'standard', 'kiosk', 'app', 'seamless'}:
+        derived_options.update({k: v for k, v in apply_semantic_mode({}, explicit_mode).items() if k in {'Kiosk', APP_MODE_KEY, 'Frameless'}})
     engine_id = None
     user_agent_name = ''
     user_agent_value = ''
@@ -351,7 +379,7 @@ def parse_desktop_file(path, engines_list):
                 break
         profile_path = _extract_profile_path_from_exec_tokens(tokens)
         for index, token in enumerate(tokens):
-            if token == '--kiosk':
+            if token in {'--kiosk', '-kiosk'}:
                 derived_options['Kiosk'] = '1'
                 derived_options.setdefault(APP_MODE_KEY, '0')
                 derived_options.setdefault('Frameless', '0')
@@ -532,6 +560,7 @@ def export_desktop_file(entry, options_dict, engines_list, logger):
 
     active = bool(entry.active)
 
+    mode_value = semantic_mode_from_options(options_dict)
     lines = [
         '[Desktop Entry]',
         f'Name={sanitize_desktop_value(title)}',
@@ -540,6 +569,7 @@ def export_desktop_file(entry, options_dict, engines_list, logger):
         f"NoDisplay={'false' if active else 'true'}",
         f'ManagedBy={MANAGED_BY_VALUE}',
         f'EntryId={entry.id}',
+        f'X-WebApp-Mode={mode_value}',
     ]
     if icon_field:
         lines.append(f'Icon={icon_field}')
