@@ -15,7 +15,7 @@ from distro_utils import is_furios_distribution
 
 from i18n import get_app_config
 from custom_assets import ensure_profile_customizations, inline_asset_text_for_options, linked_assets_for_options
-from browser_option_logic import normalize_option_dict, project_options_for_family
+from browser_option_logic import normalize_option_dict, project_options_for_family, semantic_mode_from_options
 from input_validation import build_safe_slug, sanitize_desktop_value
 from webapp_constants import (
     ADDRESS_KEY,
@@ -683,7 +683,7 @@ def _sync_firefox_swipe_extension(profile_dir, enabled, logger):
 def _sync_firefox_adblock(profile_dir, enabled, logger):
     return _sync_firefox_signed_extension(profile_dir, enabled, logger, 'adblock')
 
-def _sync_firefox_app_mode_css(profile_dir, enabled, frameless, kiosk, logger):
+def _sync_firefox_app_mode_css(profile_dir, enabled, frameless, logger):
     profile_dir = Path(profile_dir)
     chrome_dir = profile_dir / 'chrome'
     css_path = chrome_dir / 'userChrome.css'
@@ -708,8 +708,8 @@ def _sync_firefox_app_mode_css(profile_dir, enabled, frameless, kiosk, logger):
         return
 
     chrome_dir.mkdir(parents=True, exist_ok=True)
-    mode_name = 'kiosk' if kiosk else ('seamless' if frameless else 'app')
-    if frameless or kiosk:
+    mode_name = 'seamless' if frameless else 'app'
+    if frameless:
         managed_block = (
             FIREFOX_APP_MODE_START
             + f'/* WEBAPP MODE: {mode_name} */\n'
@@ -787,8 +787,8 @@ def _read_firefox_profile_settings(profile_dir):
             css_text = ''
     mode_marker = re.search(r'/\* WEBAPP MODE: ([a-z]+) \*/', css_text)
     mode_name = mode_marker.group(1) if mode_marker else ''
-    frameless = mode_name in {'seamless', 'kiosk'}
-    app_mode_enabled = mode_name in {'app', 'seamless', 'kiosk'}
+    frameless = mode_name == 'seamless'
+    app_mode_enabled = mode_name in {'app', 'seamless'}
     privacy_enabled = bool(
         prefs.get('toolkit.telemetry.enabled') is False
         or prefs.get('privacy.globalprivacycontrol.enabled') is True
@@ -809,7 +809,7 @@ def _read_firefox_profile_settings(profile_dir):
         OPTION_DISABLE_AI_KEY: '1' if (prefs.get('browser.ml.chat.enabled') is False or prefs.get('browser.tabs.groups.smart.enabled') is False or prefs.get('browser.ml.linkPreview.enabled') is False) else '0',
         OPTION_FORCE_PRIVACY_KEY: '1' if privacy_enabled else '0',
         OPTION_STARTUP_BOOSTER_KEY: '1' if prefs.get('webapp.startup_booster.enabled') is True else '0',
-        APP_MODE_KEY: '1' if app_mode_enabled or prefs.get('toolkit.legacyUserProfileCustomizations.stylesheets') else '0',
+        APP_MODE_KEY: '1' if app_mode_enabled else '0',
         'Frameless': '1' if frameless else '0',
         USER_AGENT_VALUE_KEY: prefs.get('general.useragent.override', '') or '',
         COLOR_SCHEME_KEY: {0: 'dark', 1: 'light', 2: 'auto', 3: 'auto'}.get(prefs.get('layout.css.prefers-color-scheme.content-override'), 'auto'),
@@ -864,15 +864,16 @@ def apply_profile_settings(profile_info, options_dict, logger):
     clear_cache = scoped_options.get(OPTION_CLEAR_CACHE_ON_EXIT_KEY, '0') == '1'
     clear_cookies = scoped_options.get(OPTION_CLEAR_COOKIES_ON_EXIT_KEY, '0') == '1'
     adblock = scoped_options.get(OPTION_ADBLOCK_KEY, '0') == '1'
-    previous_session = scoped_options.get(OPTION_PRESERVE_SESSION_KEY, '0') == '1'
+    mode_value = semantic_mode_from_options(scoped_options)
+    previous_session = scoped_options.get(OPTION_PRESERVE_SESSION_KEY, '0') == '1' and mode_value == 'standard'
     notifications_enabled = scoped_options.get(OPTION_NOTIFICATIONS_KEY, '0') == '1'
     swipe_enabled = scoped_options.get(OPTION_SWIPE_KEY, '0') == '1'
     user_agent_value = (scoped_options.get(USER_AGENT_VALUE_KEY, '') or '').strip()
     only_https = scoped_options.get(ONLY_HTTPS_KEY, '0') == '1'
     keep_in_background = scoped_options.get(OPTION_KEEP_IN_BACKGROUND_KEY, '0') == '1'
-    app_mode = scoped_options.get(APP_MODE_KEY, '0') == '1'
-    frameless = scoped_options.get('Frameless', '0') == '1'
-    kiosk = scoped_options.get('Kiosk', '0') == '1'
+    app_mode = mode_value in {'app', 'seamless'}
+    frameless = mode_value == 'seamless'
+    kiosk = mode_value == 'kiosk'
     disable_ai = scoped_options.get(OPTION_DISABLE_AI_KEY, '0') == '1'
     set_privacy = scoped_options.get(OPTION_FORCE_PRIVACY_KEY, '0') == '1'
     startup_booster = scoped_options.get(OPTION_STARTUP_BOOSTER_KEY, '0') == '1'
@@ -893,8 +894,8 @@ def apply_profile_settings(profile_info, options_dict, logger):
             swipe_enabled=swipe_enabled,
             keep_in_background=keep_in_background,
             startup_url=(options_dict.get(ADDRESS_KEY, '') or '').strip(),
-            app_mode=(app_mode or kiosk),
-            native_window_frame=(app_mode and not frameless and not kiosk),
+            app_mode=app_mode,
+            native_window_frame=(app_mode and not frameless),
             disable_ai=disable_ai,
             set_privacy=set_privacy,
             color_scheme=color_scheme,
@@ -902,7 +903,7 @@ def apply_profile_settings(profile_info, options_dict, logger):
             custom_js_enabled=custom_js_enabled,
             startup_booster=startup_booster,
         )
-        _sync_firefox_app_mode_css(profile_path, app_mode or kiosk, frameless, kiosk, logger)
+        _sync_firefox_app_mode_css(profile_path, app_mode, frameless, logger)
         _sync_firefox_adblock(profile_path, adblock, logger)
         _sync_firefox_swipe_extension(profile_path, swipe_enabled, logger)
         ensure_profile_customizations(profile_info, options_dict, logger)

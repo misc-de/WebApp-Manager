@@ -281,6 +281,8 @@ class DetailPageTransferMixin:
                     self._trigger_address_validation(normalized_address, debounce=False, export_after_validation=False)
             self._reload_options_cache_from_db()
             self._apply_option_values_to_controls()
+            if self.on_visual_changed:
+                self.on_visual_changed(self.entry)
             if self.on_title_changed:
                 self.on_title_changed(self.entry)
         except OSError as error:

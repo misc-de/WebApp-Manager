@@ -78,7 +78,7 @@ from mainwindow_entries import MainWindowEntriesMixin
 
 Adw.init()
 LOG = get_logger(__name__)
-APP_VERSION = '66s'
+APP_VERSION = '67'
 
 
 MANAGED_IMPORT_OPTION_KEYS = [

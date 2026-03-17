@@ -392,13 +392,13 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
                 selected_engine_index = idx
                 break
         self.engine_dropdown.set_selected(selected_engine_index)
-        self.engine_dropdown.connect('notify::selected-item', self.on_engine_changed)
+        self.engine_dropdown.connect('notify::selected', self.on_engine_changed)
         self.engine_label = Gtk.Label(label=t('label_engine'), halign=Gtk.Align.START)
         self.grid.attach(self.engine_label, 0, 5, 1, 1)
         self.grid.attach(self.engine_dropdown, 1, 5, 1, 1)
 
         self.user_agent_dropdown = Gtk.DropDown.new_from_strings([t('user_agent_none')])
-        self.user_agent_dropdown.connect('notify::selected-item', self.on_user_agent_changed)
+        self.user_agent_dropdown.connect('notify::selected', self.on_user_agent_changed)
         self.user_agent_status = Gtk.Label(label='', halign=Gtk.Align.START)
         self.user_agent_status.set_xalign(0)
         self.user_agent_status.add_css_class('dim-label')
@@ -414,7 +414,7 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self.mode_labels = []
         self.mode_values = []
         self.mode_dropdown = Gtk.DropDown.new_from_strings([t('mode_standard')])
-        self.mode_dropdown.connect('notify::selected-item', self.on_mode_changed)
+        self.mode_dropdown.connect('notify::selected', self.on_mode_changed)
         self.mode_label = Gtk.Label(label=t('label_mode'), halign=Gtk.Align.START)
         self.grid.attach(self.mode_label, 0, 7, 1, 1)
         self.grid.attach(self.mode_dropdown, 1, 7, 1, 1)
@@ -429,7 +429,7 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         except ValueError:
             color_index = 0
         self.color_scheme_dropdown.set_selected(color_index)
-        self.color_scheme_dropdown.connect('notify::selected-item', self.on_color_scheme_changed)
+        self.color_scheme_dropdown.connect('notify::selected', self.on_color_scheme_changed)
         self.color_scheme_label = Gtk.Label(label=t('label_color_scheme'), halign=Gtk.Align.START)
         self.grid.attach(self.color_scheme_label, 0, 8, 1, 1)
         self.grid.attach(self.color_scheme_dropdown, 1, 8, 1, 1)

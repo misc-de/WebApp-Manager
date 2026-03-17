@@ -2,6 +2,8 @@ import json
 import threading
 from gi.repository import GLib, Gtk, Pango
 from browser_option_logic import (
+    apply_semantic_mode,
+    mode_option_keys,
     browser_family_for_engine,
     browser_state_key,
     build_family_option_state,
@@ -201,13 +203,7 @@ class DetailPageOptionsMixin:
                 return 0
 
     def _apply_mode_value(self, mode_value):
-            mapping = {
-                'standard': {'Kiosk': '0', APP_MODE_KEY: '0', 'Frameless': '0'},
-                'kiosk': {'Kiosk': '1', APP_MODE_KEY: '0', 'Frameless': '0'},
-                'app': {'Kiosk': '0', APP_MODE_KEY: '1', 'Frameless': '0'},
-                'seamless': {'Kiosk': '0', APP_MODE_KEY: '1', 'Frameless': '1'},
-            }
-            selected = mapping.get(mode_value, mapping['standard'])
+            selected = {key: value for key, value in apply_semantic_mode({}, mode_value).items() if key in mode_option_keys()}
             for key, value in selected.items():
                 self._set_option_value(key, value)
 
@@ -398,7 +394,7 @@ class DetailPageOptionsMixin:
             labels = [t('user_agent_none')] + [item['name'] for item in options]
             selected_index, _selected_item = self._resolve_user_agent_selection(engine, options, persist_default=True)
             new_dropdown = Gtk.DropDown.new_from_strings(labels)
-            new_dropdown.connect('notify::selected-item', self.on_user_agent_changed)
+            new_dropdown.connect('notify::selected', self.on_user_agent_changed)
             self.grid.remove(self.user_agent_dropdown)
             self.user_agent_dropdown = new_dropdown
             self.grid.attach(self.user_agent_dropdown, 1, 6, 1, 1)
@@ -500,7 +496,7 @@ class DetailPageOptionsMixin:
             self.mode_labels = [label for _, label in items]
             current_value = self._current_mode_value()
             new_dropdown = Gtk.DropDown.new_from_strings(self.mode_labels or [t('mode_standard')])
-            new_dropdown.connect('notify::selected-item', self.on_mode_changed)
+            new_dropdown.connect('notify::selected', self.on_mode_changed)
             self.grid.remove(self.mode_dropdown)
             self.mode_dropdown = new_dropdown
             self.grid.attach(self.mode_dropdown, 1, 7, 1, 1)
@@ -688,6 +684,11 @@ class DetailPageOptionsMixin:
     def on_engine_changed(self, dropdown, pspec):
             if self._suspend_change_handlers:
                 return
+            previous_mode_state = {
+                'Kiosk': self._get_option_value('Kiosk') or '0',
+                APP_MODE_KEY: self._get_option_value(APP_MODE_KEY) or '0',
+                'Frameless': self._get_option_value('Frameless') or '0',
+            }
             previous_engine = self._engine_by_id(self._get_option_value('EngineID'))
             previous_family = browser_family_for_engine(previous_engine)
             if previous_family != 'generic':
@@ -706,6 +707,7 @@ class DetailPageOptionsMixin:
                     'EngineName': engine['name'],
                 })
                 self._restore_browser_state_for_family(browser_family_for_engine(engine))
+                self._add_options(previous_mode_state)
             self.refresh_user_agent_options()
             self.refresh_mode_options()
             self._rebuild_options_layout(force=True)
