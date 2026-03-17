@@ -119,17 +119,62 @@ def get_profile_size_bytes(profile_path):
                 pass
     return total
 
+def _remove_path_if_exists(path, logger, kind='cache path'):
+    candidate = Path(path)
+    if not candidate.exists():
+        return False
+    try:
+        if candidate.is_dir():
+            shutil.rmtree(candidate)
+        else:
+            candidate.unlink()
+        return True
+    except OSError as error:
+        logger.warning('Failed to remove %s %s: %s', kind, candidate, error)
+        return False
+
+
+def _clear_firefox_runtime_caches(profile_dir, logger):
+    profile_dir = Path(profile_dir)
+    changed = False
+    for candidate in (
+        profile_dir / 'cache2',
+        profile_dir / 'startupCache',
+        profile_dir / 'thumbnails',
+        profile_dir / 'shader-cache',
+    ):
+        changed = _remove_path_if_exists(candidate, logger, 'Firefox cache') or changed
+    return changed
+
+
+def _clear_chromium_runtime_caches(profile_dir, logger):
+    profile_dir = Path(profile_dir)
+    changed = False
+    for candidate in (
+        profile_dir / 'Default' / 'Cache',
+        profile_dir / 'Default' / 'Code Cache',
+        profile_dir / 'Default' / 'GPUCache',
+        profile_dir / 'Default' / 'DawnCache',
+        profile_dir / 'Default' / 'GrShaderCache',
+        profile_dir / 'ShaderCache',
+        profile_dir / 'GraphiteDawnCache',
+    ):
+        changed = _remove_path_if_exists(candidate, logger, 'Chromium cache') or changed
+    return changed
+
+
 def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_session, user_agent_value='', only_https=False, notifications_enabled=False, swipe_enabled=False, keep_in_background=False, startup_url='', app_mode=False, native_window_frame=False, disable_ai=False, set_privacy=False, color_scheme='auto', custom_css_enabled=False, custom_js_enabled=False, startup_booster=False):
     profile_dir = Path(profile_dir)
     only_https = bool(only_https or set_privacy)
     user_js = profile_dir / 'user.js'
     start_marker = '// WEBAPP MANAGED START\n'
     end_marker = '// WEBAPP MANAGED END\n'
+    effective_clear_cache_on_shutdown = bool(clear_cache and not previous_session)
     prefs = {
-        'privacy.sanitize.sanitizeOnShutdown': clear_cache or clear_cookies,
-        'privacy.clearOnShutdown.cache': clear_cache,
+        'privacy.sanitize.sanitizeOnShutdown': effective_clear_cache_on_shutdown or clear_cookies,
+        'privacy.clearOnShutdown.cache': effective_clear_cache_on_shutdown,
         'privacy.clearOnShutdown.cookies': clear_cookies,
-        'privacy.clearOnShutdown_v2.cache': clear_cache,
+        'privacy.clearOnShutdown_v2.cache': effective_clear_cache_on_shutdown,
         'privacy.clearOnShutdown_v2.cookiesAndStorage': clear_cookies,
         'privacy.clearOnShutdown_v2.siteSettings': False,
         'privacy.sanitize.timeSpan': 0,
@@ -165,6 +210,7 @@ def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_ses
         'browser.newtabpage.activity-stream.feeds.system.topsites': False,
         'browser.translations.automaticallyPopup': False,
         'xpinstall.signatures.required': False if custom_js_enabled else True,
+        'webapp.clear_cache_requested': bool(clear_cache),
     }
     if disable_ai:
         prefs.update({
@@ -339,9 +385,10 @@ def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previou
     browser['check_default_browser'] = False
     browser['enable_spellchecking'] = True
     clear_on_exit = []
+    effective_clear_cache_on_exit = bool(clear_cache and not previous_session)
     if clear_cookies:
         clear_on_exit.append('cookies_and_other_site_data')
-    if clear_cache:
+    if effective_clear_cache_on_exit:
         clear_on_exit.append('cached_images_and_files')
     browser['clear_data'] = browser.get('clear_data', {})
     browser['clear_data']['clear_on_exit'] = clear_on_exit
@@ -412,6 +459,7 @@ def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previou
     webapp['notifications_enabled'] = bool(notifications_enabled)
     webapp['only_https'] = effective_only_https
     webapp['previous_session'] = bool(previous_session)
+    webapp['clear_cache_requested'] = bool(clear_cache)
     webapp['keep_in_background'] = bool(keep_in_background)
     webapp['startup_booster'] = bool(startup_booster)
     data['enable_do_not_track'] = bool(set_privacy)
@@ -798,7 +846,7 @@ def _read_firefox_profile_settings(profile_dir):
     )
     only_https_enabled = bool(prefs.get('dom.security.https_only_mode')) or privacy_enabled
     return {
-        OPTION_CLEAR_CACHE_ON_EXIT_KEY: '1' if prefs.get('privacy.clearOnShutdown.cache') or prefs.get('privacy.clearOnShutdown_v2.cache') else '0',
+        OPTION_CLEAR_CACHE_ON_EXIT_KEY: '1' if (prefs.get('webapp.clear_cache_requested') is True or prefs.get('privacy.clearOnShutdown.cache') or prefs.get('privacy.clearOnShutdown_v2.cache')) else '0',
         OPTION_CLEAR_COOKIES_ON_EXIT_KEY: '1' if prefs.get('privacy.clearOnShutdown.cookies') or prefs.get('privacy.clearOnShutdown_v2.cookiesAndStorage') else '0',
         OPTION_ADBLOCK_KEY: '1' if adblock else '0',
         OPTION_PRESERVE_SESSION_KEY: '1' if prefs.get('browser.startup.page') == 3 else '0',
@@ -828,7 +876,7 @@ def _read_chromium_profile_settings(profile_dir):
     profile = data.get('profile') or {}
     webapp_manager = data.get('webapp_manager') or {}
     return {
-        OPTION_CLEAR_CACHE_ON_EXIT_KEY: '1' if 'cached_images_and_files' in clear_on_exit else '0',
+        OPTION_CLEAR_CACHE_ON_EXIT_KEY: '1' if ('cached_images_and_files' in clear_on_exit or (webapp_manager.get('clear_cache_requested')) is True) else '0',
         OPTION_CLEAR_COOKIES_ON_EXIT_KEY: '1' if 'cookies_and_other_site_data' in clear_on_exit else '0',
         OPTION_PRESERVE_SESSION_KEY: '1' if ((webapp_manager.get('previous_session')) is True or session.get('restore_on_startup') == 1) else '0',
         OPTION_NOTIFICATIONS_KEY: '1' if ((webapp_manager.get('notifications_enabled')) is True or ((profile.get('default_content_setting_values') or {}).get('notifications') == 1)) else '0',
@@ -883,6 +931,8 @@ def apply_profile_settings(profile_info, options_dict, logger):
     if family == 'firefox' and profile_path:
         if set_privacy:
             only_https = True
+        if clear_cache and previous_session:
+            _clear_firefox_runtime_caches(profile_path, logger)
         _write_firefox_user_js(
             profile_path,
             clear_cache,
@@ -910,6 +960,8 @@ def apply_profile_settings(profile_info, options_dict, logger):
         _invalidate_firefox_extension_state(profile_path, logger)
         return
     if family in {'chrome', 'chromium'} and profile_path:
+        if clear_cache and previous_session:
+            _clear_chromium_runtime_caches(profile_path, logger)
         _write_chromium_preferences(
             profile_path,
             clear_cache,
