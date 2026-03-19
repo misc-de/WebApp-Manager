@@ -52,6 +52,7 @@
   "icon_delete_confirm": "Aktuelles App-Symbol löschen?",
   "icon_page_status_deleted": "Symbol gelöscht.",
   "icon_page_status_upload_failed": "Das ausgewählte Symbol konnte nicht geladen werden.",
+  "svg_import_requires_cairo": "SVG icons require CairoSVG. Please install cairo/cairosvg and try again.",
   "export_webapp_button": "WebApp exportieren",
   "import_webapp_button": "WebApp importieren",
   "export_webapp_success": "WebApp exportiert.",

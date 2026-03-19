@@ -63,11 +63,6 @@ from logger_setup import get_logger
 from engine_support import available_engines, engine_icon_name
 from browser_profiles import inspect_profile_copy_source, read_profile_settings, rename_unused_managed_profile_directories
 from ui_icons import create_image_from_ref
-from services.export_service import ExportService
-from services.launch_service import LaunchService
-from services.profile_resync_service import ProfileResyncService
-from infra.async_tasks import AsyncTaskRunner
-from infra.subprocess_runner import SafeSubprocessRunner
 from app_state import WebAppState
 from app_models import Entry
 from app_identity import APP_DIR, APP_ID, APP_ICON_NAME, APP_DB_PATH
@@ -159,11 +154,6 @@ class MainWindow(MainWindowWindowStateMixin, MainWindowLaunchExportMixin, MainWi
         except (TypeError, ValueError):
             pass
         self.db = Database(str(APP_DB_PATH))
-        self.async_runner = AsyncTaskRunner()
-        self.subprocess_runner = SafeSubprocessRunner()
-        self.export_service = ExportService(self._get_options_dict)
-        self.launch_service = LaunchService(ENGINES, LOG, self._get_options_dict, self.subprocess_runner)
-        self.profile_resync_service = ProfileResyncService(LOG, self._get_options_dict)
         self.search_text = ''
         self.search_visible = False
         self.reconcile_queue = []
@@ -193,7 +183,8 @@ class MainWindow(MainWindowWindowStateMixin, MainWindowLaunchExportMixin, MainWi
             and hasattr(Adw, 'BreakpointCondition')
         )
         self._adaptive_collapse_condition = 'max-width: 860sp'
-        self._adaptive_narrow_mode = False
+        initial_window_width = int(self._window_state.get('width', 500) or 500)
+        self._adaptive_narrow_mode = initial_window_width <= 860
         self._adaptive_breakpoint = None
         self._adaptive_breakpoint_fallback_id = 0
 

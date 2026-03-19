@@ -8,6 +8,8 @@ try:
 except ImportError:
     cairosvg = None
 
+SVG_CAIRO_MISSING_ERROR = 'SVG support is unavailable: cairosvg is not installed'
+
 from input_validation import build_safe_slug, validate_icon_source_path
 from webapp_constants import APPLICATIONS_DIR, ICON_THEME_APPS_DIR
 
@@ -47,9 +49,17 @@ def _looks_like_svg(payload: bytes) -> bool:
     return '<svg' in decoded
 
 
+def svg_support_available():
+    return cairosvg is not None
+
+
+def is_svg_support_missing_error(error):
+    return SVG_CAIRO_MISSING_ERROR in str(error or '')
+
+
 def _render_svg_bytes_to_png(svg_bytes, target_path):
     if cairosvg is None:
-        raise OSError('SVG support is unavailable')
+        raise OSError(SVG_CAIRO_MISSING_ERROR)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     cairosvg.svg2png(bytestring=svg_bytes, write_to=str(target_path), output_width=256, output_height=256)
     return target_path
