@@ -78,7 +78,7 @@ from mainwindow_entries import MainWindowEntriesMixin
 
 Adw.init()
 LOG = get_logger(__name__)
-APP_VERSION = '67'
+APP_VERSION = '68a'
 
 
 MANAGED_IMPORT_OPTION_KEYS = [
@@ -103,7 +103,7 @@ def format_profile_size(profile_path: str) -> str:
     try:
         path = Path((profile_path or '').strip()).expanduser()
         if not path.exists():
-            return ''
+            return '0 MB'
         total = 0
         if path.is_file():
             total = path.stat().st_size
@@ -122,7 +122,7 @@ def format_profile_size(profile_path: str) -> str:
         mb = total / (1024 ** 2)
         return f'{mb:.0f} MB'
     except OSError:
-        return ''
+        return '0 MB'
 
 
 
