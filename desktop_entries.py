@@ -1,7 +1,6 @@
 import configparser
 import shlex
 from pathlib import Path
-from threading import Lock
 from typing import Sequence
 
 from i18n import t
@@ -23,7 +22,6 @@ from browser_profiles import (
     resolve_browser_command,
 )
 from custom_assets import chromium_runtime_extension_args
-from infra.file_ops import atomic_write_text
 from icon_pipeline import (
     _allowed_managed_icon_stems,
     _is_safe_managed_icon_path,
@@ -53,24 +51,6 @@ from webapp_constants import (
 
 MANAGED_BY_VALUE = t('managed_by')
 
-
-
-_DESKTOP_SCAN_CACHE = {'signature': None, 'results': []}
-_DESKTOP_SCAN_LOCK = Lock()
-
-
-def _applications_dir_signature():
-    if not APPLICATIONS_DIR.exists():
-        return ()
-    signature = []
-    for path in APPLICATIONS_DIR.glob('*.desktop'):
-        try:
-            stat = path.stat()
-            signature.append((path.name, int(stat.st_mtime_ns), stat.st_size))
-        except OSError:
-            continue
-    signature.sort()
-    return tuple(signature)
 
 def _browser_family_for_command(command: str) -> str:
     lowered = (command or '').strip().lower()
@@ -468,19 +448,13 @@ def is_managed_desktop_file(path, engines_list=None):
     return parse_desktop_file(path, engines_list or []) is not None
 
 def list_managed_desktop_files(engines_list):
-    signature = _applications_dir_signature()
-    with _DESKTOP_SCAN_LOCK:
-        if _DESKTOP_SCAN_CACHE['signature'] == signature:
-            return list(_DESKTOP_SCAN_CACHE['results'])
+    if not APPLICATIONS_DIR.exists():
+        return []
     results = []
-    if APPLICATIONS_DIR.exists():
-        for path in sorted(APPLICATIONS_DIR.glob('*.desktop')):
-            entry = parse_desktop_file(path, engines_list)
-            if entry is not None:
-                results.append(entry)
-    with _DESKTOP_SCAN_LOCK:
-        _DESKTOP_SCAN_CACHE['signature'] = signature
-        _DESKTOP_SCAN_CACHE['results'] = list(results)
+    for path in sorted(APPLICATIONS_DIR.glob('*.desktop')):
+        entry = parse_desktop_file(path, engines_list)
+        if entry is not None:
+            results.append(entry)
     return results
 
 def delete_managed_entry_artifacts(entry_id, title, engines_list, logger, keep_path=None, keep_icon_path=None, keep_icon_name='', delete_profiles=False, stored_profile_path='', stored_profile_name='', keep_profile_path=''):
@@ -610,7 +584,8 @@ def export_desktop_file(entry, options_dict, engines_list, logger):
     except OSError:
         existing_content = ''
     if existing_content != content:
-        atomic_write_text(target_path, content, encoding='utf-8')
+        with open(target_path, 'w', encoding='utf-8') as file_handle:
+            file_handle.write(content)
         logger.info('Wrote desktop file %s', target_path)
     delete_managed_entry_artifacts(
         entry.id,

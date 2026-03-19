@@ -138,6 +138,11 @@ class MainWindowOverviewMixin:
         if not self._adaptive_split_enabled:
             return
         try:
+            self.overview_split_view.set_collapsed(bool(self._adaptive_narrow_mode))
+            self.overview_split_view.set_show_content(False if self._adaptive_narrow_mode else True)
+        except (AttributeError, TypeError):
+            pass
+        try:
             condition = Adw.BreakpointCondition.parse(self._adaptive_collapse_condition)
             self._adaptive_breakpoint = Adw.Breakpoint.new(condition)
             self._adaptive_breakpoint.connect('apply', self._on_adaptive_breakpoint_apply)

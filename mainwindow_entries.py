@@ -11,7 +11,7 @@ from browser_option_logic import browser_family_for_command, browser_managed_opt
 from desktop_entries import export_desktop_file, exportable_entry, get_expected_desktop_path, list_managed_desktop_files
 from engine_support import available_engines
 from i18n import t
-from icon_pipeline import get_managed_icon_path, normalize_icon_to_png
+from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, normalize_icon_to_png
 from input_validation import build_safe_slug, sanitize_desktop_value, validate_icon_source_path
 from logger_setup import get_logger
 from webapp_constants import ADDRESS_KEY, APP_MODE_KEY, COLOR_SCHEME_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
@@ -288,7 +288,12 @@ class MainWindowEntriesMixin:
             try:
                 normalize_icon_to_png(icon_candidate, managed_target)
                 return str(managed_target)
-            except (OSError, ValueError):
+            except (OSError, ValueError) as error:
+                if is_svg_support_missing_error(error):
+                    try:
+                        self.show_overlay_notification(t('svg_import_requires_cairo'), timeout_ms=4200)
+                    except AttributeError:
+                        pass
                 try:
                     suffix = icon_candidate.suffix or '.png'
                     fallback_target = get_managed_icon_path(title, suffix, entry_id)

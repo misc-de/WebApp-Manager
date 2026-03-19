@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 from gi.repository import Gio, GLib, Gtk
 from browser_option_logic import normalize_option_dict
-from icon_pipeline import normalize_icon_bytes_to_png
+from icon_pipeline import is_svg_support_missing_error, normalize_icon_bytes_to_png
 from input_validation import load_and_normalize_wapp_payload_from_path, load_import_payloads_from_path, normalize_wapp_payload, validate_icon_source_path
 from webapp_constants import ADDRESS_KEY, COLOR_SCHEME_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
 
@@ -125,6 +125,8 @@ class DetailPageTransferMixin:
                 self._set_option_value(ICON_PATH_KEY, str(target_path))
             except (binascii.Error, OSError, ValueError) as error:
                 LOG.warning('Failed to import icon from .wapp: %s', error)
+                if is_svg_support_missing_error(error):
+                    self._show_plugin_banner(t('svg_import_requires_cairo'), timeout_ms=4200)
         elif 'icon' in payload and icon_meta is None:
             self._set_option_value(ICON_PATH_KEY, '')
 

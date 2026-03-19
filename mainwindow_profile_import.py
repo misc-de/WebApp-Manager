@@ -7,8 +7,11 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 from gi.repository import Gio, GLib, Gtk
-from browser_option_logic import normalize_option_dict, normalize_option_rows
+from browser_option_logic import browser_managed_option_keys, browser_state_key, encode_browser_state, mode_option_keys, normalize_option_dict, normalize_option_rows
+from database import Database
 from detail_page import DetailPage
+from app_identity import APP_DB_PATH
+from browser_profiles import read_profile_settings
 from desktop_entries import export_desktop_file, exportable_entry
 from engine_support import available_engines
 from i18n import t
@@ -100,7 +103,16 @@ class MainWindowProfileImportMixin:
         return False
 
     def _collect_profile_resync_candidates(self):
-        return self.profile_resync_service.collect_candidates(self.entries_store, self._browser_family_for_options)
+        candidates = []
+        for index in range(self.entries_store.get_n_items()):
+            entry = self.entries_store.get_item(index)
+            options = self._get_options_dict(entry.id)
+            profile_path = str(options.get(PROFILE_PATH_KEY) or '').strip()
+            family = self._browser_family_for_options(options)
+            if not profile_path or family not in {'firefox', 'chrome', 'chromium'}:
+                continue
+            candidates.append((entry.id, entry.title or '', family, profile_path))
+        return candidates
 
     def _start_profile_resync(self):
         if self._profile_resync_running:
@@ -115,48 +127,65 @@ class MainWindowProfileImportMixin:
         self._show_profile_resync_progress_dialog(len(candidates))
         GLib.idle_add(self._update_profile_resync_progress, 0, len(candidates), '')
 
-        def worker():
-            return self.profile_resync_service.run(
-                candidates,
-                cancel_event=self._profile_resync_cancel_event,
-                progress_callback=lambda current, total, title: GLib.idle_add(self._update_profile_resync_progress, current, total, title),
-            )
-
-        def finish(result):
-            processed = int(result.get('processed', 0) or 0)
-            total = int(result.get('total', 0) or 0)
-            failures = int(result.get('failures', 0) or 0)
-            cancelled = bool(result.get('cancelled'))
-            self._profile_resync_running = False
-            self.refresh_button.set_sensitive(True)
-            self._destroy_profile_resync_dialog()
-            self.load_entries_from_db()
-            self.custom_filter.changed(Gtk.FilterChange.DIFFERENT)
-            self.update_empty_state()
-            for page in list(self.detail_pages.values()):
+        def worker(items):
+            db = Database(str(APP_DB_PATH))
+            processed = 0
+            cancelled = False
+            failures = 0
+            try:
+                for index, (entry_id, entry_title, family, profile_path) in enumerate(items, start=1):
+                    if self._profile_resync_cancel_event.is_set():
+                        cancelled = True
+                        break
+                    GLib.idle_add(self._update_profile_resync_progress, index, len(items), entry_title)
+                    try:
+                        raw_state = read_profile_settings(profile_path, family)
+                        normalized_state = normalize_option_dict(raw_state)
+                        updates = {key: value for key, value in normalized_state.items() if key in browser_managed_option_keys() and key not in mode_option_keys()}
+                        if updates:
+                            existing = normalize_option_rows(db.get_options_for_entry(entry_id))
+                            merged = dict(existing)
+                            merged.update(updates)
+                            updates[browser_state_key(family)] = encode_browser_state(merged, family)
+                            db.add_options(entry_id, updates)
+                    except (OSError, TypeError, ValueError) as error:
+                        failures += 1
+                        LOG.warning('Profile resync failed for entry %s (%s): %s', entry_id, profile_path, error)
+                    processed = index
+                    GLib.idle_add(self._update_profile_resync_progress, processed, len(items), '')
+                    if self._profile_resync_cancel_event.is_set():
+                        cancelled = True
+                        break
+            finally:
                 try:
-                    page.reload_from_db()
-                except (AttributeError, TypeError):
+                    db.close()
+                except OSError:
                     pass
-            if cancelled:
-                self.show_overlay_notification(t('profile_resync_cancelled', completed=processed, total=total), timeout_ms=3200)
-            elif failures:
-                self.show_overlay_notification(t('profile_resync_completed_with_failures', completed=processed, total=total, failures=failures), timeout_ms=3600)
-            else:
-                self.show_overlay_notification(t('profile_resync_completed_success', completed=processed, total=total), timeout_ms=2800)
-            self._profile_resync_cancel_event = None
-            return False
 
-        def finish_error(error):
-            self._profile_resync_running = False
-            self.refresh_button.set_sensitive(True)
-            self._destroy_profile_resync_dialog()
-            self._profile_resync_cancel_event = None
-            LOG.error('Profile resync failed: %s', error, exc_info=True)
-            self.show_overlay_notification(t('profile_resync_completed_with_failures', completed=0, total=len(candidates), failures=len(candidates)), timeout_ms=3600)
-            return False
+            def finish():
+                self._profile_resync_running = False
+                self.refresh_button.set_sensitive(True)
+                self._destroy_profile_resync_dialog()
+                self.load_entries_from_db()
+                self.custom_filter.changed(Gtk.FilterChange.DIFFERENT)
+                self.update_empty_state()
+                for page in list(self.detail_pages.values()):
+                    try:
+                        page.reload_from_db()
+                    except (AttributeError, TypeError):
+                        pass
+                if cancelled:
+                    self.show_overlay_notification(t('profile_resync_cancelled', completed=processed, total=len(items)), timeout_ms=3200)
+                elif failures:
+                    self.show_overlay_notification(t('profile_resync_completed_with_failures', completed=processed, total=len(items), failures=failures), timeout_ms=3600)
+                else:
+                    self.show_overlay_notification(t('profile_resync_completed_success', completed=processed, total=len(items)), timeout_ms=2800)
+                self._profile_resync_cancel_event = None
+                return False
 
-        self.async_runner.run(worker, callback=finish, error_callback=finish_error)
+            GLib.idle_add(finish)
+
+        threading.Thread(target=worker, args=(candidates,), daemon=True).start()
 
     def _open_import_wapp_dialog(self):
         patterns = [(t('wapp_filter_name'), '*.wapp')]

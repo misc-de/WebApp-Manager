@@ -15,7 +15,7 @@ from urllib.parse import urljoin, urlparse, urlunparse
 from PIL import Image, UnidentifiedImageError
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
-from icon_pipeline import get_managed_icon_path, normalize_icon_bytes_to_png, normalize_icon_to_png
+from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, normalize_icon_bytes_to_png, normalize_icon_to_png
 from webapp_constants import ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY
 from input_validation import DESKTOP_CHROME_USER_AGENT, MAX_ICON_FILE_SIZE, build_safe_slug, candidate_urls_for_input, is_structurally_valid_url, validate_icon_source_path
 from browser_profiles import get_profile_size_bytes
@@ -495,6 +495,10 @@ class DetailPageIconMixin:
             return True
         except (UnidentifiedImageError, OSError) as error:
             LOG.warning('Failed to normalize icon file %s: %s', source_path, error)
+            if is_svg_support_missing_error(error):
+                self._show_plugin_banner(t('svg_import_requires_cairo'), timeout_ms=4200)
+            else:
+                self._show_plugin_banner(t('icon_page_status_upload_failed'), timeout_ms=3200)
         return False
 
     def _parse_html_tag_attributes(self, tag):
@@ -935,7 +939,9 @@ class DetailPageIconMixin:
                     os.close(temp_fd)
                     temp_target = Path(temp_name)
                     return normalize_icon_bytes_to_png(payload, temp_target, source_name=icon_url, content_type=content_type)
-                except (OSError, ValueError, urllib.error.URLError, UnidentifiedImageError):
+                except (OSError, ValueError, urllib.error.URLError, UnidentifiedImageError) as error:
+                    if is_svg_support_missing_error(error):
+                        raise
                     continue
             return None
 
