@@ -66,7 +66,7 @@
   "profile_delete_failed": "Could not delete the browser profile.",
   "profile_size_unknown": "unknown size",
   "option_adblock_unavailable": "Adblock is only available for Firefox.",
-  "option_previous_session": "Keep Session After Closing",
+  "option_previous_session": "Keep Session (After Closing)",
   "overview_status_adblock": "Adblock enabled",
   "overview_status_delete_cache": "Delete cache on exit enabled",
   "overview_status_delete_cookies": "Delete cookies on exit enabled",
