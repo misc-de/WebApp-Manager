@@ -42,7 +42,7 @@ def format_profile_size(profile_path: str) -> str:
     try:
         path = Path((profile_path or '').strip()).expanduser()
         if not path.exists():
-            return ''
+            return '0 MB'
         total = 0
         if path.is_file():
             total = path.stat().st_size
@@ -61,7 +61,7 @@ def format_profile_size(profile_path: str) -> str:
         mb = total / (1024 ** 2)
         return f'{mb:.0f} MB'
     except OSError:
-        return ''
+        return '0 MB'
 
 
 class MainWindowEntriesMixin:
@@ -343,8 +343,8 @@ class MainWindowEntriesMixin:
     def _get_profile_size_text_cached(self, entry_id, profile_path):
         cached = self._profile_size_cache.get(entry_id)
         if cached and cached.get('path') == profile_path:
-            return cached.get('text', '')
-        return ''
+            return cached.get('text', '0 MB' if profile_path else '')
+        return '0 MB' if profile_path else ''
 
     def _schedule_profile_size_refresh(self, entry_id, profile_path, profile_size_label):
         if not profile_path:
