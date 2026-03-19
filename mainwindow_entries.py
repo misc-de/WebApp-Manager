@@ -14,7 +14,7 @@ from i18n import t
 from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, normalize_icon_to_png
 from input_validation import build_safe_slug, sanitize_desktop_value, validate_icon_source_path
 from logger_setup import get_logger
-from webapp_constants import ADDRESS_KEY, APP_MODE_KEY, COLOR_SCHEME_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
+from webapp_constants import ADDRESS_KEY, APP_MODE_KEY, COLOR_SCHEME_KEY, DEFAULT_ZOOM_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
 
 LOG = get_logger(__name__)
 ENGINES = available_engines()
@@ -34,6 +34,7 @@ MANAGED_IMPORT_OPTION_KEYS = [
     'DisableAI',
     'ForcePrivacy',
     COLOR_SCHEME_KEY,
+    DEFAULT_ZOOM_KEY,
 ]
 
 
@@ -53,7 +54,7 @@ def format_profile_size(profile_path: str) -> str:
                 except OSError:
                     continue
         if total <= 0:
-            return ''
+            return '0 MB'
         gb = total / (1024 ** 3)
         if gb >= 1:
             return f'{gb:.2f} GB'
@@ -414,6 +415,8 @@ class MainWindowEntriesMixin:
                 value = fallback.get(key)
             if key == COLOR_SCHEME_KEY:
                 normalized[key] = (value or 'auto')
+            elif key == DEFAULT_ZOOM_KEY:
+                normalized[key] = str(value or '100')
             else:
                 normalized[key] = '1' if str(value) == '1' else '0'
         return normalized
@@ -474,6 +477,7 @@ class MainWindowEntriesMixin:
             PROFILE_NAME_KEY: '',
             PROFILE_PATH_KEY: '',
             COLOR_SCHEME_KEY: 'auto',
+            DEFAULT_ZOOM_KEY: '100',
         }
         for key in MANAGED_IMPORT_OPTION_KEYS:
             reset_values.setdefault(key, '0')

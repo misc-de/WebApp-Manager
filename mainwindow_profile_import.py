@@ -15,7 +15,7 @@ from browser_profiles import read_profile_settings
 from desktop_entries import export_desktop_file, exportable_entry
 from engine_support import available_engines
 from i18n import t
-from input_validation import load_import_payloads_from_path
+from input_validation import load_import_payloads_from_path, payload_contains_inline_javascript
 from logger_setup import get_logger
 from webapp_constants import PROFILE_PATH_KEY
 
@@ -433,7 +433,10 @@ class MainWindowProfileImportMixin:
             if temp_path is None:
                 return
             payloads = load_import_payloads_from_path(temp_path)
-            self._start_import_payloads(payloads)
+            if any(payload_contains_inline_javascript(payload) for payload in payloads):
+                self._present_choice_dialog(t('import_javascript_warning'), lambda confirmed: self._start_import_payloads(payloads) if confirmed else None, destructive=False)
+            else:
+                self._start_import_payloads(payloads)
         except (OSError, ValueError, json.JSONDecodeError) as error:
             path_for_log = local_path or (str(temp_path) if temp_path else '')
             LOG.warning('Failed to import .wapp file %s: %s', path_for_log, error)

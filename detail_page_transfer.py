@@ -10,8 +10,8 @@ from datetime import datetime
 from gi.repository import Gio, GLib, Gtk
 from browser_option_logic import normalize_option_dict
 from icon_pipeline import is_svg_support_missing_error, normalize_icon_bytes_to_png
-from input_validation import load_and_normalize_wapp_payload_from_path, load_import_payloads_from_path, normalize_wapp_payload, validate_icon_source_path
-from webapp_constants import ADDRESS_KEY, COLOR_SCHEME_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
+from input_validation import load_and_normalize_wapp_payload_from_path, load_import_payloads_from_path, normalize_wapp_payload, payload_contains_inline_javascript, validate_icon_source_path
+from webapp_constants import ADDRESS_KEY, COLOR_SCHEME_KEY, DEFAULT_ZOOM_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
 
 LOG = get_logger(__name__)
 
@@ -61,6 +61,11 @@ class DetailPageTransferMixin:
         for transient_key in (ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY):
             options.pop(transient_key, None)
 
+        inline_css_value = str(options.get('Inline Custom CSS', '') or '').replace('\r\n', '\n').replace('\r', '\n')
+        inline_css_hash = str(options.get('Inline Custom CSS Hash', '') or '').strip()
+        inline_js_value = str(options.get('Inline Custom JavaScript', '') or '').replace('\r\n', '\n').replace('\r', '\n')
+        inline_js_hash = str(options.get('Inline Custom JavaScript Hash', '') or '').strip()
+
         imported_address = str(options.get(ADDRESS_KEY, '')) if ADDRESS_KEY in options else ''
         if imported_address:
             self._suspend_address_processing = True
@@ -97,9 +102,18 @@ class DetailPageTransferMixin:
             self.user_agent_dropdown.set_selected(selected_index)
             self._suspend_change_handlers = previous_suspend
 
+        self._set_option_value('Inline Custom CSS', inline_css_value, commit=False)
+        self._set_option_value('Inline Custom CSS Hash', inline_css_hash, commit=False)
+        self._set_option_value('Inline Custom JavaScript', inline_js_value, commit=False)
+        self._set_option_value('Inline Custom JavaScript Hash', inline_js_hash, commit=False)
+
         color_scheme_value = str(options.get(COLOR_SCHEME_KEY, 'auto')).strip().lower()
         if color_scheme_value in self.color_scheme_values:
             self.color_scheme_dropdown.set_selected(self.color_scheme_values.index(color_scheme_value))
+
+        default_zoom_value = str(options.get(DEFAULT_ZOOM_KEY, '100')).strip()
+        if default_zoom_value in self.default_zoom_values:
+            self.default_zoom_dropdown.set_selected(self.default_zoom_values.index(default_zoom_value))
 
         for opt_name, switch in self.switches.items():
             if opt_name in options:
@@ -145,6 +159,7 @@ class DetailPageTransferMixin:
         self._sync_icon_filename()
         self.refresh_icon_preview()
         self.refresh_icon_page()
+        self._refresh_asset_pages()
         self._update_export_button_state()
         self._emit_visual_changed()
         self._update_browser_dependent_controls()
@@ -201,6 +216,8 @@ class DetailPageTransferMixin:
                 payloads = load_import_payloads_from_path(temp_path)
                 if len(payloads) > 1:
                     self._set_detail_action_status(t('import_bundle_use_main_import'))
+                elif payload_contains_inline_javascript(payloads[0]):
+                    self._present_choice_dialog(file_obj, t('import_javascript_warning'), lambda confirmed: self._complete_single_wapp_import(payloads[0], confirmed), destructive=False)
                 elif self._apply_wapp_payload(payloads[0]):
                     self._set_detail_action_status(t('import_webapp_success'))
                 else:
@@ -214,6 +231,16 @@ class DetailPageTransferMixin:
         finally:
             if temp_path is not None and (not local_path or str(temp_path) != local_path):
                 temp_path.unlink(missing_ok=True)
+
+
+    def _complete_single_wapp_import(self, payload, confirmed):
+        if not confirmed:
+            self._set_detail_action_status(t('import_webapp_failed'))
+            return
+        if self._apply_wapp_payload(payload):
+            self._set_detail_action_status(t('import_webapp_success'))
+        else:
+            self._set_detail_action_status(t('import_webapp_failed'))
 
     def on_delete_profile_clicked(self, button):
         self._present_choice_dialog(button, t('profile_delete_confirm'), self._handle_delete_profile_confirmed, destructive=True)

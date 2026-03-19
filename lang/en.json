@@ -59,6 +59,7 @@
   "export_webapp_failed": "Could not export the WebApp.",
   "import_webapp_success": "WebApp imported.",
   "import_webapp_failed": "Could not import the WebApp.",
+  "import_javascript_warning": "This WebApp contains imported JavaScript. Importing JavaScript is a significant security risk. Do you want to continue?",
   "option_delete_cookies": "Clear Cookies (When App Closes)",
   "engine_none": "Select engine",
   "profile_delete_button": "Delete Profile{size}",
@@ -225,5 +226,16 @@
   "option_category_cleanup": "Cleanup",
   "option_category_comfort": "Comfort",
   "option_category_addons": "Addons",
-  "option_category_performance": "Performance"
+  "option_category_performance": "Performance",
+  "label_default_zoom": "Default Zoom",
+  "default_zoom_50": "50 %",
+  "default_zoom_67": "67 %",
+  "default_zoom_80": "80 %",
+  "default_zoom_90": "90 %",
+  "default_zoom_100": "100 %",
+  "default_zoom_110": "110 %",
+  "default_zoom_125": "125 %",
+  "default_zoom_150": "150 %",
+  "default_zoom_175": "175 %",
+  "default_zoom_200": "200 %"
 }

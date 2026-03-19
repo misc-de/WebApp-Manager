@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from webapp_constants import (
     APP_MODE_KEY,
     COLOR_SCHEME_KEY,
+    DEFAULT_ZOOM_KEY,
     ONLY_HTTPS_KEY,
     OPTION_ADBLOCK_KEY,
     OPTION_CLEAR_CACHE_ON_EXIT_KEY,
@@ -194,6 +195,15 @@ _HIDDEN_BROWSER_OPTION_SPECS: tuple[BrowserOptionSpec, ...] = (
         'profile_setting',
         _bindings('firefox', 'chrome', 'chromium', 'generic', storage_kind='profile_setting', values=('auto', 'light', 'dark'), notes='Semantic color-scheme override that maps to engine-specific representation.'),
         default_value='auto',
+        visible=False,
+        ui_control='dropdown',
+    ),
+    BrowserOptionSpec(
+        DEFAULT_ZOOM_KEY,
+        None,
+        'profile_setting',
+        _bindings('firefox', 'chrome', 'chromium', 'generic', storage_kind='profile_setting', values=('50', '67', '80', '90', '100', '110', '125', '150', '175', '200'), notes='Semantic default zoom value kept per managed profile.'),
+        default_value='100',
         visible=False,
         ui_control='dropdown',
     ),
