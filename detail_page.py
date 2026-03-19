@@ -59,6 +59,7 @@ from webapp_constants import (
     OPTION_FORCE_PRIVACY_KEY,
     APP_MODE_KEY,
     COLOR_SCHEME_KEY,
+    DEFAULT_ZOOM_KEY,
     OPTION_ADBLOCK_KEY,
     OPTION_DISABLE_AI_KEY,
     OPTION_KEEP_IN_BACKGROUND_KEY,
@@ -160,6 +161,8 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self._icon_download_in_progress = False
         self._compact_mode_override = None
         self._inline_editor_save_source_ids = {'css': 0, 'javascript': 0}
+        self._detail_main_scroll_position = 0.0
+        self._detail_main_scroll_restore_source_id = 0
         self._code_editors = []
         self._style_manager = Adw.StyleManager.get_default()
         if self._style_manager is not None:
@@ -434,9 +437,34 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self.grid.attach(self.color_scheme_label, 0, 8, 1, 1)
         self.grid.attach(self.color_scheme_dropdown, 1, 8, 1, 1)
 
+        self.default_zoom_labels = [
+            t('default_zoom_50'),
+            t('default_zoom_67'),
+            t('default_zoom_80'),
+            t('default_zoom_90'),
+            t('default_zoom_100'),
+            t('default_zoom_110'),
+            t('default_zoom_125'),
+            t('default_zoom_150'),
+            t('default_zoom_175'),
+            t('default_zoom_200'),
+        ]
+        self.default_zoom_values = ['50', '67', '80', '90', '100', '110', '125', '150', '175', '200']
+        self.default_zoom_dropdown = Gtk.DropDown.new_from_strings(self.default_zoom_labels)
+        stored_default_zoom = (self._get_option_value(DEFAULT_ZOOM_KEY) or '100').strip()
+        try:
+            default_zoom_index = self.default_zoom_values.index(stored_default_zoom)
+        except ValueError:
+            default_zoom_index = self.default_zoom_values.index('100')
+        self.default_zoom_dropdown.set_selected(default_zoom_index)
+        self.default_zoom_dropdown.connect('notify::selected', self.on_default_zoom_changed)
+        self.default_zoom_label = Gtk.Label(label=t('label_default_zoom'), halign=Gtk.Align.START)
+        self.grid.attach(self.default_zoom_label, 0, 9, 1, 1)
+        self.grid.attach(self.default_zoom_dropdown, 1, 9, 1, 1)
+
         self.color_scheme_spacer = Gtk.Box()
         self.color_scheme_spacer.set_size_request(-1, 8)
-        self.grid.attach(self.color_scheme_spacer, 0, 9, 2, 1)
+        self.grid.attach(self.color_scheme_spacer, 0, 10, 2, 1)
 
         self.option_names = option_names()
         self.switches = {}
@@ -525,7 +553,7 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
 
         self._engine_option_widgets = [
             self.user_agent_label, self.user_agent_dropdown, self.mode_label, self.mode_dropdown,
-            self.color_scheme_label, self.color_scheme_dropdown, self.color_scheme_spacer,
+            self.color_scheme_label, self.color_scheme_dropdown, self.default_zoom_label, self.default_zoom_dropdown, self.color_scheme_spacer,
             self.options_section, self.export_import_row, self.delete_profile_button,
         ]
         self._option_row_widgets = {}

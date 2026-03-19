@@ -22,6 +22,7 @@ from webapp_constants import (
     APP_MODE_KEY,
     CHROMIUM_PROFILE_ROOT,
     COLOR_SCHEME_KEY,
+    DEFAULT_ZOOM_KEY,
     FIREFOX_ROOT,
     ONLY_HTTPS_KEY,
     OPTION_ADBLOCK_KEY,
@@ -74,6 +75,11 @@ def normalize_color_scheme(value):
     if value not in COLOR_SCHEME_PREF_VALUES:
         return 'auto'
     return value
+
+def normalize_default_zoom(value):
+    allowed = {'50', '67', '80', '90', '100', '110', '125', '150', '175', '200'}
+    normalized = str(value or '100').strip()
+    return normalized if normalized in allowed else '100'
 
 def append_unique_csv_arg(exec_parts, prefix, values):
     cleaned = []
@@ -369,7 +375,7 @@ def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_ses
             return
     user_js.write_text(new_content, encoding='utf-8')
 
-def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previous_session, logger, user_agent_value='', only_https=False, notifications_enabled=False, keep_in_background=False, disable_ai=False, set_privacy=False, color_scheme='auto', startup_booster=False):
+def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previous_session, logger, user_agent_value='', only_https=False, notifications_enabled=False, keep_in_background=False, disable_ai=False, set_privacy=False, color_scheme='auto', default_zoom='100', startup_booster=False):
     profile_dir = Path(profile_dir)
     default_dir = profile_dir / 'Default'
     default_dir.mkdir(parents=True, exist_ok=True)
@@ -456,12 +462,14 @@ def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previou
     webapp['disable_ai'] = bool(disable_ai)
     webapp['set_privacy'] = bool(set_privacy)
     webapp['color_scheme'] = normalize_color_scheme(color_scheme)
+    webapp['default_zoom'] = normalize_default_zoom(default_zoom)
     webapp['notifications_enabled'] = bool(notifications_enabled)
     webapp['only_https'] = effective_only_https
     webapp['previous_session'] = bool(previous_session)
     webapp['clear_cache_requested'] = bool(clear_cache)
     webapp['keep_in_background'] = bool(keep_in_background)
     webapp['startup_booster'] = bool(startup_booster)
+    webapp['default_zoom'] = normalize_default_zoom(webapp.get('default_zoom', '100'))
     data['enable_do_not_track'] = bool(set_privacy)
     data.setdefault('privacy_sandbox', {})['m1'] = {'topics_enabled': not set_privacy, 'fledge_enabled': not set_privacy, 'ad_measurement_enabled': not set_privacy}
     data.setdefault('safebrowsing', {})['enabled'] = False if set_privacy else data.setdefault('safebrowsing', {}).get('enabled', True)
@@ -892,6 +900,7 @@ def _read_chromium_profile_settings(profile_dir):
         'Frameless': '0',
         'Kiosk': '0',
         COLOR_SCHEME_KEY: str(webapp_manager.get('color_scheme') or 'auto'),
+        DEFAULT_ZOOM_KEY: normalize_default_zoom(webapp_manager.get('default_zoom', '100')),
     }
 
 def read_profile_settings(profile_path, browser_family):
@@ -926,6 +935,7 @@ def apply_profile_settings(profile_info, options_dict, logger):
     set_privacy = scoped_options.get(OPTION_FORCE_PRIVACY_KEY, '0') == '1'
     startup_booster = scoped_options.get(OPTION_STARTUP_BOOSTER_KEY, '0') == '1'
     color_scheme = normalize_color_scheme(scoped_options.get(COLOR_SCHEME_KEY, 'auto'))
+    default_zoom = normalize_default_zoom(scoped_options.get(DEFAULT_ZOOM_KEY, '100'))
     custom_css_enabled = bool(linked_assets_for_options(options_dict, 'css') or inline_asset_text_for_options(options_dict, 'css'))
     custom_js_enabled = bool(linked_assets_for_options(options_dict, 'javascript') or inline_asset_text_for_options(options_dict, 'javascript'))
     if family == 'firefox' and profile_path:
@@ -975,6 +985,7 @@ def apply_profile_settings(profile_info, options_dict, logger):
             disable_ai=disable_ai,
             set_privacy=set_privacy,
             color_scheme=color_scheme,
+            default_zoom=default_zoom,
             startup_booster=startup_booster,
         )
         ensure_profile_customizations(profile_info, options_dict, logger)

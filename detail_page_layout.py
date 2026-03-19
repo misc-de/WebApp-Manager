@@ -105,6 +105,7 @@ class DetailPageLayoutMixin:
                 (self.user_agent_label, self.user_agent_dropdown),
                 (self.mode_label, self.mode_dropdown),
                 (self.color_scheme_label, self.color_scheme_dropdown),
+                (self.default_zoom_label, self.default_zoom_dropdown),
             ]
             row = 0
             for label, widget in fields:
@@ -335,12 +336,54 @@ class DetailPageLayoutMixin:
                 return True
             return self._is_compact_layout() and current_name != 'main'
 
+    def _capture_main_page_scroll_position(self):
+            adjustment = None
+            try:
+                adjustment = self.scrolled.get_vadjustment()
+            except Exception:
+                adjustment = None
+            if adjustment is None:
+                self._detail_main_scroll_position = 0.0
+                return
+            try:
+                self._detail_main_scroll_position = max(0.0, float(adjustment.get_value()))
+            except Exception:
+                self._detail_main_scroll_position = 0.0
+
+    def _restore_main_page_scroll_position(self):
+            if getattr(self, '_detail_main_scroll_restore_source_id', 0):
+                GLib.source_remove(self._detail_main_scroll_restore_source_id)
+                self._detail_main_scroll_restore_source_id = 0
+
+            def apply_restore():
+                self._detail_main_scroll_restore_source_id = 0
+                adjustment = None
+                try:
+                    adjustment = self.scrolled.get_vadjustment()
+                except Exception:
+                    adjustment = None
+                if adjustment is None:
+                    return False
+                try:
+                    upper = float(adjustment.get_upper())
+                    page_size = float(adjustment.get_page_size())
+                    target = max(0.0, min(float(getattr(self, '_detail_main_scroll_position', 0.0)), max(0.0, upper - page_size)))
+                    adjustment.set_value(target)
+                except Exception:
+                    pass
+                return False
+
+            self._detail_main_scroll_restore_source_id = GLib.idle_add(apply_restore)
+
     def show_main_page(self):
             self.page_stack.set_visible_child_name('main')
+            self._restore_main_page_scroll_position()
             self._update_tabbed_navigation_state()
             self._suspend_change_handlers = False
 
     def show_asset_page(self, asset_type):
+            if self._current_page_name() == 'main':
+                self._capture_main_page_scroll_position()
             page_name = 'css_assets' if asset_type == 'css' else 'javascript_assets'
             self.page_stack.set_visible_child_name(page_name)
             self._refresh_asset_page(asset_type)

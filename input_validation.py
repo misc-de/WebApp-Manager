@@ -177,6 +177,19 @@ def normalize_wapp_payload(payload):
     return normalized_payload
 
 
+
+
+def payload_contains_inline_javascript(payload) -> bool:
+    try:
+        normalized = normalize_wapp_payload(payload)
+    except ValueError:
+        return False
+    options = normalized.get('options', {}) if isinstance(normalized, dict) else {}
+    if not isinstance(options, dict):
+        return False
+    inline_js = str(options.get('Inline Custom JavaScript', '') or '').strip()
+    return bool(inline_js)
+
 def build_safe_slug(value) -> str:
     value = (value or '').strip().lower().replace(' ', '_')
     value = re.sub(r'[^a-z0-9._-]+', '_', value)

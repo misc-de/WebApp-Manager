@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from app_identity import APP_DATA_DIR
 from i18n import get_app_config, save_app_config
 from logger_setup import get_logger
+from webapp_constants import DEFAULT_ZOOM_KEY
 
 LOG = get_logger(__name__)
 
@@ -32,6 +33,23 @@ INLINE_OPTION_KEY_BY_TYPE = {'css': INLINE_CUSTOM_CSS_KEY, 'javascript': INLINE_
 INLINE_CUSTOM_CSS_HASH_KEY = 'Inline Custom CSS Hash'
 INLINE_CUSTOM_JS_HASH_KEY = 'Inline Custom JavaScript Hash'
 INLINE_HASH_KEY_BY_TYPE = {'css': INLINE_CUSTOM_CSS_HASH_KEY, 'javascript': INLINE_CUSTOM_JS_HASH_KEY}
+
+
+def managed_default_zoom_value(options_dict):
+    value = str((options_dict or {}).get(DEFAULT_ZOOM_KEY, '100') or '100').strip()
+    return value if value in {'50', '67', '80', '90', '100', '110', '125', '150', '175', '200'} else '100'
+
+
+def _managed_zoom_css(options_dict):
+    zoom_value = managed_default_zoom_value(options_dict)
+    if zoom_value == '100':
+        return ''
+    return (
+        '/* Managed default zoom */\n'
+        '@supports (zoom: 1.1) {\n'
+        f'  html {{ zoom: {zoom_value}%; }}\n'
+        '}\n'
+    )
 
 
 def _settings_dict(config=None):
@@ -276,7 +294,9 @@ def has_runtime_customizations(options_dict):
     if linked_assets_for_options(options_dict):
         return True
     inline_values = inline_asset_text_for_options(options_dict)
-    return any(bool(value) for value in inline_values.values())
+    if any(bool(value) for value in inline_values.values()):
+        return True
+    return bool(_managed_zoom_css(options_dict))
 
 
 def linked_assets_for_options(options_dict, asset_type=None):
@@ -378,7 +398,7 @@ def _read_asset_text(asset):
     return Path(asset['path']).read_text(encoding='utf-8', errors='ignore')
 
 
-def _write_firefox_user_content(profile_dir, address, css_assets, inline_css_text=''):
+def _write_firefox_user_content(profile_dir, address, css_assets, inline_css_text='', managed_css_text=''):
     profile_dir = Path(profile_dir)
     chrome_dir = profile_dir / 'chrome'
     chrome_dir.mkdir(parents=True, exist_ok=True)
@@ -396,8 +416,12 @@ def _write_firefox_user_content(profile_dir, address, css_assets, inline_css_tex
     scope = _css_scope_start(address)
     block = ''
     inline_css_text = _normalize_inline_asset_text(inline_css_text)
-    if (css_assets or inline_css_text) and scope:
+    managed_css_text = _normalize_inline_asset_text(managed_css_text)
+    if (css_assets or inline_css_text or managed_css_text) and scope:
         sections = []
+        managed_css_text = _normalize_inline_asset_text(managed_css_text)
+        if managed_css_text:
+            sections.append(f'/* Managed profile CSS */\n{managed_css_text.rstrip()}\n')
         for asset in css_assets:
             sections.append(f'/* Asset: {asset["name"]} */\n{_read_asset_text(asset).rstrip()}\n')
         if inline_css_text:
@@ -492,12 +516,13 @@ def _remove_chromium_extension(profile_dir):
         shutil.rmtree(target_dir, ignore_errors=True)
 
 
-def _write_chromium_customizer(profile_dir, address, css_assets, js_assets, inline_css_text='', inline_js_text=''):
+def _write_chromium_customizer(profile_dir, address, css_assets, js_assets, inline_css_text='', inline_js_text='', managed_css_text=''):
     target_dir = _chromium_extension_dir(profile_dir)
     matches = _content_script_matches(address)
     inline_css_text = _normalize_inline_asset_text(inline_css_text)
+    managed_css_text = _normalize_inline_asset_text(managed_css_text)
     inline_js_text = _normalize_inline_asset_text(inline_js_text)
-    if not matches or not (css_assets or js_assets or inline_css_text or inline_js_text):
+    if not matches or not (css_assets or js_assets or inline_css_text or inline_js_text or managed_css_text):
         _remove_chromium_extension(profile_dir)
         return False
     if target_dir.exists():
@@ -512,6 +537,12 @@ def _write_chromium_customizer(profile_dir, address, css_assets, js_assets, inli
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_text(_read_asset_text(asset), encoding='utf-8')
         rel_css.append(rel_path.as_posix())
+    if managed_css_text:
+        managed_css_rel = Path('assets') / 'managed-runtime.css'
+        managed_css_target = target_dir / managed_css_rel
+        managed_css_target.parent.mkdir(parents=True, exist_ok=True)
+        managed_css_target.write_text(managed_css_text.rstrip() + '\n', encoding='utf-8')
+        rel_css.append(managed_css_rel.as_posix())
     if inline_css_text:
         inline_css_rel = Path('assets') / 'inline-runtime.css'
         inline_css_target = target_dir / inline_css_rel
@@ -561,12 +592,13 @@ def ensure_profile_customizations(profile_info, options_dict, logger):
     js_assets = linked_assets_for_options(options_dict, 'javascript')
     inline_css_text = inline_asset_text_for_options(options_dict, 'css')
     inline_js_text = inline_asset_text_for_options(options_dict, 'javascript')
+    managed_css_text = _managed_zoom_css(options_dict)
     applied_css = False
     applied_js = False
     if family == 'firefox':
         try:
-            _write_firefox_user_content(profile_path, address, css_assets, inline_css_text=inline_css_text)
-            applied_css = bool((css_assets or inline_css_text) and _css_scope_start(address))
+            _write_firefox_user_content(profile_path, address, css_assets, inline_css_text=inline_css_text, managed_css_text=managed_css_text)
+            applied_css = bool((css_assets or inline_css_text or managed_css_text) and _css_scope_start(address))
         except OSError as error:
             logger.warning('Failed to write Firefox custom CSS for %s: %s', profile_path, error)
         try:
@@ -577,8 +609,8 @@ def ensure_profile_customizations(profile_info, options_dict, logger):
         return {'css_applied': applied_css, 'js_applied': applied_js}
     if family in {'chrome', 'chromium'}:
         try:
-            applied = _write_chromium_customizer(profile_path, address, css_assets, js_assets, inline_css_text=inline_css_text, inline_js_text=inline_js_text)
-            applied_css = bool(applied and (css_assets or inline_css_text))
+            applied = _write_chromium_customizer(profile_path, address, css_assets, js_assets, inline_css_text=inline_css_text, inline_js_text=inline_js_text, managed_css_text=managed_css_text)
+            applied_css = bool(applied and (css_assets or inline_css_text or managed_css_text))
             applied_js = bool(applied and (js_assets or inline_js_text))
         except OSError as error:
             logger.warning('Failed to write Chromium customizations for %s: %s', profile_path, error)

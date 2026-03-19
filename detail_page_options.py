@@ -29,6 +29,7 @@ from webapp_constants import (
     ADDRESS_KEY,
     APP_MODE_KEY,
     COLOR_SCHEME_KEY,
+    DEFAULT_ZOOM_KEY,
     ONLY_HTTPS_KEY,
     OPTION_ADBLOCK_KEY,
     OPTION_DISABLE_AI_KEY,
@@ -358,6 +359,13 @@ class DetailPageOptionsMixin:
                 except ValueError:
                     color_index = 0
                 self.color_scheme_dropdown.set_selected(color_index)
+
+                stored_default_zoom = (self._get_option_value(DEFAULT_ZOOM_KEY) or '100').strip()
+                try:
+                    default_zoom_index = self.default_zoom_values.index(stored_default_zoom)
+                except ValueError:
+                    default_zoom_index = self.default_zoom_values.index('100')
+                self.default_zoom_dropdown.set_selected(default_zoom_index)
 
                 current_engine = self._get_current_engine()
                 available = list(self.engine_user_agents.get(current_engine['id'], [])) if current_engine else []
@@ -785,6 +793,17 @@ class DetailPageOptionsMixin:
             except IndexError:
                 value = 'auto'
             self._set_option_value(COLOR_SCHEME_KEY, value)
+            self.save_desktop_file()
+
+    def on_default_zoom_changed(self, dropdown, pspec):
+            if self._suspend_change_handlers:
+                return
+            selected = dropdown.get_selected()
+            try:
+                value = self.default_zoom_values[selected]
+            except IndexError:
+                value = '100'
+            self._set_option_value(DEFAULT_ZOOM_KEY, value)
             self.save_desktop_file()
 
     def _apply_profile_settings_only(self):

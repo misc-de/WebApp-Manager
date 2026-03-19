@@ -59,7 +59,7 @@
   "export_webapp_failed": "Could not export the WebApp.",
   "import_webapp_success": "WebApp imported.",
   "import_webapp_failed": "Could not import the WebApp.",
-  "option_delete_cookies": "Clear Cookies When App Closes",
+  "option_delete_cookies": "Clear Cookies (When App Closes)",
   "engine_none": "Select engine",
   "profile_delete_button": "Delete Profile{size}",
   "profile_delete_confirm": "Delete the current browser profile? This removes the WebApp browser data for this profile.",

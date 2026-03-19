@@ -171,7 +171,7 @@ class DetailPageIconMixin:
 
     def _format_size(self, size_bytes):
         if size_bytes <= 0:
-            return t('profile_size_unknown')
+            return '0 MB'
         gb = float(size_bytes) / (1024 ** 3)
         if gb >= 1:
             return f'{gb:.2f} GB'
@@ -185,8 +185,9 @@ class DetailPageIconMixin:
 
     def _apply_profile_button_label(self, profile_path, size_bytes=None):
         size_text = ''
-        if profile_path and size_bytes is not None and size_bytes >= 0:
-            size_text = f" ({self._format_size(size_bytes)})"
+        if profile_path:
+            display_size = 0 if size_bytes is None else max(0, int(size_bytes))
+            size_text = f" ({self._format_size(display_size)})"
         self.delete_profile_button.set_label(t('profile_delete_button', size=size_text))
         self.delete_profile_button.set_sensitive(bool(profile_path))
 
