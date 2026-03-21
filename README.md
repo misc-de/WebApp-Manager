@@ -2,6 +2,7 @@
 
 The WebApp Manager is a compact GTK/Libadwaita desktop and mobile tool for creating, importing, exporting, and managing Linux web app launchers with dedicated browser profiles.
 
+⚠️ **AI-assisted project**  
 ⚠️ **Work in progress**  
 This project is under active development. Features may change and instability is possible.
 
