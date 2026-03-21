@@ -143,6 +143,17 @@ def _selected_engine(options_dict, engines_list):
     return selected_engine, configured_command
 
 
+def _window_identity_for_entry(entry) -> str:
+    title = sanitize_desktop_value(getattr(entry, 'title', '') or '')[:200]
+    safe_slug = build_safe_slug(title)
+    if safe_slug:
+        return safe_slug
+    entry_id = getattr(entry, 'id', None)
+    if entry_id not in (None, ''):
+        return f'webapp-entry-{entry_id}'
+    return 'webapp'
+
+
 def build_launch_command(entry, options_dict, engines_list, logger, prepare_profile=False):
     title = (getattr(entry, 'title', '') or '').strip()
     raw_address = (options_dict.get(ADDRESS_KEY, '') or '').strip()
@@ -185,6 +196,11 @@ def build_launch_command(entry, options_dict, engines_list, logger, prepare_prof
     disable_ai = merged_options.get(OPTION_DISABLE_AI_KEY, '0') == '1'
     color_scheme = normalize_color_scheme(merged_options.get(COLOR_SCHEME_KEY, 'auto'))
     browser_family = profile_info.get('browser_family') if profile_info else ''
+    window_identity = _window_identity_for_entry(entry)
+    if browser_family == 'firefox':
+        exec_parts.extend([f'--class={window_identity}', f'--name={window_identity}'])
+    elif browser_family in {'chrome', 'chromium'}:
+        exec_parts.append(f'--class={window_identity}')
     if profile_info:
         exec_parts.extend(profile_info['exec_args'])
         exec_parts.extend(chromium_runtime_extension_args(profile_info, merged_options))
@@ -221,6 +237,7 @@ def build_launch_command(entry, options_dict, engines_list, logger, prepare_prof
         'normalized_address': address,
         'profile_info': profile_info,
         'engine_command': engine_command,
+        'window_identity': window_identity,
     }
 
 
@@ -536,6 +553,7 @@ def export_desktop_file(entry, options_dict, engines_list, logger):
     exec_cmd = shlex.join(launch_spec['argv'])
     profile_info = launch_spec['profile_info']
     address = launch_spec['normalized_address']
+    window_identity = sanitize_desktop_value(launch_spec.get('window_identity', ''))
 
     icon_path = options_dict.get(ICON_PATH_KEY, '').strip()
     icon_field = ''
@@ -575,6 +593,10 @@ def export_desktop_file(entry, options_dict, engines_list, logger):
         lines.append(f'Icon={icon_field}')
     else:
         lines.append('Icon=applications-internet')
+    if window_identity:
+        lines.append(f'StartupWMClass={window_identity}')
+        lines.append(f'X-GNOME-WMClass={window_identity}')
+    lines.append('StartupNotify=true')
     content = '\n'.join(lines) + '\n'
 
     existing_content = ''
