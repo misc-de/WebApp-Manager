@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CSS Runtime Check</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Noto Sans", sans-serif;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #f3f4f6;
+      color: #111827;
+    }
+
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 32px 20px 80px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 2rem;
+    }
+
+    p {
+      line-height: 1.6;
+    }
+
+    #css-marker {
+      margin-top: 24px;
+      padding: 20px;
+      border: 3px dashed #2563eb;
+      border-radius: 20px;
+      background: #ffffff;
+    }
+
+    .probe-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .probe-chip {
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: #dbeafe;
+      color: #1d4ed8;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>CSS Runtime Check</h1>
+    <p>
+      This page should look plain at first. If your linked or inline CSS customization is
+      active, the background, marker card, or chips should visibly change.
+    </p>
+
+    <section id="css-marker">
+      <strong>Visual marker</strong>
+      <p>If CSS injection works, this card should be obviously restyled.</p>
+      <div class="probe-row">
+        <div class="probe-chip">chip one</div>
+        <div class="probe-chip">chip two</div>
+        <div class="probe-chip">chip three</div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

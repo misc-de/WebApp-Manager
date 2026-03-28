@@ -2,6 +2,7 @@ from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
 APP_ID = 'de.cais.webappmanager'
+APP_VERSION = '69'
 APP_ICON_NAME = APP_ID
 APP_ICON_SOURCE = APP_DIR / f'{APP_ICON_NAME}.png'
 import os

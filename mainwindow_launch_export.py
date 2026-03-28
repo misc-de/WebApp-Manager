@@ -1,15 +1,14 @@
-import base64
 import json
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from gi.repository import Gio, GLib, Gtk
 from desktop_entries import build_launch_command, export_desktop_file, exportable_entry, get_expected_desktop_path, list_managed_desktop_files
 from engine_support import available_engines
 from i18n import t
-from input_validation import sanitize_desktop_value, validate_icon_source_path
+from input_validation import sanitize_desktop_value
 from logger_setup import get_logger
-from webapp_constants import ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY
+from wapp_transfer import build_wapp_export_bundle_payload, build_wapp_export_payload
 
 LOG = get_logger(__name__)
 ENGINES = available_engines()
@@ -17,27 +16,12 @@ ENGINES = available_engines()
 
 class MainWindowLaunchExportMixin:
     def _build_export_payload_for_entry(self, entry):
-            options = dict(self._get_options_dict(entry.id))
-            icon_path = str(options.get(ICON_PATH_KEY, '') or '').strip()
-            for transient_key in (ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY):
-                options.pop(transient_key, None)
-            payload = {
-                'format': 'webapp-export-v1',
-                'title': entry.title or '',
-                'description': entry.description or '',
-                'active': bool(entry.active),
-                'options': options,
-                'icon': None,
-            }
-            validated_icon = validate_icon_source_path(icon_path) if icon_path else None
-            if validated_icon is not None:
-                icon_bytes = validated_icon.read_bytes()
-                payload['icon'] = {
-                    'filename': validated_icon.name,
-                    'mime': 'image/png',
-                    'data_base64': base64.b64encode(icon_bytes).decode('ascii'),
-                }
-            return payload
+            return build_wapp_export_payload(
+                title=entry.title or '',
+                description=entry.description or '',
+                active=bool(entry.active),
+                options_dict=self._get_options_dict(entry.id),
+            )
 
     def _iter_exportable_entries(self):
             items = []
@@ -74,12 +58,9 @@ class MainWindowLaunchExportMixin:
             dialog.save(self, None, handle_save)
 
     def _build_export_bundle_payload(self, entries):
-            return {
-                'format': 'webapp-export-bundle-v1',
-                'version': 1,
-                'created_at': datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
-                'entries': [self._build_export_payload_for_entry(entry) for entry in entries],
-            }
+            return build_wapp_export_bundle_payload(
+                [self._build_export_payload_for_entry(entry) for entry in entries]
+            )
 
     def _on_export_all_single_file_response(self, file_obj, response, entries):
             try:
@@ -153,4 +134,3 @@ class MainWindowLaunchExportMixin:
                 LOG.warning('Refusing to launch entry %s because no validated launch command could be built', getattr(entry, 'id', 'unknown'))
                 return
             self._launch_command_args(launch_spec['argv'])
-

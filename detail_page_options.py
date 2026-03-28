@@ -21,6 +21,16 @@ from browser_option_registry import OPTION_CATEGORY_ORDER, OPTION_CATEGORY_LABEL
 from browser_profiles import apply_profile_settings, ensure_browser_profile, firefox_extension_installed, read_profile_settings
 from desktop_entries import export_desktop_file, get_expected_desktop_path
 from distro_utils import is_furios_distribution
+from detail_page_option_state import (
+    coerce_option_updates,
+    configured_mode_values_for_engine,
+    current_mode_value,
+    normalize_mode_value,
+    restored_browser_state,
+    store_boolean_option_value,
+    sync_browser_state_key,
+    ui_boolean_option_active,
+)
 from i18n import t
 from input_validation import DESKTOP_CHROME_USER_AGENT
 from logger_setup import get_logger
@@ -50,15 +60,10 @@ class DetailPageOptionsMixin:
             return list(self.option_names)
 
     def _ui_boolean_option_active(self, option_name):
-            raw_value = self._get_option_value(option_name) == '1'
-            if option_name == OPTION_DISABLE_AI_KEY:
-                return not raw_value
-            return raw_value
+            return ui_boolean_option_active(option_name, self._get_option_value(option_name))
 
     def _store_boolean_option_value(self, option_name, active):
-            if option_name == OPTION_DISABLE_AI_KEY:
-                return '0' if active else '1'
-            return '1' if active else '0'
+            return store_boolean_option_value(option_name, active)
 
     def _create_option_switch(self, option_name):
             switch = Gtk.Switch()
@@ -188,13 +193,7 @@ class DetailPageOptionsMixin:
             self._update_export_button_state()
 
     def _current_mode_value(self):
-            if self._get_option_value('Kiosk') == '1':
-                return 'kiosk'
-            if self._get_option_value(APP_MODE_KEY) == '1' and self._get_option_value('Frameless') == '1':
-                return 'seamless'
-            if self._get_option_value(APP_MODE_KEY) == '1':
-                return 'app'
-            return 'standard'
+            return current_mode_value(self._options_cache)
 
     def _current_mode_index(self):
             value = self._current_mode_value()
@@ -299,7 +298,7 @@ class DetailPageOptionsMixin:
             return browser_family_for_engine(self._get_current_engine())
 
     def _sync_browser_state_key(self, family=None):
-            return browser_state_key(family or self._current_browser_family())
+            return sync_browser_state_key(family or self._current_browser_family())
 
     def _sync_current_browser_state(self, commit=True):
             if self._syncing_browser_state:
@@ -319,9 +318,7 @@ class DetailPageOptionsMixin:
     def _restore_browser_state_for_family(self, family):
             if family == 'generic':
                 return
-            state = build_family_option_state(self._options_cache, family)
-            state.update(decode_browser_state(self._options_cache.get(self._sync_browser_state_key(family), ''), family))
-            self._add_options(state)
+            self._add_options(restored_browser_state(self._options_cache, family))
 
     def _get_option_value(self, option_key):
             return self._options_cache.get(option_key)
@@ -415,15 +412,7 @@ class DetailPageOptionsMixin:
             self.user_agent_status.set_visible(False)
 
     def _normalize_mode_value(self, value):
-            normalized = str(value or '').strip().lower().replace('-', '_').replace(' ', '_')
-            aliases = {
-                'default': 'standard',
-                'normal': 'standard',
-                'fullscreen': 'kiosk',
-                'frameless': 'seamless',
-            }
-            normalized = aliases.get(normalized, normalized)
-            return normalized if normalized in {'standard', 'kiosk', 'app', 'seamless'} else ''
+            return normalize_mode_value(value)
 
     def _mode_label_for_value(self, value):
             mapping = {
@@ -435,60 +424,7 @@ class DetailPageOptionsMixin:
             return mapping.get(value, t('mode_standard'))
 
     def _configured_mode_values_for_engine(self, engine):
-            browser_modes = self.config.get('browser_modes') or {}
-            values = []
-
-            def _extend_from(candidate):
-                nonlocal values
-                if not candidate:
-                    return False
-                items = candidate if isinstance(candidate, list) else []
-                normalized_items = []
-                for item in items:
-                    if isinstance(item, dict):
-                        mode_value = self._normalize_mode_value(item.get('value') or item.get('id') or item.get('name'))
-                    else:
-                        mode_value = self._normalize_mode_value(item)
-                    if mode_value and mode_value not in normalized_items:
-                        normalized_items.append(mode_value)
-                if normalized_items:
-                    values = normalized_items
-                    return True
-                return False
-
-            family = browser_family_for_engine(engine) if engine else ''
-            engine_id = str(engine.get('id')) if engine else ''
-            engine_name = str(engine.get('name') or '').strip().lower() if engine else ''
-            command = str(engine.get('command') or '').strip().lower() if engine else ''
-            nested = browser_modes.get('engines') if isinstance(browser_modes, dict) else None
-
-            candidates = []
-            if isinstance(browser_modes, dict):
-                candidates.extend([
-                    browser_modes.get(engine_id),
-                    browser_modes.get(engine_name),
-                    browser_modes.get(command),
-                    browser_modes.get(family),
-                ])
-                if isinstance(nested, dict):
-                    candidates.extend([
-                        nested.get(engine_id),
-                        nested.get(engine_name),
-                        nested.get(command),
-                        nested.get(family),
-                    ])
-                candidates.append(browser_modes.get('default'))
-
-            for candidate in candidates:
-                if _extend_from(candidate):
-                    break
-
-            if not values:
-                values = ['standard', 'kiosk', 'app']
-                if not engine or family == 'firefox':
-                    values.append('seamless')
-
-            return values
+            return configured_mode_values_for_engine(self.config, engine)
 
     def _available_mode_items(self):
             engine = self._get_current_engine()
@@ -522,10 +458,7 @@ class DetailPageOptionsMixin:
             return dict(self._options_cache)
 
     def _coerce_option_updates(self, updates):
-            clean_updates = {key: '' if value is None else str(value) for key, value in updates.items()}
-            if self._current_browser_family() in {'firefox', 'chrome', 'chromium'} and clean_updates.get(OPTION_FORCE_PRIVACY_KEY) == '1':
-                clean_updates[ONLY_HTTPS_KEY] = '1'
-            return clean_updates
+            return coerce_option_updates(self._current_browser_family(), updates)
 
     def _add_options(self, updates):
             clean_updates = self._coerce_option_updates(updates)
@@ -870,4 +803,3 @@ class DetailPageOptionsMixin:
     def reload_from_db(self):
             self._reload_options_cache_from_db()
             self._apply_option_values_to_controls()
-
