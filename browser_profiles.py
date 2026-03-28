@@ -33,6 +33,7 @@ from webapp_constants import (
     OPTION_STARTUP_BOOSTER_KEY,
     OPTION_KEEP_IN_BACKGROUND_KEY,
     OPTION_NOTIFICATIONS_KEY,
+    OPTION_OPEN_LINKS_IN_TABS_KEY,
     OPTION_PRESERVE_SESSION_KEY,
     OPTION_SWIPE_KEY,
     PROFILE_NAME_KEY,
@@ -169,7 +170,7 @@ def _clear_chromium_runtime_caches(profile_dir, logger):
     return changed
 
 
-def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_session, user_agent_value='', only_https=False, notifications_enabled=False, swipe_enabled=False, keep_in_background=False, startup_url='', app_mode=False, native_window_frame=False, disable_ai=False, set_privacy=False, color_scheme='auto', custom_css_enabled=False, custom_js_enabled=False, startup_booster=False):
+def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_session, user_agent_value='', only_https=False, notifications_enabled=False, swipe_enabled=False, keep_in_background=False, open_links_in_tabs=False, startup_url='', app_mode=False, native_window_frame=False, disable_ai=False, set_privacy=False, color_scheme='auto', custom_css_enabled=False, custom_js_enabled=False, startup_booster=False):
     profile_dir = Path(profile_dir)
     only_https = bool(only_https or set_privacy)
     user_js = profile_dir / 'user.js'
@@ -208,6 +209,7 @@ def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_ses
         'dom.webnotifications.serviceworker.enabled': bool(notifications_enabled),
         'dom.push.enabled': bool(notifications_enabled),
         'permissions.default.desktop-notification': 1 if notifications_enabled else 0,
+        'browser.link.open_newwindow': 3 if open_links_in_tabs else 2,
         'browser.gesture.swipe.left': 'Browser:BackOrBackDuplicate' if swipe_enabled else '',
         'browser.gesture.swipe.right': 'Browser:ForwardOrForwardDuplicate' if swipe_enabled else '',
         'toolkit.legacyUserProfileCustomizations.stylesheets': bool(app_mode or custom_css_enabled),
@@ -853,16 +855,24 @@ def _read_firefox_profile_settings(profile_dir):
         or prefs.get('datareporting.usage.uploadEnabled') is False
     )
     only_https_enabled = bool(prefs.get('dom.security.https_only_mode')) or privacy_enabled
+    disable_ai_enabled = bool(
+        prefs.get('browser.ml.chat.enabled') is False
+        or prefs.get('browser.tabs.groups.smart.enabled') is False
+        or prefs.get('browser.tabs.groups.smart.userEnabled') is False
+        or prefs.get('browser.ml.linkPreview.enabled') is False
+        or prefs.get('browser.ai.control.smartTabGroups') == 'blocked'
+    )
     return {
         OPTION_CLEAR_CACHE_ON_EXIT_KEY: '1' if (prefs.get('webapp.clear_cache_requested') is True or prefs.get('privacy.clearOnShutdown.cache') or prefs.get('privacy.clearOnShutdown_v2.cache')) else '0',
         OPTION_CLEAR_COOKIES_ON_EXIT_KEY: '1' if prefs.get('privacy.clearOnShutdown.cookies') or prefs.get('privacy.clearOnShutdown_v2.cookiesAndStorage') else '0',
         OPTION_ADBLOCK_KEY: '1' if adblock else '0',
         OPTION_PRESERVE_SESSION_KEY: '1' if prefs.get('browser.startup.page') == 3 else '0',
         OPTION_NOTIFICATIONS_KEY: '1' if prefs.get('permissions.default.desktop-notification') == 1 else '0',
+        OPTION_OPEN_LINKS_IN_TABS_KEY: '1' if prefs.get('browser.link.open_newwindow') == 3 else '0',
         OPTION_SWIPE_KEY: '1' if swipe or bool(prefs.get('browser.gesture.swipe.left')) else '0',
         ONLY_HTTPS_KEY: '1' if only_https_enabled else '0',
         OPTION_KEEP_IN_BACKGROUND_KEY: '1' if (prefs.get('furi.browser.preload.disabled') is False or ('furi.browser.preload.disabled' not in prefs and prefs.get('browser.tabs.closeWindowWithLastTab') is False)) else '0',
-        OPTION_DISABLE_AI_KEY: '1' if (prefs.get('browser.ml.chat.enabled') is False or prefs.get('browser.tabs.groups.smart.enabled') is False or prefs.get('browser.ml.linkPreview.enabled') is False) else '0',
+        OPTION_DISABLE_AI_KEY: '1' if disable_ai_enabled else '0',
         OPTION_FORCE_PRIVACY_KEY: '1' if privacy_enabled else '0',
         OPTION_STARTUP_BOOSTER_KEY: '1' if prefs.get('webapp.startup_booster.enabled') is True else '0',
         APP_MODE_KEY: '1' if app_mode_enabled else '0',
@@ -928,6 +938,7 @@ def apply_profile_settings(profile_info, options_dict, logger):
     user_agent_value = (scoped_options.get(USER_AGENT_VALUE_KEY, '') or '').strip()
     only_https = scoped_options.get(ONLY_HTTPS_KEY, '0') == '1'
     keep_in_background = scoped_options.get(OPTION_KEEP_IN_BACKGROUND_KEY, '0') == '1'
+    open_links_in_tabs = scoped_options.get(OPTION_OPEN_LINKS_IN_TABS_KEY, '0') == '1'
     app_mode = mode_value in {'app', 'seamless'}
     frameless = mode_value == 'seamless'
     kiosk = mode_value == 'kiosk'
@@ -953,6 +964,7 @@ def apply_profile_settings(profile_info, options_dict, logger):
             notifications_enabled=notifications_enabled,
             swipe_enabled=swipe_enabled,
             keep_in_background=keep_in_background,
+            open_links_in_tabs=open_links_in_tabs,
             startup_url=(options_dict.get(ADDRESS_KEY, '') or '').strip(),
             app_mode=app_mode,
             native_window_frame=(app_mode and not frameless),

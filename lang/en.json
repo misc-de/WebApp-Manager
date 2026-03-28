@@ -22,6 +22,7 @@
   "option_adblock": "Adblocker (ublock)",
   "option_swipe": "Swipe gesten (SimpleSwipeNavigator)",
   "option_notifications": "Notifications",
+  "option_open_links_in_tabs": "Open Links in Tabs Instead of New Windows",
   "option_delete_cache": "Clear Cache (When App Closes)",
   "option_kiosk": "Kiosk",
   "option_app_mode": "App",

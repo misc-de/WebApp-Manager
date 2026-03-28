@@ -18,6 +18,7 @@ INLINE_CUSTOM_JS_KEY = 'Inline Custom JavaScript'
 OPTION_PRESERVE_SESSION_KEY = 'Previous Session'
 OPTION_KEEP_IN_BACKGROUND_KEY = 'Keep in Background'
 OPTION_NOTIFICATIONS_KEY = 'Notifications'
+OPTION_OPEN_LINKS_IN_TABS_KEY = 'Open Links In Tabs'
 OPTION_SWIPE_KEY = 'Swipe'
 OPTION_ADBLOCK_KEY = 'Adblock'
 OPTION_CLEAR_CACHE_ON_EXIT_KEY = 'Clear Cache On Exit'
@@ -30,6 +31,7 @@ OPTION_UI_LABEL_KEYS = {
     OPTION_PRESERVE_SESSION_KEY: 'option_previous_session',
     OPTION_KEEP_IN_BACKGROUND_KEY: 'option_keep_in_background',
     OPTION_NOTIFICATIONS_KEY: 'option_notifications',
+    OPTION_OPEN_LINKS_IN_TABS_KEY: 'option_open_links_in_tabs',
     OPTION_SWIPE_KEY: 'option_swipe',
     OPTION_ADBLOCK_KEY: 'option_adblock',
     ONLY_HTTPS_KEY: 'option_only_https',
@@ -44,6 +46,7 @@ OPTION_UI_LABEL_ALIASES = {
     OPTION_PRESERVE_SESSION_KEY: {'Keep Session', 'Previous Session', 'Session nach dem Schließen erhalten'},
     OPTION_KEEP_IN_BACKGROUND_KEY: {'Keep in Background', 'Keep Firefox in the Background', 'Keep App in the Background'},
     OPTION_NOTIFICATIONS_KEY: {'Allow Notifications', 'Notifications', 'Benachrichtigungen erlauben'},
+    OPTION_OPEN_LINKS_IN_TABS_KEY: {'Open Links in tabs instead of new windows', 'Open Links in Tabs', 'Links in Tabs statt in neuen Fenstern oeffnen'},
     OPTION_SWIPE_KEY: {'Add Swipe Plugin', 'Swipe', 'Swipe-Plugin hinzufügen', 'Firefox Swipe-Unterstützung installieren'},
     OPTION_ADBLOCK_KEY: {'Add Adblock Plugin', 'Adblock', 'Adblock-Plugin hinzufügen', 'Firefox Adblock installieren'},
     ONLY_HTTPS_KEY: {'Only HTTPS', 'Strict HTTPS', 'HTTPS erzwingen'},
