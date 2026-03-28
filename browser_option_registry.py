@@ -15,6 +15,7 @@ from webapp_constants import (
     OPTION_STARTUP_BOOSTER_KEY,
     OPTION_KEEP_IN_BACKGROUND_KEY,
     OPTION_NOTIFICATIONS_KEY,
+    OPTION_OPEN_LINKS_IN_TABS_KEY,
     OPTION_PRESERVE_SESSION_KEY,
     OPTION_SWIPE_KEY,
     USER_AGENT_NAME_KEY,
@@ -85,6 +86,13 @@ _VISIBLE_BROWSER_OPTION_SPECS: tuple[BrowserOptionSpec, ...] = (
         'option_notifications',
         'profile_setting',
         _bindings('firefox', 'chrome', 'chromium', 'generic', storage_kind='profile_setting', notes='Map to the engine-specific default notification permission settings.'),
+        category='comfort',
+    ),
+    BrowserOptionSpec(
+        OPTION_OPEN_LINKS_IN_TABS_KEY,
+        'option_open_links_in_tabs',
+        'profile_setting',
+        _bindings('firefox', storage_kind='profile_setting', notes='Open links intended for new windows in tabs instead when Firefox supports it.'),
         category='comfort',
     ),
     BrowserOptionSpec(
