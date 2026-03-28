@@ -1,6 +1,8 @@
 from gi.repository import Gtk, GLib, Pango
 
+from focus_guard import focus_neutral_widget, should_prevent_input_autofocus
 from logger_setup import get_logger
+from ui_flow_state import detail_neutral_focus_slot
 
 LOG = get_logger(__name__)
 
@@ -267,41 +269,30 @@ class DetailPageLayoutMixin:
             return False
 
     def _focus_mobile_neutral_target(self):
-            if not self._is_compact_layout():
+            if not self._is_compact_layout() and not should_prevent_input_autofocus():
                 return False
             page_name = self._current_page_name()
+            asset_state = getattr(self, '_asset_page_state', {})
+            candidates = {
+                'icon_button': getattr(self, 'icon_button', None),
+                'first_icon_page_button': (getattr(self, '_icon_page_buttons', []) or [None])[0],
+                'css_add_button': (asset_state.get('css', {}) or {}).get('add_button'),
+                'css_dropdown': (asset_state.get('css', {}) or {}).get('dropdown'),
+                'javascript_add_button': (asset_state.get('javascript', {}) or {}).get('add_button'),
+                'javascript_dropdown': (asset_state.get('javascript', {}) or {}).get('dropdown'),
+            }
             target = None
-            if page_name == 'main':
-                target = getattr(self, 'icon_button', None)
-            elif page_name == 'icon':
-                buttons = getattr(self, '_icon_page_buttons', [])
-                target = buttons[0] if buttons else getattr(self, 'icon_button', None)
-            elif page_name in {'css_assets', 'javascript_assets'}:
-                asset_type = 'css' if page_name == 'css_assets' else 'javascript'
-                state = getattr(self, '_asset_page_state', {}).get(asset_type, {})
-                target = state.get('add_button') or state.get('dropdown') or getattr(self, 'icon_button', None)
-            else:
-                target = getattr(self, 'icon_button', None)
+            for slot in detail_neutral_focus_slot(page_name):
+                candidate = candidates.get(slot)
+                if candidate is not None:
+                    target = candidate
+                    break
             if target is None:
                 return False
-            root = None
-            try:
-                root = self.get_root()
-            except Exception:
-                root = None
-            if root is not None and hasattr(root, 'set_focus'):
-                try:
-                    root.set_focus(target)
-                except Exception:
-                    pass
-            try:
-                target.grab_focus()
-            except Exception:
-                pass
-            return False
+            return focus_neutral_widget(self, target)
 
     def _schedule_mobile_focus_reset(self):
-            if not self._is_compact_layout():
+            if not self._is_compact_layout() and not should_prevent_input_autofocus():
                 return
             GLib.idle_add(self._focus_mobile_neutral_target)
 
@@ -388,4 +379,3 @@ class DetailPageLayoutMixin:
             self.page_stack.set_visible_child_name(page_name)
             self._refresh_asset_page(asset_type)
             self._update_tabbed_navigation_state()
-

@@ -58,6 +58,7 @@ from webapp_constants import (
     OPTION_SWIPE_KEY,
 )
 from detail_page import DetailPage
+from focus_guard import schedule_neutral_focus, should_prevent_input_autofocus
 from custom_assets import count_asset_references, detach_asset_from_entries, format_asset_date, import_custom_asset, list_custom_assets, remove_custom_asset
 from i18n import available_languages, get_app_config, get_configured_language_value, invalidate_i18n_cache, save_app_config, t
 from logger_setup import get_logger
@@ -66,7 +67,7 @@ from browser_profiles import inspect_profile_copy_source, read_profile_settings,
 from ui_icons import create_image_from_ref
 from app_state import WebAppState
 from app_models import Entry
-from app_identity import APP_DIR, APP_ID, APP_ICON_NAME, APP_DB_PATH
+from app_identity import APP_DIR, APP_ID, APP_ICON_NAME, APP_DB_PATH, APP_VERSION
 from manager_integration import ensure_manager_desktop_integration, headerbar_decoration_layout_without_icon
 from mainwindow_window_state import MainWindowWindowStateMixin
 from mainwindow_launch_export import MainWindowLaunchExportMixin
@@ -76,10 +77,10 @@ from mainwindow_dialogs import MainWindowDialogsMixin
 from mainwindow_profile_import import MainWindowProfileImportMixin
 from mainwindow_overview import MainWindowOverviewMixin
 from mainwindow_entries import MainWindowEntriesMixin
+from ui_flow_state import main_neutral_focus_candidates
 
 Adw.init()
 LOG = get_logger(__name__)
-APP_VERSION = '68a'
 
 
 MANAGED_IMPORT_OPTION_KEYS = [
@@ -388,6 +389,31 @@ class MainWindow(MainWindowWindowStateMixin, MainWindowLaunchExportMixin, MainWi
         self.update_empty_state()
         self._apply_ui_appearance_setting()
         self._show_overview_root_page()
+        if should_prevent_input_autofocus():
+            schedule_neutral_focus(self, self._main_neutral_focus_target)
+
+    def _main_neutral_focus_target(self):
+        visible_page = ''
+        try:
+            visible_page = self.stack.get_visible_child_name() or ''
+        except (AttributeError, TypeError):
+            visible_page = ''
+        candidates = {
+            'search_button': self.search_button,
+            'back_button': self.back_button,
+            'home_button': self.home_button,
+            'add_button': self.add_button,
+        }
+        for slot in main_neutral_focus_candidates(
+            visible_page=visible_page,
+            search_visible=self.search_visible,
+            adaptive_split_enabled=self._adaptive_split_enabled,
+            adaptive_real_detail_visible=self._adaptive_real_detail_visible(),
+        ):
+            candidate = candidates.get(slot)
+            if candidate is not None:
+                return candidate
+        return self.home_button or self.search_button or self.add_button or self.back_button
 
 
 
@@ -562,6 +588,8 @@ class WebAppManager(Adw.Application):
     def do_activate(self):
         win = MainWindow(self)
         win.present()
+        if should_prevent_input_autofocus():
+            schedule_neutral_focus(win, win._main_neutral_focus_target)
         GLib.timeout_add(200, win.reconcile_desktop_files)
 
 

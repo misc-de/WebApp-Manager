@@ -2,10 +2,12 @@ from gi.repository import Adw, Gio, GLib, Gdk, Gtk, Pango
 
 from detail_page import DetailPage
 from engine_support import available_engines, engine_icon_name
+from focus_guard import schedule_neutral_focus, should_prevent_input_autofocus
 from i18n import t
 from logger_setup import get_logger
+from ui_flow_state import next_search_toggle_state
 from ui_icons import create_image_from_ref
-APP_VERSION = '68a'
+from app_identity import APP_VERSION
 ENGINES = available_engines()
 from app_models import Entry
 from desktop_entries import delete_managed_entry_artifacts
@@ -271,18 +273,27 @@ class MainWindowOverviewMixin:
         Gtk.Window.close(self, *args)
 
     def on_search_clicked(self, button):
-        self.search_visible = not self.search_visible
+        state = next_search_toggle_state(
+            current_visible=self.search_visible,
+            current_text=self.search_entry.get_text(),
+        )
+        self.search_visible = bool(state['search_visible'])
         self.search_entry.set_visible(self.search_visible)
-        if self.search_visible:
+        if state['show_back_header']:
             self._show_back_only_header()
-            self.search_entry.grab_focus()
+            if state['autofocus_search_entry'] and not should_prevent_input_autofocus():
+                self.search_entry.grab_focus()
+            else:
+                schedule_neutral_focus(self, self._main_neutral_focus_target)
             return
-        if self.search_entry.get_text():
+        if state['clear_entry_text']:
             self.search_entry.set_text('')
-        self.search_text = ''
+        if state['reset_search_text']:
+            self.search_text = ''
         self.custom_filter.changed(Gtk.FilterChange.DIFFERENT)
         self.update_empty_state()
-        self._restore_overview_header_actions()
+        if state['restore_header_actions']:
+            self._restore_overview_header_actions()
 
     def on_search_entry_changed(self, entry):
         self.search_text = entry.get_text().strip().lower()

@@ -1,45 +1,28 @@
-
 from browser_profiles import delete_managed_browser_profiles
 from desktop_entries import export_desktop_file, get_expected_desktop_path
 from i18n import t
 from logger_setup import get_logger
-import base64
 import binascii
 import json
 from datetime import datetime
 from gi.repository import Gio, GLib, Gtk
 from browser_option_logic import normalize_option_dict
 from icon_pipeline import is_svg_support_missing_error, normalize_icon_bytes_to_png
-from input_validation import load_and_normalize_wapp_payload_from_path, load_import_payloads_from_path, normalize_wapp_payload, payload_contains_inline_javascript, validate_icon_source_path
+from input_validation import load_and_normalize_wapp_payload_from_path, load_import_payloads_from_path, normalize_wapp_payload, payload_contains_inline_javascript
 from webapp_constants import ADDRESS_KEY, COLOR_SCHEME_KEY, DEFAULT_ZOOM_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
+from wapp_transfer import build_wapp_export_payload
 
 LOG = get_logger(__name__)
 
 
 class DetailPageTransferMixin:
     def _build_wapp_payload(self):
-        raw_options = dict(self._options_dict())
-        icon_path = str(raw_options.get(ICON_PATH_KEY, '') or '').strip()
-        options = dict(raw_options)
-        for transient_key in (ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY):
-            options.pop(transient_key, None)
-        payload = {
-            'format': 'webapp-export-v1',
-            'title': self.entry.title or '',
-            'description': self.entry.description or '',
-            'active': bool(self.entry.active),
-            'options': options,
-            'icon': None,
-        }
-        validated_icon = validate_icon_source_path(icon_path) if icon_path else None
-        if validated_icon is not None:
-            icon_bytes = validated_icon.read_bytes()
-            payload['icon'] = {
-                'filename': validated_icon.name,
-                'mime': 'image/png',
-                'data_base64': base64.b64encode(icon_bytes).decode('ascii'),
-            }
-        return payload
+        return build_wapp_export_payload(
+            title=self.entry.title or '',
+            description=self.entry.description or '',
+            active=bool(self.entry.active),
+            options_dict=self._options_dict(),
+        )
 
     def _apply_wapp_payload(self, payload):
         try:
