@@ -1,10 +1,14 @@
+import io
 import json
 import logging
 import sys
 import tempfile
 import types
+import urllib.error
 import unittest
+import zipfile
 from pathlib import Path
+from unittest import mock
 
 from browser_option_logic import (
     decode_browser_state,
@@ -34,7 +38,9 @@ from webapp_constants import (
     OPTION_DISABLE_AI_KEY,
     OPTION_NOTIFICATIONS_KEY,
     OPTION_OPEN_LINKS_IN_TABS_KEY,
+    OPTION_PREVENT_MULTIPLE_STARTS_KEY,
     OPTION_PRESERVE_SESSION_KEY,
+    OPTION_SAFE_GRAPHICS_KEY,
     PROFILE_PATH_KEY,
 )
 from ui_flow_state import detail_neutral_focus_slot, main_neutral_focus_candidates, next_search_toggle_state
@@ -52,7 +58,19 @@ fake_logger_setup = types.ModuleType('logger_setup')
 fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
-from browser_profiles import _write_firefox_user_js, read_profile_settings
+from browser_profiles import (
+    _resolve_bundled_extension_path,
+    _scope_swipe_extension_payload,
+    _write_firefox_user_js,
+    _write_managed_profile_marker,
+    _sync_firefox_signed_extension,
+    _sync_firefox_swipe_extension,
+    delete_managed_browser_profiles,
+    ensure_browser_profile,
+    get_firefox_extension_config,
+    read_profile_settings,
+    swipe_extension_mode_value,
+)
 
 
 class BrowserOptionLogicTests(unittest.TestCase):
@@ -78,6 +96,7 @@ class BrowserOptionLogicTests(unittest.TestCase):
         options = {
             OPTION_OPEN_LINKS_IN_TABS_KEY: '1',
             OPTION_PRESERVE_SESSION_KEY: '1',
+            OPTION_PREVENT_MULTIPLE_STARTS_KEY: '1',
             ONLY_HTTPS_KEY: '1',
             'Kiosk': '1',
         }
@@ -87,6 +106,7 @@ class BrowserOptionLogicTests(unittest.TestCase):
 
         self.assertEqual(decoded[OPTION_OPEN_LINKS_IN_TABS_KEY], '1')
         self.assertEqual(decoded[OPTION_PRESERVE_SESSION_KEY], '1')
+        self.assertEqual(decoded[OPTION_PREVENT_MULTIPLE_STARTS_KEY], '1')
         self.assertEqual(decoded[ONLY_HTTPS_KEY], '1')
         self.assertNotIn('Kiosk', decoded)
 
@@ -177,9 +197,10 @@ class UiFlowStateTests(unittest.TestCase):
 
     def test_detail_neutral_focus_slot_follows_current_subpage(self):
         self.assertEqual(detail_neutral_focus_slot('main'), ('icon_button',))
+        self.assertEqual(detail_neutral_focus_slot('options'), ('options_tab_button', 'icon_button'))
         self.assertEqual(detail_neutral_focus_slot('icon'), ('first_icon_page_button', 'icon_button'))
-        self.assertEqual(detail_neutral_focus_slot('css_assets'), ('css_add_button', 'css_dropdown', 'icon_button'))
-        self.assertEqual(detail_neutral_focus_slot('javascript_assets'), ('javascript_add_button', 'javascript_dropdown', 'icon_button'))
+        self.assertEqual(detail_neutral_focus_slot('css_assets'), ('css_tab_button', 'css_add_button', 'css_dropdown', 'icon_button'))
+        self.assertEqual(detail_neutral_focus_slot('javascript_assets'), ('javascript_tab_button', 'javascript_add_button', 'javascript_dropdown', 'icon_button'))
         self.assertEqual(detail_neutral_focus_slot('unknown'), ('icon_button',))
 
     def test_next_search_toggle_state_describes_open_and_close_flow(self):
@@ -199,6 +220,44 @@ class UiFlowStateTests(unittest.TestCase):
 
 
 class FirefoxProfileOptionTests(unittest.TestCase):
+    class _FakeUrlopenResponse:
+        def __init__(self, payload: bytes):
+            self.payload = payload
+
+        def read(self):
+            return self.payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def _write_test_xpi(self, path: Path, addon_id: str, version: str = '0.1.0', signed: bool = False):
+        manifest = {
+            'manifest_version': 2,
+            'name': 'Test Swipe',
+            'version': version,
+            'permissions': ['tabs', 'http://*/*', 'https://*/*'],
+            'background': {'scripts': ['background.js']},
+            'content_scripts': [{
+                'matches': ['http://*/*', 'https://*/*'],
+                'js': ['swipe.js'],
+                'run_at': 'document_idle',
+            }],
+            'browser_specific_settings': {
+                'gecko': {
+                    'id': addon_id,
+                }
+            },
+        }
+        with zipfile.ZipFile(path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('manifest.json', json.dumps(manifest))
+            archive.writestr('background.js', 'browser.runtime.onMessage.addListener(() => {});')
+            archive.writestr('swipe.js', 'console.log("swipe");')
+            if signed:
+                archive.writestr('META-INF/mozilla.rsa', 'signed')
+
     def test_read_profile_settings_round_trip_for_open_links_and_disable_ai(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             profile_dir = Path(tmpdir)
@@ -239,6 +298,343 @@ class FirefoxProfileOptionTests(unittest.TestCase):
 
         self.assertEqual(state[OPTION_DISABLE_AI_KEY], '1')
         self.assertEqual(state[OPTION_OPEN_LINKS_IN_TABS_KEY], '0')
+
+    def test_unsigned_runtime_js_pref_is_only_relaxed_for_managed_firefox_profiles(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            firefox_root = tmp_root / 'firefox-root'
+            chromium_root = tmp_root / 'chromium-root'
+            unmanaged_profile = tmp_root / 'unmanaged'
+            unmanaged_profile.mkdir(parents=True, exist_ok=True)
+
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root):
+                _write_firefox_user_js(
+                    unmanaged_profile,
+                    clear_cache=False,
+                    clear_cookies=False,
+                    previous_session=False,
+                    custom_js_enabled=True,
+                )
+                unmanaged_user_js = (unmanaged_profile / 'user.js').read_text(encoding='utf-8')
+
+                managed_profile = firefox_root / 'webapp_managed'
+                managed_profile.mkdir(parents=True, exist_ok=True)
+                _write_managed_profile_marker(managed_profile, 'firefox')
+                _write_firefox_user_js(
+                    managed_profile,
+                    clear_cache=False,
+                    clear_cookies=False,
+                    previous_session=False,
+                    custom_js_enabled=True,
+                )
+                managed_user_js = (managed_profile / 'user.js').read_text(encoding='utf-8')
+
+        self.assertIn('user_pref("xpinstall.signatures.required", true);', unmanaged_user_js)
+        self.assertIn('user_pref("xpinstall.signatures.required", false);', managed_user_js)
+
+    def test_furios_firefox_profiles_disable_problematic_gpu_paths(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_dir = Path(tmpdir)
+
+            with mock.patch('browser_profiles.is_furios_distribution', return_value=True):
+                _write_firefox_user_js(
+                    profile_dir,
+                    clear_cache=False,
+                    clear_cookies=False,
+                    previous_session=False,
+                )
+
+            user_js = (profile_dir / 'user.js').read_text(encoding='utf-8')
+
+        self.assertIn('user_pref("gfx.webrender.all", false);', user_js)
+        self.assertIn('user_pref("layers.acceleration.disabled", true);', user_js)
+        self.assertIn('user_pref("gfx.canvas.accelerated", false);', user_js)
+        self.assertIn('user_pref("media.ffmpeg.vaapi.enabled", false);', user_js)
+
+    def test_safe_graphics_adds_extra_firefox_fallback_prefs_and_round_trips(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_dir = Path(tmpdir)
+
+            _write_firefox_user_js(
+                profile_dir,
+                clear_cache=False,
+                clear_cookies=False,
+                previous_session=False,
+                safe_graphics=True,
+            )
+
+            user_js = (profile_dir / 'user.js').read_text(encoding='utf-8')
+            state = read_profile_settings(str(profile_dir), 'firefox')
+
+        self.assertIn('user_pref("webgl.disabled", true);', user_js)
+        self.assertIn('user_pref("webgl.enable-webgl2", false);', user_js)
+        self.assertIn('user_pref("media.hardware-video-decoding.enabled", false);', user_js)
+        self.assertEqual(state[OPTION_SAFE_GRAPHICS_KEY], '1')
+
+    def test_ensure_browser_profile_copies_external_firefox_profile_into_managed_dir(self):
+        logger = _build_test_logger('profile-copy')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            firefox_root = tmp_root / 'firefox-root'
+            chromium_root = tmp_root / 'chromium-root'
+            external_profile = firefox_root / 'abcd1234.default-release'
+            external_profile.mkdir(parents=True, exist_ok=True)
+            (external_profile / 'prefs.js').write_text('// existing profile\n', encoding='utf-8')
+            (external_profile / 'cookies.sqlite').write_text('db', encoding='utf-8')
+
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root):
+                profile_info = ensure_browser_profile(
+                    'Copied App',
+                    'firefox',
+                    logger,
+                    stored_profile_path=str(external_profile),
+                )
+                self.assertIsNotNone(profile_info)
+                self.assertNotEqual(profile_info['profile_path'], str(external_profile))
+                self.assertTrue(Path(profile_info['profile_path']).name.startswith('webapp_'))
+                self.assertTrue((Path(profile_info['profile_path']) / 'prefs.js').exists())
+                self.assertTrue((Path(profile_info['profile_path']) / '.webapp-manager-profile.json').exists())
+
+    def test_delete_managed_browser_profiles_skips_regular_firefox_profiles(self):
+        logger = _build_test_logger('profile-delete')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            firefox_root = tmp_root / 'firefox-root'
+            chromium_root = tmp_root / 'chromium-root'
+            regular_profile = firefox_root / 'abcd1234.default-release'
+            regular_profile.mkdir(parents=True, exist_ok=True)
+            (regular_profile / 'prefs.js').write_text('// keep me\n', encoding='utf-8')
+
+            managed_profile = firefox_root / 'webapp_123456'
+            managed_profile.mkdir(parents=True, exist_ok=True)
+            (managed_profile / 'prefs.js').write_text('// delete me\n', encoding='utf-8')
+            _write_managed_profile_marker(managed_profile, 'firefox')
+
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root):
+                delete_managed_browser_profiles('Regular App', logger, stored_profile_path=str(regular_profile))
+                delete_managed_browser_profiles('Managed App', logger, stored_profile_path=str(managed_profile))
+
+            self.assertTrue(regular_profile.exists())
+            self.assertFalse(managed_profile.exists())
+
+    def test_downloaded_signed_swipe_bundle_can_be_installed(self):
+        logger = _build_test_logger('downloaded-signed-swipe')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            firefox_root = tmp_root / 'firefox-root'
+            chromium_root = tmp_root / 'chromium-root'
+            profile_dir = firefox_root / 'webapp_testprofile'
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            download_bundle = tmp_root / 'downloaded-swipe.xpi'
+            self._write_test_xpi(download_bundle, 'swipe-gestures@de.cais', signed=True)
+            payload = download_bundle.read_bytes()
+
+            config = {
+                'id': 'swipe-gestures@de.cais',
+                'marker_file': '.webapp_secure_swipe_extension_id',
+                'bundle_path': '',
+                'download_url': 'https://example.invalid/swipe.xpi',
+            }
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), \
+                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), \
+                mock.patch('browser_profiles.get_firefox_extension_config', return_value=config), \
+                mock.patch('browser_profiles.urllib.request.urlopen', return_value=self._FakeUrlopenResponse(payload)):
+                result = _sync_firefox_swipe_extension(
+                    profile_dir,
+                    True,
+                    logger,
+                )
+
+            self.assertTrue(result['installed'])
+            self.assertIsNone(result['error'])
+            self.assertTrue((profile_dir / 'extensions' / 'swipe-gestures@de.cais.xpi').exists())
+
+    def test_downloaded_unsigned_swipe_bundle_is_rejected(self):
+        logger = _build_test_logger('downloaded-unsigned-swipe')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            firefox_root = tmp_root / 'firefox-root'
+            chromium_root = tmp_root / 'chromium-root'
+            profile_dir = firefox_root / 'webapp_testprofile'
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            download_bundle = tmp_root / 'downloaded-swipe.xpi'
+            self._write_test_xpi(download_bundle, 'swipe-gestures@de.cais', signed=False)
+            payload = download_bundle.read_bytes()
+
+            config = {
+                'id': 'swipe-gestures@de.cais',
+                'marker_file': '.webapp_secure_swipe_extension_id',
+                'bundle_path': '',
+                'download_url': 'https://example.invalid/swipe.xpi',
+            }
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), \
+                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), \
+                mock.patch('browser_profiles.get_firefox_extension_config', return_value=config), \
+                mock.patch('browser_profiles.urllib.request.urlopen', return_value=self._FakeUrlopenResponse(payload)):
+                result = _sync_firefox_swipe_extension(
+                    profile_dir,
+                    True,
+                    logger,
+                )
+
+            self.assertFalse(result['installed'])
+            self.assertEqual(result['error'], 'unsigned-extension-payload')
+
+    def test_secure_swipe_install_replaces_legacy_swipe_bundle(self):
+        logger = _build_test_logger('secure-swipe-migration')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            firefox_root = tmp_root / 'firefox-root'
+            chromium_root = tmp_root / 'chromium-root'
+            profile_dir = firefox_root / 'webapp_testprofile'
+            extensions_dir = profile_dir / 'extensions'
+            extensions_dir.mkdir(parents=True, exist_ok=True)
+            _write_managed_profile_marker(profile_dir, 'firefox')
+
+            legacy_id = '{6f3ab763-a4c2-4183-b596-984bf5b7ac31}'
+            (extensions_dir / f'{legacy_id}.xpi').write_text('legacy', encoding='utf-8')
+            (extensions_dir / '.webapp_simple_swipe_navigator_extension_id').write_text(legacy_id, encoding='utf-8')
+
+            download_bundle = tmp_root / 'downloaded-swipe.xpi'
+            self._write_test_xpi(download_bundle, 'swipe-gestures@de.cais', signed=True)
+            payload = download_bundle.read_bytes()
+
+            config = {
+                'id': 'swipe-gestures@de.cais',
+                'marker_file': '.webapp_secure_swipe_extension_id',
+                'bundle_path': '',
+                'download_url': 'https://example.invalid/swipe.xpi',
+            }
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), \
+                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), \
+                mock.patch('browser_profiles.get_firefox_extension_config', return_value=config), \
+                mock.patch('browser_profiles.urllib.request.urlopen', return_value=self._FakeUrlopenResponse(payload)):
+                result = _sync_firefox_swipe_extension(
+                    profile_dir,
+                    True,
+                    logger,
+                )
+
+            self.assertTrue(result['installed'])
+            self.assertFalse((extensions_dir / f'{legacy_id}.xpi').exists())
+            self.assertFalse((extensions_dir / '.webapp_simple_swipe_navigator_extension_id').exists())
+            self.assertTrue((extensions_dir / 'swipe-gestures@de.cais.xpi').exists())
+
+    def test_swipe_falls_back_to_local_bundle_when_download_fails(self):
+        logger = _build_test_logger('secure-swipe-download-fallback')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            firefox_root = tmp_root / 'firefox-root'
+            chromium_root = tmp_root / 'chromium-root'
+            profile_dir = firefox_root / 'webapp_testprofile'
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            _write_managed_profile_marker(profile_dir, 'firefox')
+            local_bundle = tmp_root / 'swipe-gestures.xpi'
+            self._write_test_xpi(local_bundle, 'swipe-gestures@de.cais', signed=True)
+
+            config = {
+                'id': 'swipe-gestures@de.cais',
+                'marker_file': '.webapp_secure_swipe_extension_id',
+                'bundle_path': str(local_bundle),
+                'download_url': 'https://example.invalid/swipe.xpi',
+                'dev_bundle_path': '',
+                'allow_unsigned_local_bundle': False,
+            }
+
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), \
+                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), \
+                mock.patch('browser_profiles.get_firefox_extension_config', return_value=config), \
+                mock.patch('browser_profiles.urllib.request.urlopen', side_effect=urllib.error.URLError('offline')):
+                result = _sync_firefox_swipe_extension(
+                    profile_dir,
+                    True,
+                    logger,
+                )
+            self.assertTrue(result['installed'])
+            self.assertIsNone(result['error'])
+            self.assertTrue((profile_dir / 'extensions' / 'swipe-gestures@de.cais.xpi').exists())
+
+    def test_legacy_plural_extensions_bundle_path_resolves_to_local_extension_dir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            project_root = tmp_root / 'project'
+            project_root.mkdir(parents=True, exist_ok=True)
+            module_path = project_root / 'browser_profiles.py'
+            module_path.write_text('# test module marker\n', encoding='utf-8')
+
+            local_bundle = project_root / 'extension' / 'swipe-gestures.xpi'
+            local_bundle.parent.mkdir(parents=True, exist_ok=True)
+            self._write_test_xpi(local_bundle, 'swipe-gestures@de.cais', signed=True)
+
+            with mock.patch('browser_profiles.__file__', str(module_path)):
+                resolved = _resolve_bundled_extension_path('extensions/swipe-gestures.xpi')
+
+            self.assertEqual(resolved, local_bundle.resolve())
+
+    def test_swipe_extension_mode_value_is_pinned_to_production(self):
+        self.assertEqual(swipe_extension_mode_value({}), 'production')
+        self.assertEqual(swipe_extension_mode_value({'Swipe Mode': 'development'}), 'production')
+        self.assertEqual(swipe_extension_mode_value({'Swipe Mode': 'production'}), 'production')
+
+    def test_scope_swipe_extension_payload_limits_matches_to_webapp_domain(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bundle_path = Path(tmpdir) / 'swipe-gestures.xpi'
+            self._write_test_xpi(bundle_path, 'swipe-gestures@de.cais', signed=True)
+
+            scoped_payload = _scope_swipe_extension_payload(
+                bundle_path.read_bytes(),
+                'https://example.com/app',
+            )
+
+            with zipfile.ZipFile(io.BytesIO(scoped_payload)) as archive:
+                manifest = json.loads(archive.read('manifest.json').decode('utf-8'))
+                names = archive.namelist()
+
+        self.assertEqual(manifest['name'], 'Swipe Gesten (Eigenes Addon)')
+        self.assertEqual(manifest['host_permissions'], ['https://example.com/*'])
+        self.assertEqual(manifest['content_scripts'][0]['matches'], ['https://example.com/*'])
+        self.assertFalse(any(name.upper().startswith('META-INF/') for name in names))
+
+    def test_swipe_installs_local_scoped_bundle_for_managed_profile(self):
+        logger = _build_test_logger('secure-swipe-local-scoped')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            firefox_root = tmp_root / 'firefox-root'
+            chromium_root = tmp_root / 'chromium-root'
+            profile_dir = firefox_root / 'webapp_testprofile'
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            _write_managed_profile_marker(profile_dir, 'firefox')
+            local_bundle = tmp_root / 'swipe-gestures.xpi'
+            self._write_test_xpi(local_bundle, 'swipe-gestures@de.cais', signed=True)
+
+            config = {
+                'id': 'swipe-gestures@de.cais',
+                'marker_file': '.webapp_secure_swipe_extension_id',
+                'bundle_path': str(local_bundle),
+                'dev_bundle_path': str(local_bundle),
+                'download_url': 'https://example.invalid/swipe.xpi',
+                'allow_unsigned_local_bundle': True,
+            }
+
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), \
+                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), \
+                mock.patch('browser_profiles.get_firefox_extension_config', return_value=config):
+                result = _sync_firefox_swipe_extension(
+                    profile_dir,
+                    True,
+                    logger,
+                    options_dict={'Address': 'https://example.com/app'},
+                )
+
+            self.assertTrue(result['installed'])
+            installed_xpi = profile_dir / 'extensions' / 'swipe-gestures@de.cais.xpi'
+            self.assertTrue(installed_xpi.exists())
+            with zipfile.ZipFile(installed_xpi) as archive:
+                manifest = json.loads(archive.read('manifest.json').decode('utf-8'))
+                names = archive.namelist()
+            self.assertEqual(manifest['host_permissions'], ['https://example.com/*'])
+            self.assertEqual(manifest['content_scripts'][0]['matches'], ['https://example.com/*'])
+            self.assertFalse(any(name.upper().startswith('META-INF/') for name in names))
 
 
 class WappImportValidationTests(unittest.TestCase):

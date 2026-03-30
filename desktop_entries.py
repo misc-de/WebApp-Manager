@@ -78,12 +78,10 @@ def _chromium_launch_args_for_mode(mode_value: str, address: str, previous_sessi
 def _firefox_launch_args_for_mode(mode_value: str, address: str, previous_session_enabled: bool) -> list[str]:
     mode = (mode_value or 'standard').strip().lower()
     if mode == 'kiosk':
-        return ['-kiosk', address]
-    if mode in {'app', 'seamless'}:
-        return ['--new-window', address]
+        return ['--kiosk', address]
     if previous_session_enabled:
         return []
-    return ['--new-window', address]
+    return [address]
 
 
 def _generic_launch_args_for_mode(address: str, previous_session_enabled: bool) -> list[str]:
@@ -114,7 +112,7 @@ def _stored_profile_info(configured_command: str, stored_profile_name: str = '',
     exec_args = []
     if profile_path:
         if family == 'firefox':
-            exec_args = ['--profile', profile_path, '--new-instance']
+            exec_args = ['-profile', profile_path]
         elif family in {'chrome', 'chromium'}:
             exec_args = [f'--user-data-dir={profile_path}']
 
@@ -197,9 +195,7 @@ def build_launch_command(entry, options_dict, engines_list, logger, prepare_prof
     color_scheme = normalize_color_scheme(merged_options.get(COLOR_SCHEME_KEY, 'auto'))
     browser_family = profile_info.get('browser_family') if profile_info else ''
     window_identity = _window_identity_for_entry(entry)
-    if browser_family == 'firefox':
-        exec_parts.extend([f'--class={window_identity}', f'--name={window_identity}'])
-    elif browser_family in {'chrome', 'chromium'}:
+    if browser_family in {'chrome', 'chromium'}:
         exec_parts.append(f'--class={window_identity}')
     if profile_info:
         exec_parts.extend(profile_info['exec_args'])

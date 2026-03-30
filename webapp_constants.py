@@ -10,6 +10,7 @@ ONLY_HTTPS_KEY = 'Only HTTPS'
 APP_MODE_KEY = 'App Mode'
 COLOR_SCHEME_KEY = 'Color Scheme'
 DEFAULT_ZOOM_KEY = 'Default Zoom'
+SWIPE_MODE_KEY = 'Swipe Mode'
 CUSTOM_CSS_LINKS_KEY = 'Custom CSS Links'
 CUSTOM_JS_LINKS_KEY = 'Custom JavaScript Links'
 INLINE_CUSTOM_CSS_KEY = 'Inline Custom CSS'
@@ -26,6 +27,8 @@ OPTION_CLEAR_COOKIES_ON_EXIT_KEY = 'Clear Cookies On Exit'
 OPTION_DISABLE_AI_KEY = 'Disable AI'
 OPTION_FORCE_PRIVACY_KEY = 'Set Privacy'
 OPTION_STARTUP_BOOSTER_KEY = 'Startup Booster'
+OPTION_SAFE_GRAPHICS_KEY = 'Safe Graphics'
+OPTION_PREVENT_MULTIPLE_STARTS_KEY = 'Prevent Multiple Starts'
 
 OPTION_UI_LABEL_KEYS = {
     OPTION_PRESERVE_SESSION_KEY: 'option_previous_session',
@@ -40,6 +43,8 @@ OPTION_UI_LABEL_KEYS = {
     OPTION_DISABLE_AI_KEY: 'option_disable_ai',
     OPTION_FORCE_PRIVACY_KEY: 'option_set_privacy',
     OPTION_STARTUP_BOOSTER_KEY: 'option_startup_booster',
+    OPTION_SAFE_GRAPHICS_KEY: 'option_safe_graphics',
+    OPTION_PREVENT_MULTIPLE_STARTS_KEY: 'option_prevent_multiple_starts',
 }
 
 OPTION_UI_LABEL_ALIASES = {
@@ -47,7 +52,7 @@ OPTION_UI_LABEL_ALIASES = {
     OPTION_KEEP_IN_BACKGROUND_KEY: {'Keep in Background', 'Keep Firefox in the Background', 'Keep App in the Background'},
     OPTION_NOTIFICATIONS_KEY: {'Allow Notifications', 'Notifications', 'Benachrichtigungen erlauben'},
     OPTION_OPEN_LINKS_IN_TABS_KEY: {'Open Links in tabs instead of new windows', 'Open Links in Tabs', 'Links in Tabs statt in neuen Fenstern oeffnen'},
-    OPTION_SWIPE_KEY: {'Add Swipe Plugin', 'Swipe', 'Swipe-Plugin hinzufügen', 'Firefox Swipe-Unterstützung installieren'},
+    OPTION_SWIPE_KEY: {'Add Swipe Plugin', 'Swipe', 'Swipe-Plugin hinzufügen', 'Firefox Swipe-Unterstützung installieren', 'Swipe gesten (Eigenes Addon)'},
     OPTION_ADBLOCK_KEY: {'Add Adblock Plugin', 'Adblock', 'Adblock-Plugin hinzufügen', 'Firefox Adblock installieren'},
     ONLY_HTTPS_KEY: {'Only HTTPS', 'Strict HTTPS', 'HTTPS erzwingen'},
     OPTION_CLEAR_CACHE_ON_EXIT_KEY: {'Delete Cache', 'Delete Cache files', 'Cache beim Beenden der App löschen'},
@@ -55,6 +60,8 @@ OPTION_UI_LABEL_ALIASES = {
     OPTION_DISABLE_AI_KEY: {'Disable AI', 'KI-Funktionen deaktivieren', 'Firefox KI-Funktionen deaktivieren'},
     OPTION_FORCE_PRIVACY_KEY: {'Set Privacy', 'Force Privacy', 'Erweiterten Datenschutz aktivieren'},
     OPTION_STARTUP_BOOSTER_KEY: {'Startup Booster', 'Startbeschleunigung', 'Schneller Start'},
+    OPTION_SAFE_GRAPHICS_KEY: {'Safe Graphics', 'Safe Graphics Mode', 'Sicherer Grafikmodus', 'Sichere Grafik'},
+    OPTION_PREVENT_MULTIPLE_STARTS_KEY: {'Prevent Multiple Starts', 'Mehrfachstart verhindern', 'Doppelstart verhindern'},
 }
 
 APPLICATIONS_DIR = Path.home() / '.local/share/applications'
@@ -62,4 +69,4 @@ ICON_THEME_APPS_DIR = Path.home() / '.local/share/icons' / 'hicolor' / '512x512'
 FIREFOX_ROOT = Path.home() / '.mozilla' / 'firefox'
 CHROMIUM_PROFILE_ROOT = Path.home() / '.config' / 'webapp-browser-profiles'
 
-NON_PORTABLE_WAPP_OPTION_KEYS = frozenset({ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, CUSTOM_CSS_LINKS_KEY, CUSTOM_JS_LINKS_KEY})
+NON_PORTABLE_WAPP_OPTION_KEYS = frozenset({ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, SWIPE_MODE_KEY, CUSTOM_CSS_LINKS_KEY, CUSTOM_JS_LINKS_KEY})

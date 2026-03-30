@@ -13,6 +13,57 @@ ENGINES = available_engines()
 
 
 class MainWindowSettingsMixin:
+    def _build_settings_text_block(self, text, *, dim=True):
+        label = Gtk.Label(label=text)
+        label.set_xalign(0)
+        label.set_wrap(True)
+        label.set_selectable(False)
+        if dim:
+            label.add_css_class('dim-label')
+        return label
+
+    def _build_settings_section(self, title, body_lines):
+        section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        section.add_css_class('preferences-group')
+        header = Gtk.Label(label=title)
+        header.add_css_class('heading')
+        header.set_xalign(0)
+        header.set_wrap(True)
+        section.append(header)
+        for line in body_lines:
+            section.append(self._build_settings_text_block(line))
+        return section
+
+    def _build_settings_navigation_button(self, title, subtitle, callback):
+        button = Gtk.Button()
+        button.set_hexpand(True)
+        button.add_css_class('flat')
+        button.add_css_class('settings-nav-button')
+        button.connect('clicked', callback)
+
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        row.set_hexpand(True)
+
+        text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        text_box.set_hexpand(True)
+
+        title_label = Gtk.Label(label=title)
+        title_label.set_xalign(0)
+        title_label.set_wrap(True)
+        title_label.add_css_class('heading')
+        text_box.append(title_label)
+
+        subtitle_label = self._build_settings_text_block(subtitle)
+        text_box.append(subtitle_label)
+        row.append(text_box)
+
+        chevron = Gtk.Image.new_from_icon_name('go-next-symbolic')
+        chevron.set_valign(Gtk.Align.CENTER)
+        row.append(chevron)
+
+        button.set_child(row)
+        return button
+
     def _available_language_rows(self):
         rows = [('system', t('language_system'))]
         label_key_map = {
@@ -46,6 +97,8 @@ class MainWindowSettingsMixin:
             previous_visible = None
         was_settings_overview = previous_detail is getattr(self, 'settings_page', None)
         was_assets_overview = previous_detail is getattr(self, 'settings_assets_page', None)
+        was_about_overview = previous_detail is getattr(self, 'settings_about_page', None)
+        was_security_overview = previous_detail is getattr(self, 'settings_security_privacy_page', None)
         old_page = getattr(self, 'settings_page', None)
         if old_page is not None:
             try:
@@ -64,20 +117,52 @@ class MainWindowSettingsMixin:
                     self.stack.remove(old_assets_page)
             except (AttributeError, TypeError):
                 pass
+        old_about_page = getattr(self, 'settings_about_page', None)
+        if old_about_page is not None:
+            try:
+                if self._adaptive_split_enabled:
+                    self._remove_overview_page_widget(old_about_page)
+                else:
+                    self.stack.remove(old_about_page)
+            except (AttributeError, TypeError):
+                pass
+        old_security_page = getattr(self, 'settings_security_privacy_page', None)
+        if old_security_page is not None:
+            try:
+                if self._adaptive_split_enabled:
+                    self._remove_overview_page_widget(old_security_page)
+                else:
+                    self.stack.remove(old_security_page)
+            except (AttributeError, TypeError):
+                pass
         self.settings_page = self._build_settings_page()
         self.settings_assets_page = self._build_assets_settings_page()
+        self.settings_about_page = self._build_about_settings_page()
+        self.settings_security_privacy_page = self._build_security_privacy_settings_page()
         if self._adaptive_split_enabled:
             self._add_overview_detail_page(self.settings_page, 'settings_page')
             self._add_overview_detail_page(self.settings_assets_page, 'settings_assets_page')
+            self._add_overview_detail_page(self.settings_about_page, 'settings_about_page')
+            self._add_overview_detail_page(self.settings_security_privacy_page, 'settings_security_privacy_page')
             if was_assets_overview:
                 self._set_overview_detail_visible(self.settings_assets_page, t('settings_assets_title'))
+            elif was_about_overview:
+                self._set_overview_detail_visible(self.settings_about_page, t('settings_about_title'))
+            elif was_security_overview:
+                self._set_overview_detail_visible(self.settings_security_privacy_page, t('settings_security_privacy_title'))
             elif was_settings_overview:
                 self._set_overview_detail_visible(self.settings_page, t('settings_title'))
         else:
             self.stack.add_named(self.settings_page, 'settings_page')
             self.stack.add_named(self.settings_assets_page, 'settings_assets_page')
+            self.stack.add_named(self.settings_about_page, 'settings_about_page')
+            self.stack.add_named(self.settings_security_privacy_page, 'settings_security_privacy_page')
             if previous_visible == 'settings_assets_page':
                 self.stack.set_visible_child_name('settings_assets_page')
+            elif previous_visible == 'settings_about_page':
+                self.stack.set_visible_child_name('settings_about_page')
+            elif previous_visible == 'settings_security_privacy_page':
+                self.stack.set_visible_child_name('settings_security_privacy_page')
             elif previous_visible == 'settings_page':
                 self.stack.set_visible_child_name('settings_page')
 
@@ -209,19 +294,144 @@ class MainWindowSettingsMixin:
         export_group.append(export_zip_button)
         content.append(export_group)
 
-        about_group = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        about_group.add_css_class('preferences-group')
-        about_header = Gtk.Label(label=t('settings_about_header'))
-        about_header.add_css_class('heading')
-        about_header.set_xalign(0)
-        about_group.append(about_header)
+        info_group = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        info_group.add_css_class('preferences-group')
+        info_header = Gtk.Label(label=t('settings_info_header'))
+        info_header.add_css_class('heading')
+        info_header.set_xalign(0)
+        info_group.append(info_header)
+        info_group.append(self._build_settings_navigation_button(
+            t('settings_about_title'),
+            t('settings_about_nav_hint'),
+            self.show_about_settings_page,
+        ))
+        info_group.append(self._build_settings_navigation_button(
+            t('settings_security_privacy_title'),
+            t('settings_security_privacy_nav_hint'),
+            self.show_security_privacy_settings_page,
+        ))
+        content.append(info_group)
 
-        self.version_label = Gtk.Label(label=t('settings_about_version', version=self._read_app_version_label()))
-        self.version_label.set_xalign(0)
-        self.version_label.set_wrap(True)
-        about_group.append(self.version_label)
-        content.append(about_group)
+        return outer
 
+    def _build_about_settings_page(self):
+        outer = Gtk.ScrolledWindow()
+        outer.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        outer.set_vexpand(True)
+
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        content.set_margin_top(18)
+        content.set_margin_bottom(18)
+        content.set_margin_start(18)
+        content.set_margin_end(18)
+        outer.set_child(content)
+
+        swipe_back = Gtk.GestureSwipe.new()
+        swipe_back.connect('swipe', lambda _g, vx, _vy: self._return_to_overview_from_settings_subpage() if vx > 0 else None)
+        outer.add_controller(swipe_back)
+
+        title = Gtk.Label(label=t('settings_about_title'))
+        title.add_css_class('heading')
+        title.set_xalign(0)
+        content.append(title)
+
+        content.append(self._build_settings_text_block(t('settings_about_intro'), dim=False))
+        content.append(self._build_settings_section(
+            t('settings_about_app_header'),
+            [
+                t('settings_about_version', version=self._read_app_version_label()),
+                t('settings_about_app_body_1'),
+                t('settings_about_app_body_2'),
+            ],
+        ))
+        content.append(self._build_settings_section(
+            t('settings_about_profiles_header'),
+            [
+                t('settings_about_profiles_body_1'),
+                t('settings_about_profiles_body_2'),
+            ],
+        ))
+        content.append(self._build_settings_section(
+            t('settings_about_integrations_header'),
+            [
+                t('settings_about_integrations_body_1'),
+                t('settings_about_integrations_body_2'),
+            ],
+        ))
+        content.append(self._build_settings_section(
+            t('settings_about_repositories_header'),
+            [
+                t('settings_about_repositories_body_1'),
+                t('settings_about_repositories_body_2'),
+                t('settings_about_repositories_body_3'),
+            ],
+        ))
+        content.append(self._build_settings_section(
+            t('settings_about_exports_header'),
+            [
+                t('settings_about_exports_body_1'),
+                t('settings_about_exports_body_2'),
+            ],
+        ))
+        return outer
+
+    def _build_security_privacy_settings_page(self):
+        outer = Gtk.ScrolledWindow()
+        outer.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        outer.set_vexpand(True)
+
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        content.set_margin_top(18)
+        content.set_margin_bottom(18)
+        content.set_margin_start(18)
+        content.set_margin_end(18)
+        outer.set_child(content)
+
+        swipe_back = Gtk.GestureSwipe.new()
+        swipe_back.connect('swipe', lambda _g, vx, _vy: self._return_to_overview_from_settings_subpage() if vx > 0 else None)
+        outer.add_controller(swipe_back)
+
+        title = Gtk.Label(label=t('settings_security_privacy_title'))
+        title.add_css_class('heading')
+        title.set_xalign(0)
+        content.append(title)
+
+        content.append(self._build_settings_text_block(t('settings_security_privacy_intro'), dim=False))
+        content.append(self._build_settings_section(
+            t('settings_security_privacy_profiles_header'),
+            [
+                t('settings_security_privacy_profiles_body_1'),
+                t('settings_security_privacy_profiles_body_2'),
+            ],
+        ))
+        content.append(self._build_settings_section(
+            t('settings_security_privacy_storage_header'),
+            [
+                t('settings_security_privacy_storage_body_1'),
+                t('settings_security_privacy_storage_body_2'),
+            ],
+        ))
+        content.append(self._build_settings_section(
+            t('settings_security_privacy_assets_header'),
+            [
+                t('settings_security_privacy_assets_body_1'),
+                t('settings_security_privacy_assets_body_2'),
+            ],
+        ))
+        content.append(self._build_settings_section(
+            t('settings_security_privacy_addons_header'),
+            [
+                t('settings_security_privacy_addons_body_1'),
+                t('settings_security_privacy_addons_body_2'),
+            ],
+        ))
+        content.append(self._build_settings_section(
+            t('settings_security_privacy_recommendations_header'),
+            [
+                t('settings_security_privacy_recommendations_body_1'),
+                t('settings_security_privacy_recommendations_body_2'),
+            ],
+        ))
         return outer
 
     def _build_assets_settings_page(self):
@@ -409,6 +619,7 @@ class MainWindowSettingsMixin:
         except (OSError, TypeError, ValueError):
             LOG.error('Failed to save language setting', exc_info=True)
 
+
     def _set_titlebar_button_visibility(self, start_visible, end_visible):
         try:
             self.header_bar.set_show_start_title_buttons(bool(start_visible))
@@ -418,6 +629,9 @@ class MainWindowSettingsMixin:
 
     def _show_back_only_header(self):
         desktop_mode = bool(self._adaptive_split_enabled and not self._adaptive_narrow_mode)
+        current_detail = self._overview_detail_visible_child() if hasattr(self, '_overview_detail_visible_child') else None
+        detail_pages = getattr(self, 'detail_pages', {})
+        show_delete = current_detail in detail_pages.values()
         if desktop_mode:
             self.header_bar.set_title_widget(None)
             self.search_button.set_visible(True)
@@ -426,6 +640,7 @@ class MainWindowSettingsMixin:
             self.settings_button.set_visible(True)
             self.assets_button.set_visible(True)
             self.add_button.set_visible(True)
+            self.delete_button.set_visible(bool(show_delete))
             self.back_button.set_visible(False)
             self._set_titlebar_button_visibility(True, True)
             return
@@ -435,6 +650,7 @@ class MainWindowSettingsMixin:
         self.settings_button.set_visible(False)
         self.assets_button.set_visible(False)
         self.add_button.set_visible(False)
+        self.delete_button.set_visible(bool(show_delete))
         self.back_button.set_visible(True)
         self.header_bar.set_title_widget(None)
         self._set_titlebar_button_visibility(True, True)
@@ -457,6 +673,7 @@ class MainWindowSettingsMixin:
         self.settings_button.set_visible(True)
         self.assets_button.set_visible(True)
         self.add_button.set_visible(True)
+        self.delete_button.set_visible(False)
         self.back_button.set_visible(False)
         self._set_titlebar_button_visibility(True, True)
 
@@ -479,6 +696,22 @@ class MainWindowSettingsMixin:
         except (AttributeError, TypeError, GLib.Error):
             pass
 
+    def _return_to_overview_from_settings_subpage(self):
+        self._hide_global_toast()
+        if self._adaptive_split_enabled:
+            self._set_overview_detail_visible(self.settings_page, t('settings_title'))
+            try:
+                self.stack.set_visible_child_name('overview_page')
+            except (AttributeError, TypeError, GLib.Error):
+                pass
+            self._restore_overview_header_actions()
+            return
+        self._show_back_only_header()
+        try:
+            self.stack.set_visible_child_name('settings_page')
+        except (AttributeError, TypeError, GLib.Error):
+            pass
+
     def show_settings_page(self, *args):
         if self._adaptive_split_enabled:
             if self._adaptive_narrow_mode and self._adaptive_real_detail_visible() and isinstance(self._overview_detail_visible_child(), DetailPage):
@@ -488,3 +721,19 @@ class MainWindowSettingsMixin:
             return
         self._show_back_only_header()
         self.stack.set_visible_child_name('settings_page')
+
+    def show_about_settings_page(self, *args):
+        if self._adaptive_split_enabled:
+            self._set_overview_detail_visible(self.settings_about_page, t('settings_about_title'))
+            self.stack.set_visible_child_name('overview_page')
+            return
+        self._show_back_only_header()
+        self.stack.set_visible_child_name('settings_about_page')
+
+    def show_security_privacy_settings_page(self, *args):
+        if self._adaptive_split_enabled:
+            self._set_overview_detail_visible(self.settings_security_privacy_page, t('settings_security_privacy_title'))
+            self.stack.set_visible_child_name('overview_page')
+            return
+        self._show_back_only_header()
+        self.stack.set_visible_child_name('settings_security_privacy_page')

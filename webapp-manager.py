@@ -163,6 +163,7 @@ class MainWindow(MainWindowWindowStateMixin, MainWindowLaunchExportMixin, MainWi
         self._options_cache = {}
         self._profile_size_cache = {}
         self._profile_size_pending = set()
+        self._running_launch_processes = {}
         self.ui_settings = self._load_ui_settings()
         self.language_setting = self._load_language_setting()
         self._profile_resync_running = False
@@ -221,6 +222,12 @@ class MainWindow(MainWindowWindowStateMixin, MainWindowLaunchExportMixin, MainWi
             self.assets_button.set_can_shrink(True)
         self.assets_button.set_tooltip_text(t('settings_assets_title'))
         self.assets_button.connect('clicked', self.show_assets_settings_page)
+        self.delete_button = Gtk.Button(icon_name='user-trash-symbolic')
+        if hasattr(self.delete_button, 'set_can_shrink'):
+            self.delete_button.set_can_shrink(True)
+        self.delete_button.set_tooltip_text(t('delete_webapp_button'))
+        self.delete_button.set_visible(False)
+        self.delete_button.connect('clicked', self.on_header_delete_clicked)
         self.back_button = Gtk.Button.new_from_icon_name('go-previous-symbolic')
         if hasattr(self.back_button, 'set_can_shrink'):
             self.back_button.set_can_shrink(True)
@@ -232,6 +239,7 @@ class MainWindow(MainWindowWindowStateMixin, MainWindowLaunchExportMixin, MainWi
         self.header_bar.pack_start(self.settings_button)
         self.header_bar.pack_end(self.assets_button)
         self.header_bar.pack_end(self.add_button)
+        self.header_bar.pack_end(self.delete_button)
         self.list_title_widget = self._build_list_title_widget()
         self.header_bar.set_title_widget(self.list_title_widget)
 
@@ -335,7 +343,7 @@ class MainWindow(MainWindowWindowStateMixin, MainWindowLaunchExportMixin, MainWi
         if hasattr(self.selection, 'set_autoselect'):
             self.selection.set_autoselect(False)
         self.list_view = Gtk.ListView.new(self.selection, factory)
-        self.list_view.set_single_click_activate(True)
+        self.list_view.set_single_click_activate(False)
         self.list_view.connect('activate', self.on_list_view_activate)
         self.list_view.set_vexpand(True)
         scrolled = Gtk.ScrolledWindow()
@@ -377,12 +385,18 @@ class MainWindow(MainWindowWindowStateMixin, MainWindowLaunchExportMixin, MainWi
 
         self.settings_page = self._build_settings_page()
         self.settings_assets_page = self._build_assets_settings_page()
+        self.settings_about_page = self._build_about_settings_page()
+        self.settings_security_privacy_page = self._build_security_privacy_settings_page()
         if self._adaptive_split_enabled:
             self._add_overview_detail_page(self.settings_page, 'settings_page')
             self._add_overview_detail_page(self.settings_assets_page, 'settings_assets_page')
+            self._add_overview_detail_page(self.settings_about_page, 'settings_about_page')
+            self._add_overview_detail_page(self.settings_security_privacy_page, 'settings_security_privacy_page')
         else:
             self.stack.add_named(self.settings_page, 'settings_page')
             self.stack.add_named(self.settings_assets_page, 'settings_assets_page')
+            self.stack.add_named(self.settings_about_page, 'settings_about_page')
+            self.stack.add_named(self.settings_security_privacy_page, 'settings_security_privacy_page')
         self.detail_pages = {}
         self._creating_entry = False
         self.connect('destroy', self.close_event)

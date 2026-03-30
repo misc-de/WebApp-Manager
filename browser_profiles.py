@@ -10,6 +10,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 from distro_utils import is_furios_distribution
 
@@ -31,6 +32,7 @@ from webapp_constants import (
     OPTION_DISABLE_AI_KEY,
     OPTION_FORCE_PRIVACY_KEY,
     OPTION_STARTUP_BOOSTER_KEY,
+    OPTION_SAFE_GRAPHICS_KEY,
     OPTION_KEEP_IN_BACKGROUND_KEY,
     OPTION_NOTIFICATIONS_KEY,
     OPTION_OPEN_LINKS_IN_TABS_KEY,
@@ -63,12 +65,15 @@ DEFAULT_FIREFOX_EXTENSIONS = {
         'marker_file': '.webapp_adblock_extension_id',
     },
     'swipe': {
-        'id': '{6f3ab763-a4c2-4183-b596-984bf5b7ac31}',
-        'bundle_path': 'extensions/simple-swipe-navigator-1.6.xpi',
-        'download_url': 'https://addons.mozilla.org/android/downloads/file/4666831/simple_swipe_navigator-1.6.xpi',
-        'marker_file': '.webapp_simple_swipe_navigator_extension_id',
+        'id': 'swipe-gestures@de.cais',
+        'bundle_path': 'extension/swipe-gestures.xpi',
+        'dev_bundle_path': 'extension/swipe-gestures.xpi',
+        'download_url': 'https://addons.mozilla.org/firefox/downloads/file/4744670/swipe_gestures-0.2.2.xpi',
+        'allow_unsigned_local_bundle': True,
+        'marker_file': '.webapp_secure_swipe_extension_id',
     },
 }
+MANAGED_PROFILE_MARKER = '.webapp-manager-profile.json'
 
 
 def normalize_color_scheme(value):
@@ -76,6 +81,74 @@ def normalize_color_scheme(value):
     if value not in COLOR_SCHEME_PREF_VALUES:
         return 'auto'
     return value
+
+
+def _profile_root_for_family(family):
+    family = (family or '').strip().lower()
+    if family == 'firefox':
+        return FIREFOX_ROOT
+    if family in {'chrome', 'chromium'}:
+        return CHROMIUM_PROFILE_ROOT / family
+    return None
+
+
+def _managed_profile_marker_path(profile_dir):
+    return Path(profile_dir) / MANAGED_PROFILE_MARKER
+
+
+def _is_legacy_managed_profile_name(profile_dir):
+    return Path(profile_dir).name.startswith('webapp_')
+
+
+def _has_managed_profile_marker(profile_dir, family=''):
+    marker_path = _managed_profile_marker_path(profile_dir)
+    if not marker_path.exists() or not marker_path.is_file():
+        return False
+    try:
+        data = json.loads(marker_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    if str(data.get('managed_by') or '').strip() != 'webapp-manager':
+        return False
+    stored_family = str(data.get('family') or '').strip().lower()
+    family = (family or '').strip().lower()
+    return not family or stored_family == family
+
+
+def _write_managed_profile_marker(profile_dir, family):
+    profile_dir = Path(profile_dir)
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    marker_path = _managed_profile_marker_path(profile_dir)
+    payload = {
+        'managed_by': 'webapp-manager',
+        'family': str(family or '').strip().lower(),
+        'version': 1,
+    }
+    content = json.dumps(payload, indent=2, sort_keys=True) + '\n'
+    current = ''
+    if marker_path.exists():
+        try:
+            current = marker_path.read_text(encoding='utf-8')
+        except OSError:
+            current = ''
+    if current != content:
+        marker_path.write_text(content, encoding='utf-8')
+
+
+def _is_explicitly_managed_profile_dir(path, family):
+    if not path:
+        return False
+    root = _profile_root_for_family(family)
+    if root is None:
+        return False
+    try:
+        resolved = Path(path).resolve()
+        root = root.resolve()
+    except OSError:
+        return False
+    if not resolved.exists() or not resolved.is_dir() or resolved == root or root not in resolved.parents:
+        return False
+    return _has_managed_profile_marker(resolved, family) or _is_legacy_managed_profile_name(resolved)
 
 def normalize_default_zoom(value):
     allowed = {'50', '67', '80', '90', '100', '110', '125', '150', '175', '200'}
@@ -101,10 +174,9 @@ def get_firefox_extension_config(name):
     merged.update(extensions.get(name) or {})
 
     if name == 'swipe':
-        bundle_path = str(merged.get('bundle_path') or defaults.get('bundle_path') or '').strip()
-        configured_bundle_name = Path(bundle_path).name if bundle_path else ''
-        if configured_bundle_name == 'swipe-navigator-minimal.xpi' or not bundle_path:
-            merged['bundle_path'] = str(defaults.get('bundle_path') or '').strip()
+        merged['bundle_path'] = str(merged.get('bundle_path') or defaults.get('bundle_path') or '').strip()
+        merged['dev_bundle_path'] = ''
+        merged['allow_unsigned_local_bundle'] = False
         merged['marker_file'] = defaults.get('marker_file') or merged.get('marker_file')
     return merged
 
@@ -170,9 +242,10 @@ def _clear_chromium_runtime_caches(profile_dir, logger):
     return changed
 
 
-def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_session, user_agent_value='', only_https=False, notifications_enabled=False, swipe_enabled=False, keep_in_background=False, open_links_in_tabs=False, startup_url='', app_mode=False, native_window_frame=False, disable_ai=False, set_privacy=False, color_scheme='auto', custom_css_enabled=False, custom_js_enabled=False, startup_booster=False):
+def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_session, user_agent_value='', only_https=False, notifications_enabled=False, swipe_enabled=False, keep_in_background=False, open_links_in_tabs=False, startup_url='', app_mode=False, native_window_frame=False, disable_ai=False, set_privacy=False, color_scheme='auto', custom_css_enabled=False, custom_js_enabled=False, startup_booster=False, safe_graphics=False):
     profile_dir = Path(profile_dir)
     only_https = bool(only_https or set_privacy)
+    allow_unsigned_runtime_js = bool(custom_js_enabled and _is_explicitly_managed_profile_dir(profile_dir, 'firefox'))
     user_js = profile_dir / 'user.js'
     start_marker = '// WEBAPP MANAGED START\n'
     end_marker = '// WEBAPP MANAGED END\n'
@@ -217,7 +290,7 @@ def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_ses
         'browser.newtabpage.activity-stream.feeds.topsites': False,
         'browser.newtabpage.activity-stream.feeds.system.topsites': False,
         'browser.translations.automaticallyPopup': False,
-        'xpinstall.signatures.required': False if custom_js_enabled else True,
+        'xpinstall.signatures.required': False if allow_unsigned_runtime_js else True,
         'webapp.clear_cache_requested': bool(clear_cache),
     }
     if disable_ai:
@@ -253,7 +326,26 @@ def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_ses
         })
 
     if is_furios_distribution():
-        prefs['furi.browser.preload.disabled'] = False if keep_in_background else True
+        prefs.update({
+            'furi.browser.preload.disabled': False if keep_in_background else True,
+            # Furios devices can fail to render Firefox WebApps on Wayland/Mali when
+            # WebRender or VA-API comes up with an incompatible GPU path.
+            'gfx.webrender.all': False,
+            'layers.acceleration.disabled': True,
+            'gfx.canvas.accelerated': False,
+            'media.ffmpeg.vaapi.enabled': False,
+        })
+
+    if safe_graphics:
+        prefs.update({
+            'gfx.webrender.all': False,
+            'layers.acceleration.disabled': True,
+            'gfx.canvas.accelerated': False,
+            'media.ffmpeg.vaapi.enabled': False,
+            'media.hardware-video-decoding.enabled': False,
+            'webgl.disabled': True,
+            'webgl.enable-webgl2': False,
+        })
 
     color_scheme = normalize_color_scheme(color_scheme)
     prefs['layout.css.prefers-color-scheme.content-override'] = COLOR_SCHEME_PREF_VALUES[color_scheme]
@@ -496,7 +588,11 @@ def _extract_firefox_extension_id(xpi_bytes, fallback_id):
         pass
     return fallback_id
 
-def _firefox_extension_candidates(extension_name):
+def swipe_extension_mode_value(options_dict=None):
+    return 'production'
+
+
+def _firefox_extension_candidates(extension_name, local_development_override=False):
     config = get_firefox_extension_config(extension_name)
     defaults = DEFAULT_FIREFOX_EXTENSIONS.get(extension_name, {})
     configured_id = (config.get('id') or defaults.get('id') or '').strip()
@@ -504,18 +600,28 @@ def _firefox_extension_candidates(extension_name):
     return {
         'id': configured_id,
         'bundle_path': (config.get('bundle_path') or defaults.get('bundle_path') or '').strip(),
+        'dev_bundle_path': str(config.get('dev_bundle_path') or defaults.get('dev_bundle_path') or '').strip(),
         'download_url': (config.get('download_url') or defaults.get('download_url') or '').strip(),
+        'allow_unsigned_local_bundle': bool(
+            local_development_override
+            and (config.get('allow_unsigned_local_bundle') if 'allow_unsigned_local_bundle' in config else defaults.get('allow_unsigned_local_bundle', False))
+        ),
         'marker_file': configured_marker,
     }
 
-def _managed_firefox_extension_paths(profile_dir, extension_name):
+def _managed_firefox_extension_paths(profile_dir, extension_name, local_development_override=False):
     profile_dir = Path(profile_dir)
     extensions_dir = profile_dir / 'extensions'
-    candidates = _firefox_extension_candidates(extension_name)
+    candidates = _firefox_extension_candidates(extension_name, local_development_override=local_development_override)
     configured_id = (candidates.get('id') or '').strip()
     marker_name = (candidates.get('marker_file') or '').strip()
     marker_paths = [extensions_dir / marker_name] if marker_name else []
     ids = [configured_id] if configured_id else []
+    legacy_marker_paths = []
+    legacy_ids = []
+    if extension_name == 'swipe':
+        legacy_marker_paths.append(extensions_dir / '.webapp_simple_swipe_navigator_extension_id')
+        legacy_ids.append('{6f3ab763-a4c2-4183-b596-984bf5b7ac31}')
     for marker_path in marker_paths:
         if not marker_path.exists():
             continue
@@ -525,16 +631,31 @@ def _managed_firefox_extension_paths(profile_dir, extension_name):
             addon_id = ''
         if addon_id and addon_id not in ids:
             ids.append(addon_id)
+    for marker_path in legacy_marker_paths:
+        if not marker_path.exists():
+            continue
+        try:
+            addon_id = marker_path.read_text(encoding='utf-8').strip()
+        except OSError:
+            addon_id = ''
+        if addon_id and addon_id not in legacy_ids:
+            legacy_ids.append(addon_id)
     xpi_paths = [extensions_dir / f'{addon_id}.xpi' for addon_id in ids if addon_id]
+    legacy_xpi_paths = [extensions_dir / f'{addon_id}.xpi' for addon_id in legacy_ids if addon_id]
     return {
         'extensions_dir': extensions_dir,
         'primary_marker_path': marker_paths[0] if marker_paths else None,
         'marker_paths': marker_paths,
         'ids': ids,
         'xpi_paths': xpi_paths,
+        'legacy_marker_paths': legacy_marker_paths,
+        'legacy_ids': legacy_ids,
+        'legacy_xpi_paths': legacy_xpi_paths,
         'configured_id': configured_id,
         'bundle_path': candidates.get('bundle_path') or '',
+        'dev_bundle_path': candidates.get('dev_bundle_path') or '',
         'download_url': candidates.get('download_url') or '',
+        'allow_unsigned_local_bundle': bool(candidates.get('allow_unsigned_local_bundle', False)),
     }
 
 def _firefox_extension_paths(profile_dir, marker_name, fallback_id):
@@ -556,7 +677,7 @@ def firefox_extension_installed(profile_dir, extension_name):
         return False
     managed = _managed_firefox_extension_paths(profile_dir, extension_name)
     profile_dir = Path(profile_dir)
-    ids = set(managed['ids'])
+    ids = set(managed['ids']) | set(managed.get('legacy_ids') or [])
     state_path = profile_dir / 'extensions.json'
     if state_path.exists():
         try:
@@ -570,23 +691,32 @@ def firefox_extension_installed(profile_dir, extension_name):
             return False
         except (OSError, ValueError, json.JSONDecodeError) as error:
             logger = None
-    return any(path.exists() for path in managed['xpi_paths'])
+    return any(path.exists() for path in [*managed['xpi_paths'], *(managed.get('legacy_xpi_paths') or [])])
 
 
 def _resolve_bundled_extension_path(bundle_path):
     bundle_path = (bundle_path or '').strip()
     if not bundle_path:
         return None
-    candidate = Path(bundle_path)
-    if not candidate.is_absolute():
-        candidate = Path(__file__).resolve().parent / candidate
-    try:
-        candidate = candidate.resolve()
-    except OSError:
-        return None
-    if not candidate.exists() or not candidate.is_file():
-        return None
-    return candidate
+    candidates = [Path(bundle_path)]
+    normalized = bundle_path.replace('\\', '/')
+    if normalized.startswith('extensions/'):
+        candidates.append(Path('extension') / normalized[len('extensions/'):])
+    elif normalized.startswith('extension/'):
+        candidates.append(Path('extensions') / normalized[len('extension/'):])
+
+    app_root = Path(__file__).resolve().parent
+    for candidate in candidates:
+        resolved_candidate = candidate
+        if not resolved_candidate.is_absolute():
+            resolved_candidate = app_root / resolved_candidate
+        try:
+            resolved_candidate = resolved_candidate.resolve()
+        except OSError:
+            continue
+        if resolved_candidate.exists() and resolved_candidate.is_file():
+            return resolved_candidate
+    return None
 
 
 def _xpi_has_signature(xpi_bytes):
@@ -597,8 +727,73 @@ def _xpi_has_signature(xpi_bytes):
         return False
     return any(name.startswith('META-INF/') for name in names)
 
-def _load_firefox_extension_payload(managed, logger, extension_name):
+def _content_script_matches_for_address(address):
+    parsed = urlparse((address or '').strip())
+    scheme = (parsed.scheme or '').strip().lower()
+    if scheme not in {'http', 'https'}:
+        return []
+    netloc = (parsed.netloc or '').strip()
+    if not netloc:
+        return []
+    return [f'{scheme}://{netloc}/*']
+
+
+def _scope_swipe_extension_payload(xpi_bytes, address):
+    matches = _content_script_matches_for_address(address)
+    if not matches:
+        return xpi_bytes
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_root = Path(tmp_dir)
+        with zipfile.ZipFile(io.BytesIO(xpi_bytes)) as archive:
+            archive.extractall(tmp_root)
+        manifest_path = tmp_root / 'manifest.json'
+        manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        manifest['name'] = 'Swipe Gesten (Eigenes Addon)'
+        manifest['short_name'] = 'Swipe Gesten'
+        manifest['description'] = 'Lokales WebApp-Manager-Addon fuer Wischgesten auf der konfigurierten WebApp-Domain.'
+        manifest['host_permissions'] = matches
+        content_scripts = list(manifest.get('content_scripts') or [])
+        if content_scripts:
+            content_scripts[0]['matches'] = matches
+        manifest['content_scripts'] = content_scripts
+        manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            for candidate in sorted(tmp_root.rglob('*')):
+                if not candidate.is_file():
+                    continue
+                rel_path = candidate.relative_to(tmp_root).as_posix()
+                if rel_path.upper().startswith('META-INF/'):
+                    continue
+                archive.write(candidate, rel_path)
+        return payload.getvalue()
+
+
+def _load_firefox_extension_payload(managed, logger, extension_name, address=''):
+    if bool(managed.get('allow_unsigned_local_bundle', False)):
+        dev_bundle_path = _resolve_bundled_extension_path(managed.get('dev_bundle_path') or '')
+        if dev_bundle_path is not None:
+            try:
+                payload = dev_bundle_path.read_bytes()
+            except OSError as error:
+                logger.warning('Failed to read local Firefox extension %s from %s: %s', extension_name, dev_bundle_path, error)
+                return None, f'dev-bundle-read-error:{error}', False
+            if extension_name == 'swipe':
+                payload = _scope_swipe_extension_payload(payload, address)
+            return payload, f'bundle:{dev_bundle_path}', _xpi_has_signature(payload)
     bundle_path = _resolve_bundled_extension_path(managed.get('bundle_path') or '')
+    download_url = (managed.get('download_url') or '').strip()
+    if download_url:
+        try:
+            request = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(request, timeout=20) as response:
+                payload = response.read()
+            return payload, download_url, _xpi_has_signature(payload)
+        except (OSError, ValueError, urllib.error.URLError) as error:
+            logger.warning('Failed to download Firefox extension %s from %s: %s', extension_name, download_url, error)
+            if bundle_path is None:
+                return None, str(error), False
+            logger.info('Falling back to local Firefox extension %s from %s after download failure', extension_name, bundle_path)
     if bundle_path is not None:
         try:
             payload = bundle_path.read_bytes()
@@ -606,17 +801,20 @@ def _load_firefox_extension_payload(managed, logger, extension_name):
             logger.warning('Failed to read bundled Firefox extension %s from %s: %s', extension_name, bundle_path, error)
             return None, f'bundle-read-error:{error}', False
         return payload, f'bundle:{bundle_path}', _xpi_has_signature(payload)
-    download_url = (managed.get('download_url') or '').strip()
     if not download_url:
         return None, 'missing-extension-source', False
-    try:
-        request = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(request, timeout=20) as response:
-            payload = response.read()
-        return payload, download_url, _xpi_has_signature(payload)
-    except (OSError, ValueError, urllib.error.URLError) as error:
-        logger.warning('Failed to download Firefox extension %s from %s: %s', extension_name, download_url, error)
-        return None, str(error), False
+    return None, 'missing-extension-payload', False
+
+
+def _allows_unsigned_local_extension_payload(managed, payload_source, profile_dir):
+    if not bool(managed.get('allow_unsigned_local_bundle', False)):
+        return False
+    if not profile_dir or not _is_explicitly_managed_profile_dir(profile_dir, 'firefox'):
+        return False
+    dev_bundle_path = _resolve_bundled_extension_path(managed.get('dev_bundle_path') or '')
+    if dev_bundle_path is None:
+        return False
+    return payload_source == f'bundle:{dev_bundle_path}'
 
 
 def _invalidate_firefox_extension_state(profile_dir, logger):
@@ -643,20 +841,21 @@ def _invalidate_firefox_extension_state(profile_dir, logger):
     return changed
 
 
-def _sync_firefox_signed_extension(profile_dir, enabled, logger, extension_name):
+def _sync_firefox_signed_extension(profile_dir, enabled, logger, extension_name, local_development_override=False, options_dict=None):
     if not profile_dir:
         return {'requested': bool(enabled), 'installed': False, 'changed': False, 'error': 'missing-profile'}
-    managed = _managed_firefox_extension_paths(profile_dir, extension_name)
+    managed = _managed_firefox_extension_paths(profile_dir, extension_name, local_development_override=local_development_override)
     extensions_dir = managed['extensions_dir']
     extensions_dir.mkdir(parents=True, exist_ok=True)
     primary_marker_path = managed['primary_marker_path']
     configured_id = (managed['configured_id'] or '').strip()
     bundle_path = (managed.get('bundle_path') or '').strip()
+    dev_bundle_path = (managed.get('dev_bundle_path') or '').strip()
     download_url = (managed.get('download_url') or '').strip()
 
     def cleanup_marker_paths(keep_text=''):
         keep_text = (keep_text or '').strip()
-        for marker_path in managed['marker_paths']:
+        for marker_path in [*managed['marker_paths'], *(managed.get('legacy_marker_paths') or [])]:
             try:
                 if marker_path == primary_marker_path and keep_text:
                     marker_path.write_text(keep_text, encoding='utf-8')
@@ -667,14 +866,14 @@ def _sync_firefox_signed_extension(profile_dir, enabled, logger, extension_name)
 
     def remove_existing():
         changed = False
-        for target in managed['xpi_paths']:
+        for target in [*managed['xpi_paths'], *(managed.get('legacy_xpi_paths') or [])]:
             try:
                 if target.exists():
                     target.unlink()
                     changed = True
             except OSError as error:
                 logger.warning('Failed to remove Firefox extension %s: %s', target, error)
-        for marker_path in managed['marker_paths']:
+        for marker_path in [*managed['marker_paths'], *(managed.get('legacy_marker_paths') or [])]:
             try:
                 if marker_path.exists():
                     marker_path.unlink()
@@ -684,30 +883,81 @@ def _sync_firefox_signed_extension(profile_dir, enabled, logger, extension_name)
         changed = _invalidate_firefox_extension_state(profile_dir, logger) or changed
         return {'requested': False, 'installed': False, 'changed': changed, 'error': None}
 
+    def load_desired_payload():
+        try:
+            return _load_firefox_extension_payload(
+                managed,
+                logger,
+                extension_name,
+                address=(options_dict or {}).get(ADDRESS_KEY, ''),
+            )
+        except Exception:
+            logger.exception('Failed to resolve desired Firefox extension payload for %s', extension_name)
+            return None, 'extension-payload-resolution-error', False
+
     if not enabled:
         return remove_existing()
 
     existing_target = next((path for path in managed['xpi_paths'] if path.exists()), None)
     if existing_target is not None:
-        existing_id = existing_target.stem
-        cleanup_marker_paths(existing_id)
-        _invalidate_firefox_extension_state(profile_dir, logger)
-        return {'requested': True, 'installed': True, 'changed': False, 'error': None}
+        payload_source_hint = ''
+        desired_payload = None
+        should_refresh_existing = bool(local_development_override or bundle_path)
+        if should_refresh_existing:
+            desired_payload, payload_source_hint, _payload_signed_hint = load_desired_payload()
+            if desired_payload is not None:
+                try:
+                    existing_payload = existing_target.read_bytes()
+                except OSError as error:
+                    logger.warning('Failed to read installed Firefox extension %s from %s: %s', extension_name, existing_target, error)
+                    existing_payload = None
+                if existing_payload == desired_payload:
+                    existing_id = existing_target.stem
+                    cleanup_marker_paths(existing_id)
+                    _invalidate_firefox_extension_state(profile_dir, logger)
+                    return {'requested': True, 'installed': True, 'changed': False, 'error': None}
+                logger.info(
+                    'Refreshing Firefox extension %s in %s because the installed payload differs from %s',
+                    extension_name,
+                    profile_dir,
+                    payload_source_hint,
+                )
+            else:
+                existing_id = existing_target.stem
+                cleanup_marker_paths(existing_id)
+                _invalidate_firefox_extension_state(profile_dir, logger)
+                return {'requested': True, 'installed': True, 'changed': False, 'error': None}
+        else:
+            existing_id = existing_target.stem
+            cleanup_marker_paths(existing_id)
+            _invalidate_firefox_extension_state(profile_dir, logger)
+            return {'requested': True, 'installed': True, 'changed': False, 'error': None}
 
     if not configured_id:
         logger.warning('Missing Firefox extension ID for %s', extension_name)
         return {'requested': True, 'installed': False, 'changed': False, 'error': 'missing-addon-id'}
-    if not bundle_path and not download_url:
+    source_available = bool(bundle_path or download_url or (managed.get('allow_unsigned_local_bundle') and dev_bundle_path))
+    if not source_available:
         logger.warning('Missing Firefox extension source for %s', extension_name)
         return {'requested': True, 'installed': False, 'changed': False, 'error': 'missing-extension-source'}
 
     try:
-        payload, payload_source, payload_signed = _load_firefox_extension_payload(managed, logger, extension_name)
+        payload, payload_source, payload_signed = load_desired_payload()
         if payload is None:
+            if payload_source == 'missing-extension-source':
+                return {'requested': True, 'installed': False, 'changed': False, 'error': 'missing-extension-source'}
             return {'requested': True, 'installed': False, 'changed': False, 'error': 'missing-extension-payload'}
         if not payload_signed:
-            logger.warning('Firefox extension %s payload from %s does not appear to be Mozilla-signed; release Firefox builds usually block unsigned add-ons', extension_name, payload_source)
-            return {'requested': True, 'installed': False, 'changed': False, 'error': 'unsigned-extension-payload'}
+            if _allows_unsigned_local_extension_payload(managed, payload_source, profile_dir):
+                logger.warning(
+                    'Allowing unsigned local Firefox extension %s from %s only for managed profile %s',
+                    extension_name,
+                    payload_source,
+                    profile_dir,
+                )
+            else:
+                logger.warning('Firefox extension %s payload from %s does not appear to be Mozilla-signed; release Firefox builds usually block unsigned add-ons', extension_name, payload_source)
+                return {'requested': True, 'installed': False, 'changed': False, 'error': 'unsigned-extension-payload'}
         detected_id = _extract_firefox_extension_id(payload, configured_id)
         install_id = configured_id
         if detected_id and detected_id != configured_id:
@@ -718,8 +968,8 @@ def _sync_firefox_signed_extension(profile_dir, enabled, logger, extension_name)
             tmp_file.write(payload)
             temp_name = tmp_file.name
         Path(temp_name).replace(target)
-        refreshed = _managed_firefox_extension_paths(profile_dir, extension_name)
-        for stale in refreshed['xpi_paths']:
+        refreshed = _managed_firefox_extension_paths(profile_dir, extension_name, local_development_override=local_development_override)
+        for stale in [*refreshed['xpi_paths'], *(refreshed.get('legacy_xpi_paths') or [])]:
             if stale == target:
                 continue
             try:
@@ -731,11 +981,13 @@ def _sync_firefox_signed_extension(profile_dir, enabled, logger, extension_name)
         logger.info('Installed Firefox extension %s into %s from %s', configured_id, target, payload_source)
         return {'requested': True, 'installed': True, 'changed': True, 'error': None}
     except (OSError, ValueError, zipfile.BadZipFile, urllib.error.URLError) as error:
-        logger.warning('Failed to install Firefox extension %s from %s: %s', extension_name, bundle_path or download_url, error)
+        logger.warning('Failed to install Firefox extension %s from %s: %s', extension_name, dev_bundle_path or bundle_path or download_url, error)
         return {'requested': True, 'installed': False, 'changed': False, 'error': str(error)}
 
-def _sync_firefox_swipe_extension(profile_dir, enabled, logger):
-    return _sync_firefox_signed_extension(profile_dir, enabled, logger, 'swipe')
+def _sync_firefox_swipe_extension(profile_dir, enabled, logger, options_dict=None):
+    if not enabled:
+        return _sync_firefox_signed_extension(profile_dir, False, logger, 'swipe', local_development_override=True, options_dict=options_dict)
+    return _sync_firefox_signed_extension(profile_dir, True, logger, 'swipe', local_development_override=True, options_dict=options_dict)
 
 
 def _sync_firefox_adblock(profile_dir, enabled, logger):
@@ -862,6 +1114,11 @@ def _read_firefox_profile_settings(profile_dir):
         or prefs.get('browser.ml.linkPreview.enabled') is False
         or prefs.get('browser.ai.control.smartTabGroups') == 'blocked'
     )
+    safe_graphics_enabled = bool(
+        prefs.get('webgl.disabled') is True
+        or prefs.get('webgl.enable-webgl2') is False
+        or prefs.get('media.hardware-video-decoding.enabled') is False
+    )
     return {
         OPTION_CLEAR_CACHE_ON_EXIT_KEY: '1' if (prefs.get('webapp.clear_cache_requested') is True or prefs.get('privacy.clearOnShutdown.cache') or prefs.get('privacy.clearOnShutdown_v2.cache')) else '0',
         OPTION_CLEAR_COOKIES_ON_EXIT_KEY: '1' if prefs.get('privacy.clearOnShutdown.cookies') or prefs.get('privacy.clearOnShutdown_v2.cookiesAndStorage') else '0',
@@ -875,6 +1132,7 @@ def _read_firefox_profile_settings(profile_dir):
         OPTION_DISABLE_AI_KEY: '1' if disable_ai_enabled else '0',
         OPTION_FORCE_PRIVACY_KEY: '1' if privacy_enabled else '0',
         OPTION_STARTUP_BOOSTER_KEY: '1' if prefs.get('webapp.startup_booster.enabled') is True else '0',
+        OPTION_SAFE_GRAPHICS_KEY: '1' if safe_graphics_enabled else '0',
         APP_MODE_KEY: '1' if app_mode_enabled else '0',
         'Frameless': '1' if frameless else '0',
         USER_AGENT_VALUE_KEY: prefs.get('general.useragent.override', '') or '',
@@ -928,6 +1186,9 @@ def apply_profile_settings(profile_info, options_dict, logger):
     family = profile_info.get('browser_family')
     scoped_options = project_options_for_family(normalize_option_dict(options_dict or {}), family)
     profile_path = profile_info.get('profile_path')
+    if family in {'firefox', 'chrome', 'chromium'} and profile_path and not _is_explicitly_managed_profile_dir(profile_path, family):
+        logger.warning('Refusing to apply settings to non-managed %s profile %s', family, profile_path)
+        return
     clear_cache = scoped_options.get(OPTION_CLEAR_CACHE_ON_EXIT_KEY, '0') == '1'
     clear_cookies = scoped_options.get(OPTION_CLEAR_COOKIES_ON_EXIT_KEY, '0') == '1'
     adblock = scoped_options.get(OPTION_ADBLOCK_KEY, '0') == '1'
@@ -945,6 +1206,7 @@ def apply_profile_settings(profile_info, options_dict, logger):
     disable_ai = scoped_options.get(OPTION_DISABLE_AI_KEY, '0') == '1'
     set_privacy = scoped_options.get(OPTION_FORCE_PRIVACY_KEY, '0') == '1'
     startup_booster = scoped_options.get(OPTION_STARTUP_BOOSTER_KEY, '0') == '1'
+    safe_graphics = scoped_options.get(OPTION_SAFE_GRAPHICS_KEY, '0') == '1'
     color_scheme = normalize_color_scheme(scoped_options.get(COLOR_SCHEME_KEY, 'auto'))
     default_zoom = normalize_default_zoom(scoped_options.get(DEFAULT_ZOOM_KEY, '100'))
     custom_css_enabled = bool(linked_assets_for_options(options_dict, 'css') or inline_asset_text_for_options(options_dict, 'css'))
@@ -974,10 +1236,11 @@ def apply_profile_settings(profile_info, options_dict, logger):
             custom_css_enabled=custom_css_enabled,
             custom_js_enabled=custom_js_enabled,
             startup_booster=startup_booster,
+            safe_graphics=safe_graphics,
         )
         _sync_firefox_app_mode_css(profile_path, app_mode, frameless, logger)
         _sync_firefox_adblock(profile_path, adblock, logger)
-        _sync_firefox_swipe_extension(profile_path, swipe_enabled, logger)
+        _sync_firefox_swipe_extension(profile_path, swipe_enabled, logger, options_dict=options_dict)
         ensure_profile_customizations(profile_info, options_dict, logger)
         _invalidate_firefox_extension_state(profile_path, logger)
         return
@@ -1244,8 +1507,7 @@ def _path_within(path, root):
 def _is_managed_profile_path(path, family):
     if not path:
         return False
-    root = FIREFOX_ROOT if family == 'firefox' else CHROMIUM_PROFILE_ROOT
-    return _path_within(path, root)
+    return _is_explicitly_managed_profile_dir(path, family)
 
 def _detect_managed_profile_family(path):
     if not path:
@@ -1370,11 +1632,10 @@ def rename_unused_managed_profile_directories(active_profile_paths, logger):
             counter += 1
         return candidate
 
-    def should_skip(profile_dir):
-        name = profile_dir.name
-        if not name.startswith('webapp_'):
+    def should_skip(profile_dir, family):
+        if not _is_explicitly_managed_profile_dir(profile_dir, family):
             return True
-        if '_unused' in name:
+        if '_unused' in profile_dir.name:
             return True
         return profile_dir in active_paths
 
@@ -1395,7 +1656,7 @@ def rename_unused_managed_profile_directories(active_profile_paths, logger):
                 resolved = profile_dir.resolve()
             except OSError:
                 continue
-            if should_skip(resolved):
+            if should_skip(resolved, family):
                 continue
             target = next_unused_path(resolved)
             try:
@@ -1420,7 +1681,7 @@ def ensure_browser_profile(title, configured_command, logger, stored_profile_nam
             stored_path = Path(stored_profile_path).resolve()
         except OSError:
             stored_path = None
-    managed_existing = bool(stored_path and _is_managed_profile_path(stored_path, family))
+    managed_existing = bool(stored_path and _is_explicitly_managed_profile_dir(stored_path, family))
     stored_family = _detect_managed_profile_family(stored_path) if stored_path else None
     allow_profile_copy = False
     source_profile = {'valid': False, 'profile_path': '', 'profile_name': ''}
@@ -1440,12 +1701,14 @@ def ensure_browser_profile(title, configured_command, logger, stored_profile_nam
         if source_profile_path:
             _copy_profile_contents(source_profile_path, profile_dir, logger)
             profile_migrated = True
+        _write_managed_profile_marker(profile_dir, family)
         _upsert_firefox_profile(profile_name, profile_dir, logger)
         return {
             'browser_family': family,
+            'managed_profile': True,
             'profile_name': profile_name,
             'profile_path': str(profile_dir),
-            'exec_args': ['--profile', str(profile_dir), '--new-instance'],
+            'exec_args': ['-profile', str(profile_dir)],
             'profile_migrated': profile_migrated,
         }
     if family in {'chrome', 'chromium'}:
@@ -1457,8 +1720,10 @@ def ensure_browser_profile(title, configured_command, logger, stored_profile_nam
         if source_profile_path:
             _copy_profile_contents(source_profile_path, profile_dir, logger)
             profile_migrated = True
+        _write_managed_profile_marker(profile_dir, family)
         return {
             'browser_family': family,
+            'managed_profile': True,
             'profile_name': profile_name,
             'profile_path': str(profile_dir),
             'exec_args': [f'--user-data-dir={profile_dir}'],
@@ -1466,6 +1731,7 @@ def ensure_browser_profile(title, configured_command, logger, stored_profile_nam
         }
     return {
         'browser_family': family,
+        'managed_profile': False,
         'profile_name': profile_name,
         'profile_path': '',
         'exec_args': [],
@@ -1488,18 +1754,24 @@ def delete_managed_browser_profiles(title, logger, stored_profile_path='', store
     for profile_dir in explicit_paths:
         if keep_resolved and profile_dir == keep_resolved:
             continue
-        is_firefox_profile = profile_dir == FIREFOX_ROOT or FIREFOX_ROOT.resolve() in profile_dir.parents
+        family = _detect_managed_profile_family(profile_dir)
+        if family not in {'firefox', 'chrome', 'chromium'}:
+            logger.warning('Refusing to delete profile with unknown family: %s', profile_dir)
+            continue
+        if not _is_explicitly_managed_profile_dir(profile_dir, family):
+            logger.warning('Refusing to delete non-managed %s profile path: %s', family, profile_dir)
+            continue
         profile_name = stored_profile_name or profile_dir.name
-        if is_firefox_profile:
+        if family == 'firefox':
             _remove_firefox_profile_registration(profile_name, profile_dir, logger)
             if profile_dir.exists():
                 try:
-                    _safe_remove_tree(profile_dir, FIREFOX_ROOT, logger)
+                    _safe_remove_tree(profile_dir, _profile_root_for_family(family), logger)
                 except OSError as error:
                     logger.error('Failed to delete Firefox profile %s: %s', profile_dir, error)
         else:
             if profile_dir.exists():
                 try:
-                    _safe_remove_tree(profile_dir, CHROMIUM_PROFILE_ROOT, logger)
+                    _safe_remove_tree(profile_dir, _profile_root_for_family(family), logger)
                 except OSError as error:
                     logger.error('Failed to delete browser profile %s: %s', profile_dir, error)

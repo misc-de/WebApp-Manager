@@ -30,7 +30,9 @@ class MainWindowWindowStateMixin:
                 data = get_app_config(force_reload=True)
                 settings = data.get('settings', {}) if isinstance(data, dict) else {}
                 if isinstance(settings, dict):
-                    return {'appearance': str(settings.get('appearance', 'auto') or 'auto')}
+                    return {
+                        'appearance': str(settings.get('appearance', 'auto') or 'auto'),
+                    }
             except (OSError, TypeError, ValueError, json.JSONDecodeError):
                 LOG.debug('Failed to load UI settings', exc_info=True)
             return {'appearance': 'auto'}
@@ -106,4 +108,3 @@ class MainWindowWindowStateMixin:
     def _on_close_request(self, *_args):
             self._save_window_state()
             return False
-

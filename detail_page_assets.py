@@ -295,7 +295,7 @@ class DetailPageAssetsMixin:
 
             content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
             content.set_halign(Gtk.Align.FILL)
-            content.set_margin_top(12)
+            content.set_margin_top(0)
             content.set_margin_bottom(12)
             page.append(content)
 
@@ -463,4 +463,3 @@ class DetailPageAssetsMixin:
     def _remove_linked_asset(self, asset_type, asset_id):
             current = [item for item in self._linked_asset_ids(asset_type) if item != asset_id]
             self._set_linked_assets(asset_type, current)
-
