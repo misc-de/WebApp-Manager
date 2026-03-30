@@ -185,6 +185,14 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self.detail_shell.set_vexpand(True)
         self.content_overlay.set_child(self.detail_shell)
 
+        self.detail_tab_scroller = Gtk.ScrolledWindow()
+        self.detail_tab_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        self.detail_tab_scroller.set_overlay_scrolling(True)
+        self.detail_tab_scroller.set_hexpand(True)
+        self.detail_tab_scroller.set_vexpand(False)
+        self.detail_tab_scroller.add_css_class('detail-tab-scroller')
+        self.detail_shell.append(self.detail_tab_scroller)
+
         self.desktop_tab_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.desktop_tab_bar.add_css_class('detail-desktop-tab-bar')
         self.desktop_tab_bar.set_margin_top(10)
@@ -193,7 +201,7 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self.desktop_tab_bar.set_margin_bottom(10)
         self.desktop_tab_bar.set_halign(Gtk.Align.START)
         self.desktop_tab_bar.set_visible(False)
-        self.detail_shell.append(self.desktop_tab_bar)
+        self.detail_tab_scroller.set_child(self.desktop_tab_bar)
 
         self.desktop_tab_buttons = {}
         for tab_name, label_key in (
@@ -204,6 +212,8 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         ):
             button = Gtk.ToggleButton(label=t(label_key))
             button.add_css_class('flat')
+            button.add_css_class('detail-tab-button')
+            button.set_hexpand(True)
             button.connect('toggled', self._on_desktop_tab_toggled, tab_name)
             self.desktop_tab_buttons[tab_name] = button
             self.desktop_tab_bar.append(button)
@@ -337,6 +347,7 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
 
         self.switch_box.append(switch_label)
         self.switch_box.append(self.switch)
+
         self.top_row.append(self.switch_box)
         self.content_box.append(self.top_row)
 
@@ -377,6 +388,11 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
 
         self.url_status_label = Gtk.Label(label='', halign=Gtk.Align.START)
         self.url_status_label.set_xalign(0)
+        self.url_status_label.set_wrap(True)
+        self.url_status_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.url_status_label.set_lines(2)
+        self.url_status_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self.url_status_label.set_hexpand(True)
         self.url_status_label.set_margin_start(10)
         self.url_status_label.remove_css_class('heading')
         self.url_status_label.add_css_class('url-status-subtle')
@@ -404,10 +420,16 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self.user_agent_dropdown.connect('notify::selected', self.on_user_agent_changed)
         self.user_agent_status = Gtk.Label(label='', halign=Gtk.Align.START)
         self.user_agent_status.set_xalign(0)
+        self.user_agent_status.set_wrap(True)
+        self.user_agent_status.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.user_agent_status.set_hexpand(True)
         self.user_agent_status.add_css_class('dim-label')
 
         self.browser_option_status = Gtk.Label(label='', halign=Gtk.Align.START)
         self.browser_option_status.set_xalign(0)
+        self.browser_option_status.set_wrap(True)
+        self.browser_option_status.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.browser_option_status.set_hexpand(True)
         self.browser_option_status.add_css_class('dim-label')
         self.user_agent_label = Gtk.Label(label=t('label_user_agent'), halign=Gtk.Align.START)
         self.grid.attach(self.user_agent_label, 0, 6, 1, 1)
@@ -434,8 +456,8 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self.color_scheme_dropdown.set_selected(color_index)
         self.color_scheme_dropdown.connect('notify::selected', self.on_color_scheme_changed)
         self.color_scheme_label = Gtk.Label(label=t('label_color_scheme'), halign=Gtk.Align.START)
-        self.grid.attach(self.color_scheme_label, 0, 8, 1, 1)
-        self.grid.attach(self.color_scheme_dropdown, 1, 8, 1, 1)
+        self.grid.attach(self.color_scheme_label, 0, 9, 1, 1)
+        self.grid.attach(self.color_scheme_dropdown, 1, 9, 1, 1)
 
         self.default_zoom_labels = [
             t('default_zoom_50'),
@@ -459,12 +481,12 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self.default_zoom_dropdown.set_selected(default_zoom_index)
         self.default_zoom_dropdown.connect('notify::selected', self.on_default_zoom_changed)
         self.default_zoom_label = Gtk.Label(label=t('label_default_zoom'), halign=Gtk.Align.START)
-        self.grid.attach(self.default_zoom_label, 0, 9, 1, 1)
-        self.grid.attach(self.default_zoom_dropdown, 1, 9, 1, 1)
+        self.grid.attach(self.default_zoom_label, 0, 10, 1, 1)
+        self.grid.attach(self.default_zoom_dropdown, 1, 10, 1, 1)
 
         self.color_scheme_spacer = Gtk.Box()
         self.color_scheme_spacer.set_size_request(-1, 8)
-        self.grid.attach(self.color_scheme_spacer, 0, 10, 2, 1)
+        self.grid.attach(self.color_scheme_spacer, 0, 11, 2, 1)
 
         self.option_names = option_names()
         self.switches = {}
@@ -528,7 +550,7 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
 
         self.export_import_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self.export_import_row.set_homogeneous(True)
-        self.export_import_row.set_margin_top(6)
+        self.export_import_row.set_margin_top(14)
 
         self.export_button = Gtk.Button(label=t('export_webapp_button'))
         self.export_button.set_hexpand(True)
@@ -543,13 +565,6 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self.delete_profile_button.set_margin_top(6)
         self.delete_profile_button.connect('clicked', self.on_delete_profile_clicked)
         self.content_box.append(self.delete_profile_button)
-
-        self.delete_button = Gtk.Button(label=t('delete_webapp_button'))
-        self.delete_button.set_hexpand(True)
-        self.delete_button.add_css_class('destructive-action')
-        self.delete_button.set_margin_top(6)
-        self.delete_button.connect('clicked', self.on_delete_clicked)
-        self.content_box.append(self.delete_button)
 
         self._engine_option_widgets = [
             self.user_agent_label, self.user_agent_dropdown, self.mode_label, self.mode_dropdown,
@@ -977,10 +992,7 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
 
     def on_swipe(self, gesture, velocity_x, velocity_y):
         if velocity_x > 0:
-            current_name = self._current_page_name()
-            if current_name in {'css_assets', 'javascript_assets'}:
-                self.on_back()
-            elif self.is_subpage_visible():
+            if self.is_subpage_visible():
                 self.show_main_page()
             else:
                 self.on_back()
@@ -997,4 +1009,3 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self._set_inline_busy(False)
         self._hide_detail_toast()
         self._icon_texture_cache = {}
-

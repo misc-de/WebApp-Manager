@@ -55,16 +55,18 @@
       "marker_file": ".webapp_adblock_extension_id"
     },
     "swipe": {
-      "id": "{6f3ab763-a4c2-4183-b596-984bf5b7ac31}",
-      "download_url": "https://addons.mozilla.org/android/downloads/file/4666831/simple_swipe_navigator-1.6.xpi",
-      "marker_file": ".webapp_simple_swipe_navigator_extension_id",
-      "bundle_path": "extensions/simple-swipe-navigator-1.6.xpi",
-      "name": "Simple Swipe Navigator",
-      "version": "1.6",
-      "description": "Enables horizontal swipes for Back/Forward navigation on mobile devices.",
-      "amo_listing_url": "https://addons.mozilla.org/en-US/android/addon/simple-swipe-navigator/",
-      "support_url": "https://github.com/usemoslinux/swipe-navigator",
-      "signed_bundle": true
+      "id": "swipe-gestures@de.cais",
+      "bundle_path": "extension/swipe-gestures.xpi",
+      "dev_bundle_path": "extension/swipe-gestures.xpi",
+      "download_url": "https://addons.mozilla.org/firefox/downloads/file/4744670/swipe_gestures-0.2.2.xpi",
+      "marker_file": ".webapp_secure_swipe_extension_id",
+      "name": "Swipe Gesten (Eigenes Addon)",
+      "version": "0.2.7",
+      "description": "Enables horizontal edge swipes for Back/Forward navigation on touch devices.",
+      "amo_listing_url": "",
+      "support_url": "",
+      "signed_bundle": true,
+      "allow_unsigned_local_bundle": true
     }
   },
   "settings": {

@@ -56,9 +56,7 @@ class DetailPageLayoutMixin:
     def _on_desktop_tab_toggled(self, button, page_name):
             if self._desktop_tabs_syncing or not button.get_active():
                 return
-            self.page_stack.set_visible_child_name(page_name)
-            self._sync_desktop_tab_buttons(page_name)
-            self._update_tabbed_navigation_state()
+            self._show_tab_page(page_name)
 
     def _move_widget_to_box(self, widget, box):
             if widget is None or box is None:
@@ -77,10 +75,8 @@ class DetailPageLayoutMixin:
             if not force and self._options_section_compact == compact:
                 return
             self._options_section_compact = compact
-            target_box = self.main_options_slot if compact else self.options_page_content
+            target_box = self.options_page_content
             self._move_widget_to_box(self.options_section, target_box)
-            if compact and self._current_page_name() == 'options':
-                self.page_stack.set_visible_child_name('main')
 
     def _clear_grid(self):
             child = self.grid.get_first_child()
@@ -151,7 +147,7 @@ class DetailPageLayoutMixin:
             self.options_page.set_margin_bottom(vertical_margin)
             self.options_page.set_margin_start(side_margin)
             self.options_page.set_margin_end(side_margin)
-            self.options_page_content.set_margin_top(inner_margin)
+            self.options_page_content.set_margin_top(0 if compact else inner_margin)
             self.options_page_content.set_margin_bottom(inner_margin)
             self.options_page_content.set_margin_start(side_inset)
             self.options_page_content.set_margin_end(side_inset)
@@ -182,7 +178,7 @@ class DetailPageLayoutMixin:
                 page.set_margin_bottom(vertical_margin)
                 page.set_margin_start(side_margin)
                 page.set_margin_end(side_margin)
-                content.set_margin_top(inner_margin)
+                content.set_margin_top(0)
                 content.set_margin_bottom(inner_margin)
                 content.set_margin_start(side_inset)
                 content.set_margin_end(side_inset)
@@ -236,10 +232,21 @@ class DetailPageLayoutMixin:
                 self.export_import_row.set_orientation(Gtk.Orientation.VERTICAL if compact else Gtk.Orientation.HORIZONTAL)
                 self.export_import_row.set_spacing(8 if compact else 0)
                 self.export_import_row.set_homogeneous(not compact)
-                self.export_import_row.set_margin_top(6 if compact else 14)
+                self.export_import_row.set_margin_top(34)
+                self.desktop_tab_bar.set_spacing(4 if compact else 8)
+                self.desktop_tab_bar.set_homogeneous(False)
+                self.desktop_tab_bar.set_halign(Gtk.Align.FILL if compact else Gtk.Align.START)
+                self.desktop_tab_bar.set_margin_top(6 if compact else 10)
+                self.desktop_tab_bar.set_margin_start(4 if compact else 12)
+                self.desktop_tab_bar.set_margin_end(4 if compact else 12)
+                self.desktop_tab_bar.set_margin_bottom(8 if compact else 10)
+                for button in self.desktop_tab_buttons.values():
+                    button.set_hexpand(False)
+                    button.set_halign(Gtk.Align.CENTER if compact else Gtk.Align.START)
             self._mount_options_section(compact, force=force)
-            self.custom_assets_row.set_visible(compact)
-            self.desktop_tab_bar.set_visible(not compact and self._current_page_name() != 'icon')
+            self.custom_assets_row.set_visible(False)
+            self.detail_tab_scroller.set_visible(self._current_page_name() != 'icon')
+            self.desktop_tab_bar.set_visible(self._current_page_name() != 'icon')
             self._sync_desktop_tab_buttons()
             self._apply_subpage_adaptive_layout(force=force)
             self._rebuild_form_layout(force=force)
@@ -276,8 +283,12 @@ class DetailPageLayoutMixin:
             candidates = {
                 'icon_button': getattr(self, 'icon_button', None),
                 'first_icon_page_button': (getattr(self, '_icon_page_buttons', []) or [None])[0],
+                'main_tab_button': (getattr(self, 'desktop_tab_buttons', {}) or {}).get('main'),
+                'options_tab_button': (getattr(self, 'desktop_tab_buttons', {}) or {}).get('options'),
+                'css_tab_button': (getattr(self, 'desktop_tab_buttons', {}) or {}).get('css_assets'),
                 'css_add_button': (asset_state.get('css', {}) or {}).get('add_button'),
                 'css_dropdown': (asset_state.get('css', {}) or {}).get('dropdown'),
+                'javascript_tab_button': (getattr(self, 'desktop_tab_buttons', {}) or {}).get('javascript_assets'),
                 'javascript_add_button': (asset_state.get('javascript', {}) or {}).get('add_button'),
                 'javascript_dropdown': (asset_state.get('javascript', {}) or {}).get('dropdown'),
             }
@@ -309,23 +320,16 @@ class DetailPageLayoutMixin:
 
     def _update_tabbed_navigation_state(self):
             current_name = self._current_page_name()
-            compact = self._is_compact_layout()
-            page_changed = False
-            if compact and current_name == 'options':
-                self.page_stack.set_visible_child_name('main')
-                current_name = 'main'
-                page_changed = True
-            self.desktop_tab_bar.set_visible((not compact) and current_name != 'icon')
-            self.custom_assets_row.set_visible(compact)
+            tab_bar_visible = current_name != 'icon'
+            self.detail_tab_scroller.set_visible(tab_bar_visible)
+            self.desktop_tab_bar.set_visible(tab_bar_visible)
+            self.custom_assets_row.set_visible(False)
             self._sync_desktop_tab_buttons(current_name)
-            if not page_changed:
-                self._notify_navigation_changed()
+            self._notify_navigation_changed()
 
     def is_subpage_visible(self):
             current_name = self._current_page_name()
-            if current_name == 'icon':
-                return True
-            return self._is_compact_layout() and current_name != 'main'
+            return current_name not in {'main', 'options', 'css_assets', 'javascript_assets'}
 
     def _capture_main_page_scroll_position(self):
             adjustment = None
@@ -367,15 +371,23 @@ class DetailPageLayoutMixin:
             self._detail_main_scroll_restore_source_id = GLib.idle_add(apply_restore)
 
     def show_main_page(self):
-            self.page_stack.set_visible_child_name('main')
-            self._restore_main_page_scroll_position()
-            self._update_tabbed_navigation_state()
+            self._show_tab_page('main')
             self._suspend_change_handlers = False
 
     def show_asset_page(self, asset_type):
-            if self._current_page_name() == 'main':
-                self._capture_main_page_scroll_position()
             page_name = 'css_assets' if asset_type == 'css' else 'javascript_assets'
+            self._show_tab_page(page_name)
+
+    def _show_tab_page(self, page_name):
+            current_name = self._current_page_name()
+            if current_name == 'main' and page_name != 'main':
+                self._capture_main_page_scroll_position()
             self.page_stack.set_visible_child_name(page_name)
-            self._refresh_asset_page(asset_type)
+            if page_name == 'main':
+                self._restore_main_page_scroll_position()
+            elif page_name == 'css_assets':
+                self._refresh_asset_page('css')
+            elif page_name == 'javascript_assets':
+                self._refresh_asset_page('javascript')
+            self._sync_desktop_tab_buttons(page_name)
             self._update_tabbed_navigation_state()

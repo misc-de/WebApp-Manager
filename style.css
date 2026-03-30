@@ -30,8 +30,8 @@
 }
 
 .boolean-switch {
-    margin-top: 4px;
-    margin-bottom: 4px;
+    margin-top: 10px;
+    margin-bottom: 0;
 }
 
 .entry-subtitle {
@@ -235,6 +235,16 @@ listview row:hover > box {
   background: alpha(currentColor, 0.04);
 }
 
+.settings-nav-button {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: alpha(currentColor, 0.035);
+}
+
+.settings-nav-button:hover {
+  background: alpha(currentColor, 0.07);
+}
+
 .inline-code-editor,
 .inline-code-editor text {
   font-family: monospace;
@@ -279,6 +289,26 @@ listview row:hover > box {
 .option-row-hover,
 .option-row:hover {
     background: alpha(currentColor, 0.05);
+}
+
+.detail-tab-scroller {
+  background: transparent;
+}
+
+.detail-tab-scroller scrollbar,
+.detail-tab-scroller scrollbar slider {
+  min-width: 0;
+  min-height: 0;
+  opacity: 0;
+}
+
+.detail-desktop-tab-bar {
+  min-height: 40px;
+}
+
+.detail-tab-button {
+  min-height: 36px;
+  border-radius: 999px;
 }
 
 

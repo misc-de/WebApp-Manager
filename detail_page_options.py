@@ -69,7 +69,7 @@ class DetailPageOptionsMixin:
             switch = Gtk.Switch()
             switch.add_css_class('boolean-switch')
             switch.set_halign(Gtk.Align.START)
-            switch.set_valign(Gtk.Align.START)
+            switch.set_valign(Gtk.Align.CENTER)
             switch.set_hexpand(False)
             value = self._get_option_value(option_name)
             if value is not None:
@@ -119,11 +119,6 @@ class DetailPageOptionsMixin:
             column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8 if compact else 6)
             column.set_hexpand(True)
             grouped_option_names = self._grouped_visible_option_names()
-            if compact:
-                top_spacer = Gtk.Box()
-                top_spacer.set_size_request(-1, 18)
-                top_spacer.set_hexpand(True)
-                column.append(top_spacer)
             first_group = True
             for category_name, option_names in grouped_option_names:
                 if not first_group:
@@ -135,7 +130,6 @@ class DetailPageOptionsMixin:
                 header.set_xalign(0)
                 header.set_hexpand(True)
                 header.add_css_class('heading')
-                header.add_css_class('dim-label')
                 column.append(header)
                 for option_name in option_names:
                     row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8 if compact else 10)
@@ -588,7 +582,12 @@ class DetailPageOptionsMixin:
                         installed = enabled
                     self._set_plugin_activity('', active=False)
                     if error_text == 'unsigned-extension-payload':
-                        self._show_plugin_banner(t('plugin_install_unsigned'), timeout_ms=4200)
+                        if option_name == 'swipe':
+                            self._show_plugin_banner(t('plugin_install_unsigned_swipe'), timeout_ms=4200)
+                        else:
+                            self._show_plugin_banner(t('plugin_install_unsigned'), timeout_ms=4200)
+                    elif error_text == 'missing-extension-source' and option_name == 'swipe':
+                        self._show_plugin_banner(t('plugin_install_swipe_production_unavailable'), timeout_ms=4200)
                     elif error_text:
                         self._show_plugin_banner(t('plugin_install_failed'))
                     elif enabled and installed:

@@ -17,12 +17,14 @@ def detail_neutral_focus_slot(page_name: str) -> tuple[str, ...]:
     current = str(page_name or 'main').strip()
     if current == 'main':
         return ('icon_button',)
+    if current == 'options':
+        return ('options_tab_button', 'icon_button')
     if current == 'icon':
         return ('first_icon_page_button', 'icon_button')
     if current == 'css_assets':
-        return ('css_add_button', 'css_dropdown', 'icon_button')
+        return ('css_tab_button', 'css_add_button', 'css_dropdown', 'icon_button')
     if current == 'javascript_assets':
-        return ('javascript_add_button', 'javascript_dropdown', 'icon_button')
+        return ('javascript_tab_button', 'javascript_add_button', 'javascript_dropdown', 'icon_button')
     return ('icon_button',)
 
 

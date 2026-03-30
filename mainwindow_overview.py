@@ -17,6 +17,26 @@ LOG = get_logger(__name__)
 
 
 class MainWindowOverviewMixin:
+    def _header_detail_delete_target(self):
+        current_detail = self._overview_detail_visible_child()
+        if isinstance(current_detail, DetailPage) and self._is_overview_child_visible(current_detail):
+            return current_detail
+        return None
+
+    def _set_header_detail_delete_visible(self, visible=None):
+        button = getattr(self, 'delete_button', None)
+        if button is None:
+            return
+        if visible is None:
+            visible = self._header_detail_delete_target() is not None
+        button.set_visible(bool(visible))
+
+    def on_header_delete_clicked(self, button):
+        detail_page = self._header_detail_delete_target()
+        if detail_page is None:
+            return
+        detail_page.on_delete_clicked(button)
+
     def _build_list_title_widget(self):
         label = Gtk.Label(xalign=0)
         label.set_text(t('app_title'))
@@ -93,6 +113,7 @@ class MainWindowOverviewMixin:
         except (AttributeError, TypeError):
             pass
         self._show_overview_header()
+        self._set_header_detail_delete_visible(False)
 
     def _set_overview_detail_visible(self, child, title=''):
         try:
@@ -109,8 +130,10 @@ class MainWindowOverviewMixin:
             except (AttributeError, TypeError):
                 pass
             self._show_overview_header()
+            self._set_header_detail_delete_visible()
             return
         self._show_back_only_header()
+        self._set_header_detail_delete_visible()
 
     def _show_overview_root_page(self):
         if self._adaptive_split_enabled:
@@ -310,6 +333,14 @@ class MainWindowOverviewMixin:
         self.empty_label.set_visible(self.filtered_model.get_n_items() == 0)
 
     def on_factory_setup(self, factory, list_item):
+        try:
+            list_item.set_activatable(False)
+        except (AttributeError, TypeError):
+            pass
+        try:
+            list_item.set_selectable(False)
+        except (AttributeError, TypeError):
+            pass
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         box.add_css_class('entry-card')
         box.set_margin_top(0)
@@ -332,12 +363,6 @@ class MainWindowOverviewMixin:
         icon_button.set_can_focus(False)
         icon_button.set_tooltip_text(t('launch_webapp'))
         icon_button.set_child(icon_frame)
-
-        icon_click_gesture = Gtk.GestureClick()
-        icon_click_gesture.set_button(Gdk.BUTTON_PRIMARY)
-        icon_click_gesture.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        icon_click_gesture.connect('pressed', self._on_overview_icon_pressed)
-        icon_button.add_controller(icon_click_gesture)
 
         status_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         status_column.set_halign(Gtk.Align.END)
@@ -410,22 +435,103 @@ class MainWindowOverviewMixin:
 
         text_box.append(title_row)
         text_box.append(subtitle_row)
+
+        content_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        content_box.set_hexpand(True)
+        content_box.set_valign(Gtk.Align.START)
+        content_box.append(text_box)
+        content_box.append(status_column)
+
+        content_click_gesture = Gtk.GestureClick()
+        content_click_gesture.set_button(Gdk.BUTTON_PRIMARY)
+        content_click_gesture.connect('released', self._on_overview_content_released)
+        content_box.add_controller(content_click_gesture)
+
         box.append(icon_button)
-        box.append(text_box)
-        box.append(status_column)
+        box.append(content_box)
         list_item.set_child(box)
+        list_item._overview_widgets = {
+            'icon_button': icon_button,
+            'icon_frame': icon_frame,
+            'content_box': content_box,
+            'text_box': text_box,
+            'status_column': status_column,
+            'title_row': title_row,
+            'subtitle_row': subtitle_row,
+            'title_label': title,
+            'status_box': status_box,
+            'description_label': description,
+            'active_dot': active_dot,
+            'engine_image': engine_image,
+            'profile_size_label': profile_size_label,
+        }
+
+    def _log_overview_icon_event(self, phase, button):
+        entry = getattr(button, '_bound_entry', None) if button is not None else None
+        suppress_entry_id = getattr(self, '_suppress_next_overview_activate_entry_id', None)
+        suppress_until = getattr(self, '_suppress_next_overview_activate_until_us', 0)
+        try:
+            selected = self.selection.get_selected()
+        except (AttributeError, TypeError):
+            selected = None
+        LOG.info(
+            'Overview icon %s widget_id=%s entry_id=%s title=%r selected=%r suppress_entry_id=%r suppress_until_us=%r sensitive=%r visible=%r',
+            phase,
+            id(button) if button is not None else None,
+            getattr(entry, 'id', None),
+            getattr(entry, 'title', None),
+            selected,
+            suppress_entry_id,
+            suppress_until,
+            button.get_sensitive() if button is not None else None,
+            button.get_visible() if button is not None else None,
+        )
 
     def _on_overview_icon_pressed(self, gesture, _n_press, _x, _y):
         try:
-            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            button = gesture.get_widget()
         except (AttributeError, TypeError):
-            pass
+            button = None
+        if button is None:
+            LOG.info('Overview icon press detected, but no widget was attached')
+            return
+        self._log_overview_icon_event('pressed', button)
+        entry = getattr(button, '_bound_entry', None)
+        self._launch_entry_from_icon(entry)
+
+    def _on_overview_icon_released(self, gesture, _n_press, _x, _y):
+        try:
+            button = gesture.get_widget()
+        except (AttributeError, TypeError):
+            button = None
+        if button is None:
+            LOG.info('Overview icon release detected, but no widget was attached')
+            return
+        self._log_overview_icon_event('released', button)
 
     def _on_overview_icon_clicked(self, button):
+        self._log_overview_icon_event('clicked', button)
         entry = getattr(button, '_bound_entry', None)
         if entry is None:
+            LOG.info('Overview icon clicked without bound entry')
             return
         self._launch_entry_from_icon(entry)
+
+    def _on_overview_content_released(self, gesture, _n_press, _x, _y):
+        try:
+            widget = gesture.get_widget()
+        except (AttributeError, TypeError):
+            widget = None
+        entry = getattr(widget, '_bound_entry', None) if widget is not None else None
+        if entry is None:
+            LOG.info('Overview content tap detected, but no entry was attached')
+            return
+        LOG.info(
+            'Overview content tap opening detail for entry_id=%s title=%r',
+            getattr(entry, 'id', None),
+            getattr(entry, 'title', None),
+        )
+        self.on_entry_activated(entry)
 
     def _clear_overview_icon_button_handler(self, icon_button):
         button_handler = getattr(icon_button, '_click_handler_id', None)
@@ -449,6 +555,21 @@ class MainWindowOverviewMixin:
             entry = None
         if entry is None:
             return
+        suppress_entry_id = getattr(self, '_suppress_next_overview_activate_entry_id', None)
+        suppress_deadline = int(getattr(self, '_suppress_next_overview_activate_until_us', 0) or 0)
+        now_us = 0
+        try:
+            now_us = int(GLib.get_monotonic_time())
+        except (AttributeError, TypeError, ValueError):
+            now_us = 0
+        if suppress_entry_id == getattr(entry, 'id', None) and now_us and now_us <= suppress_deadline:
+            self._suppress_next_overview_activate_entry_id = None
+            self._suppress_next_overview_activate_until_us = 0
+            try:
+                self.selection.set_selected(Gtk.INVALID_LIST_POSITION)
+            except (AttributeError, TypeError, GLib.Error):
+                pass
+            return
         self.on_entry_activated(entry)
         try:
             self.selection.set_selected(Gtk.INVALID_LIST_POSITION)
@@ -457,19 +578,18 @@ class MainWindowOverviewMixin:
 
     def on_factory_bind(self, factory, list_item):
         entry = list_item.get_item()
-        box = list_item.get_child()
-        icon_button = box.get_first_child()
-        icon_frame = icon_button.get_child()
-        text_box = icon_button.get_next_sibling()
-        status_column = text_box.get_next_sibling()
-        title_row = text_box.get_first_child()
-        subtitle_row = title_row.get_next_sibling()
-        title_label = title_row.get_first_child()
-        status_box = title_label.get_next_sibling()
-        description_label = subtitle_row.get_first_child()
-        active_dot = status_column.get_first_child()
-        engine_image = active_dot.get_next_sibling()
-        profile_size_label = engine_image.get_next_sibling()
+        widgets = getattr(list_item, '_overview_widgets', {})
+        icon_button = widgets.get('icon_button')
+        icon_frame = widgets.get('icon_frame')
+        content_box = widgets.get('content_box')
+        status_box = widgets.get('status_box')
+        title_label = widgets.get('title_label')
+        description_label = widgets.get('description_label')
+        engine_image = widgets.get('engine_image')
+        active_dot = widgets.get('active_dot')
+        profile_size_label = widgets.get('profile_size_label')
+        if not all((icon_button, icon_frame, content_box, status_box, title_label, description_label, engine_image, active_dot, profile_size_label)):
+            return
         handlers = getattr(list_item, '_entry_handlers', [])
         old_entry = getattr(list_item, '_bound_entry', None)
         if old_entry is not None:
@@ -481,6 +601,7 @@ class MainWindowOverviewMixin:
         self._clear_overview_icon_button_handler(icon_button)
         list_item._bound_entry = entry
         self._bind_overview_icon_button(icon_button, entry)
+        content_box._bound_entry = entry
         title_label.set_text(entry.title)
         description_label.set_text(entry.description)
         self._set_overview_icon(icon_frame, entry.id)
@@ -564,8 +685,10 @@ class MainWindowOverviewMixin:
                 except (AttributeError, TypeError):
                     pass
                 self._restore_overview_header_actions()
+                self._set_header_detail_delete_visible()
                 return
             self._show_overview_header()
+        self._set_header_detail_delete_visible()
 
     def on_entry_activated(self, entry, show_busy=True):
         if show_busy:
@@ -673,6 +796,12 @@ class MainWindowOverviewMixin:
             if current_detail is getattr(self, 'settings_assets_page', None):
                 self._return_to_overview_from_settings_assets()
                 return
+            if current_detail is getattr(self, 'settings_about_page', None):
+                self._return_to_overview_from_settings_subpage()
+                return
+            if current_detail is getattr(self, 'settings_security_privacy_page', None):
+                self._return_to_overview_from_settings_subpage()
+                return
             if current_detail is getattr(self, 'settings_page', None):
                 self._hide_global_toast()
                 self._show_overview_root_page()
@@ -681,6 +810,12 @@ class MainWindowOverviewMixin:
                 return
         if current_name == 'settings_assets_page':
             self._return_to_overview_from_settings_assets()
+            return
+        if current_name == 'settings_about_page':
+            self._return_to_overview_from_settings_subpage()
+            return
+        if current_name == 'settings_security_privacy_page':
+            self._return_to_overview_from_settings_subpage()
             return
         if current_name == 'settings_page':
             self._restore_overview_header_actions()
