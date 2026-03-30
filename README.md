@@ -48,9 +48,8 @@ Current plugin references:
 ## Pictures
 
 **Desktop**  
-<img width="1200" alt="1" src="https://github.com/user-attachments/assets/cbbda8ed-f8ee-4da3-af70-ec60a9840965" /><br />
+<img width="600" height="1583" alt="1" src="https://github.com/user-attachments/assets/989577af-27b2-4c92-9cb5-a7a77df39067" />
 
 **Mobile**  
-<img width="300" alt="2" src="https://github.com/user-attachments/assets/8f9cf499-f55e-4c98-936a-4566c8d62667" />
-<img width="300" alt="3" src="https://github.com/user-attachments/assets/849b8783-0d65-4cf8-8d8f-f9d5848fd514" />
-<img width="300" alt="4" src="https://github.com/user-attachments/assets/5bab28e0-6f1c-4777-af73-e4de47affa21" />
+<img width="300" height="1663" alt="2" src="https://github.com/user-attachments/assets/53cb8d1b-3f86-4d43-97cd-7b9d1445cb90" />
+<img width="300" height="1673" alt="3" src="https://github.com/user-attachments/assets/f83d1042-20e8-4ab2-8ff4-8fba5a6b0177" />
