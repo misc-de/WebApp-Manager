@@ -45,10 +45,6 @@ Current plugin references:
   AMO: https://addons.mozilla.org/firefox/addon/ublock-origin/  
   Project: https://github.com/gorhill/uBlock
 
-- **Simple Swipe Navigator**  
-  AMO: https://addons.mozilla.org/en-US/android/addon/simple-swipe-navigator/  
-  Source: https://github.com/usemoslinux/swipe-navigator
-
 ## Pictures
 
 **Desktop**  
