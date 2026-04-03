@@ -663,6 +663,7 @@ class MainWindowOverviewMixin:
         self.update_empty_state()
 
     def update_header_title(self, entry):
+        self._reposition_entry_in_store(entry)
         if self._is_overview_child_visible(self.detail_pages.get(entry.id)):
             try:
                 self.content_navigation_page.set_title(entry.title or t('app_title'))

@@ -66,6 +66,31 @@ def format_profile_size(profile_path: str) -> str:
 
 
 class MainWindowEntriesMixin:
+    def _entry_sort_key(self, entry):
+        title = sanitize_desktop_value(getattr(entry, 'title', '')).strip().casefold()
+        return (title, int(getattr(entry, 'id', 0) or 0))
+
+    def _insert_entry_sorted(self, entry):
+        target_key = self._entry_sort_key(entry)
+        for index in range(self.entries_store.get_n_items()):
+            current = self.entries_store.get_item(index)
+            if self._entry_sort_key(current) > target_key:
+                self.entries_store.insert(index, entry)
+                return index
+        self.entries_store.append(entry)
+        return self.entries_store.get_n_items() - 1
+
+    def _reposition_entry_in_store(self, entry):
+        current_index = None
+        for index in range(self.entries_store.get_n_items()):
+            current = self.entries_store.get_item(index)
+            if getattr(current, 'id', None) == getattr(entry, 'id', None):
+                current_index = index
+                break
+        if current_index is not None:
+            self.entries_store.remove(current_index)
+        return self._insert_entry_sorted(entry)
+
     def load_entries_from_db(self):
         self.entries_store.remove_all()
         self._options_cache = {}
@@ -514,7 +539,7 @@ class MainWindowEntriesMixin:
             entry_obj = self._find_entry_by_id(entry_id)
             if entry_obj is None:
                 entry_obj = Entry(entry_id, title, '', bool(active))
-                self.entries_store.append(entry_obj)
+                self._insert_entry_sorted(entry_obj)
         else:
             entry_id = existing_entry.id
             entry_obj = existing_entry
@@ -557,6 +582,7 @@ class MainWindowEntriesMixin:
         self.db.update_entry(entry_id, title=title, active=bool(active))
         entry_obj.title = title
         entry_obj.active = bool(active)
+        self._reposition_entry_in_store(entry_obj)
 
         result = export_desktop_file(entry_obj, self._get_options_dict(entry_id), ENGINES, LOG)
         if result:
