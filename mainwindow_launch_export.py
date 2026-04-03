@@ -19,6 +19,14 @@ ENGINES = available_engines()
 
 
 class MainWindowLaunchExportMixin:
+    def _launch_needs_profile_prepare(self, options, launch_spec=None):
+            profile_path = str((options or {}).get(PROFILE_PATH_KEY, '') or '').strip()
+            if profile_path:
+                return False
+            profile_info = (launch_spec or {}).get('profile_info') or {}
+            family = str(profile_info.get('browser_family') or '').strip().lower()
+            return family in {'firefox', 'chrome', 'chromium'}
+
     def _process_argv_for_pid(self, pid):
             try:
                 raw = Path(f'/proc/{int(pid)}/cmdline').read_bytes()
@@ -292,12 +300,22 @@ class MainWindowLaunchExportMixin:
 
     def launch_entry(self, entry):
             options = self._get_options_dict(entry.id, force_refresh=True)
+            launch_spec = build_launch_command(entry, options, ENGINES, LOG, prepare_profile=False)
+            if launch_spec is not None and self._launch_needs_profile_prepare(options, launch_spec=launch_spec):
+                launch_spec = build_launch_command(entry, options, ENGINES, LOG, prepare_profile=True)
+                profile_info = launch_spec.get('profile_info') if isinstance(launch_spec, dict) else {}
+                if profile_info:
+                    updates = {
+                        PROFILE_NAME_KEY: profile_info.get('profile_name', '') or '',
+                        PROFILE_PATH_KEY: profile_info.get('profile_path', '') or '',
+                    }
+                    self._add_options(entry.id, updates)
+                    options = self._get_options_dict(entry.id, force_refresh=True)
             if str(options.get(OPTION_PREVENT_MULTIPLE_STARTS_KEY, '0')) == '1':
                 running_state = self._running_launch_process_for_entry(getattr(entry, 'id', None))
                 block_reason = None
                 if running_state is not None:
                     block_reason = f"tracked pid={getattr(running_state.get('process'), 'pid', None)}"
-                launch_spec = build_launch_command(entry, options, ENGINES, LOG, prepare_profile=False)
                 if launch_spec is None:
                     LOG.warning('Refusing to launch entry %s because no validated launch command could be built', getattr(entry, 'id', 'unknown'))
                     if hasattr(self, 'show_overlay_notification'):
@@ -312,8 +330,6 @@ class MainWindowLaunchExportMixin:
                     if hasattr(self, 'show_overlay_notification'):
                         self.show_overlay_notification(t('launch_already_running'), timeout_ms=2200)
                     return
-            else:
-                launch_spec = build_launch_command(entry, options, ENGINES, LOG, prepare_profile=False)
             if launch_spec is None:
                 LOG.warning('Refusing to launch entry %s because no validated launch command could be built', getattr(entry, 'id', 'unknown'))
                 if hasattr(self, 'show_overlay_notification'):
