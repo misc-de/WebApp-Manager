@@ -16,7 +16,7 @@ from PIL import Image, UnidentifiedImageError
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, normalize_icon_bytes_to_png, normalize_icon_to_png
-from webapp_constants import ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY
+from webapp_constants import ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_VALUE_KEY
 from input_validation import DESKTOP_CHROME_USER_AGENT, MAX_ICON_FILE_SIZE, build_safe_slug, candidate_urls_for_input, is_structurally_valid_url, validate_icon_source_path
 from browser_profiles import get_profile_size_bytes
 from i18n import t
@@ -26,6 +26,46 @@ LOG = get_logger(__name__)
 
 
 class DetailPageIconMixin:
+    def _icon_request_user_agent(self):
+        configured = str(self._get_option_value(USER_AGENT_VALUE_KEY) or '').strip()
+        return configured or DESKTOP_CHROME_USER_AGENT
+
+    def _registrable_domain_host(self, host):
+        host = (host or '').lower().strip().strip('.')
+        if not host or host == 'localhost':
+            return ''
+        if re.fullmatch(r'\d{1,3}(?:\.\d{1,3}){3}', host):
+            return ''
+        labels = [label for label in host.split('.') if label]
+        if len(labels) < 2:
+            return ''
+
+        multi_part_suffixes = {
+            ('ac', 'uk'),
+            ('co', 'in'),
+            ('co', 'jp'),
+            ('co', 'kr'),
+            ('co', 'nz'),
+            ('co', 'uk'),
+            ('co', 'za'),
+            ('com', 'au'),
+            ('com', 'br'),
+            ('com', 'cn'),
+            ('com', 'hk'),
+            ('com', 'mx'),
+            ('com', 'sa'),
+            ('com', 'sg'),
+            ('com', 'tr'),
+            ('com', 'tw'),
+            ('gov', 'uk'),
+            ('net', 'au'),
+            ('org', 'au'),
+            ('org', 'uk'),
+        }
+        if len(labels) >= 3 and tuple(labels[-2:]) in multi_part_suffixes:
+            return '.'.join(labels[-3:])
+        return '.'.join(labels[-2:])
+
     def _has_custom_icon(self):
         icon_ref = (self._icon_path() or '').strip()
         if not icon_ref:
@@ -684,6 +724,32 @@ class DetailPageIconMixin:
                 return urljoin(base_url, href_value)
         return None
 
+    def _extract_favicon_asset_candidates(self, html, base_url):
+        candidates = []
+        pattern = re.compile(r'["\']([^"\']*favicon[^"\']*)["\']', re.IGNORECASE)
+        order = 0
+        for match in pattern.finditer(str(html or '')):
+            href_value = str(match.group(1) or '').strip()
+            if not href_value:
+                continue
+            lowered = href_value.lower()
+            if not (
+                lowered.endswith(('.svg', '.png', '.ico', '.webp', '.jpg', '.jpeg', '.avif'))
+                or 'favicon?' in lowered
+                or 'favicon.' in lowered
+                or '/favicon' in lowered
+            ):
+                continue
+            order += 1
+            candidates.append(
+                self._make_icon_candidate(
+                    urljoin(base_url, href_value),
+                    source_kind='root_fallback',
+                    order=order,
+                )
+            )
+        return candidates
+
     def _extract_manifest_icon_candidates(self, manifest_text, manifest_url):
         try:
             manifest = json.loads(manifest_text)
@@ -776,7 +842,7 @@ class DetailPageIconMixin:
         return candidates
 
     def _download_image_bytes(self, url):
-        request = urllib.request.Request(url, headers={'User-Agent': DESKTOP_CHROME_USER_AGENT, 'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', 'Connection': 'close'})
+        request = urllib.request.Request(url, headers={'User-Agent': self._icon_request_user_agent(), 'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', 'Connection': 'close'})
         with urllib.request.urlopen(request, timeout=10) as response:
             content_length = response.headers.get('Content-Length')
             if content_length:
@@ -798,6 +864,9 @@ class DetailPageIconMixin:
             hosts.append(host)
         if host.startswith('www.'):
             hosts.append(host[4:])
+        registrable = self._registrable_domain_host(host)
+        if registrable:
+            hosts.append(registrable)
         return [item for index, item in enumerate(hosts) if item and item not in hosts[:index]]
 
     def _special_icon_fallback_candidates(self, url):
@@ -846,10 +915,14 @@ class DetailPageIconMixin:
                 add_candidate(urlunparse(normalized._replace(path=parent_path)))
             add_candidate(urlunparse(normalized._replace(path='/')))
 
+        registrable = self._registrable_domain_host(parsed.hostname or '')
+        if registrable and registrable != (parsed.hostname or '').lower().strip():
+            add_candidate(urlunparse(normalized._replace(netloc=registrable, path='/', params='', query='', fragment='')))
+
         return candidates
 
     def _download_text_response(self, url, accept_header, timeout=8):
-        request = urllib.request.Request(url, headers={'User-Agent': DESKTOP_CHROME_USER_AGENT, 'Accept': accept_header, 'Accept-Language': 'en-US,en;q=0.9', 'Connection': 'close'})
+        request = urllib.request.Request(url, headers={'User-Agent': self._icon_request_user_agent(), 'Accept': accept_header, 'Accept-Language': 'en-US,en;q=0.9', 'Connection': 'close'})
         with urllib.request.urlopen(request, timeout=timeout) as response:
             content_type = response.headers.get_content_type()
             content_length = response.headers.get('Content-Length')
@@ -891,6 +964,7 @@ class DetailPageIconMixin:
             if base_href:
                 document_base_url = base_href
             primary_icon_candidates.extend(self._extract_icon_candidates(html, document_base_url))
+            primary_icon_candidates.extend(self._extract_favicon_asset_candidates(html, document_base_url))
             manifest_url = self._extract_manifest_url(html, document_base_url)
             if manifest_url:
                 try:
@@ -1038,14 +1112,19 @@ class DetailPageIconMixin:
         self.save_desktop_file()
 
     def _load_icon_from_url(self, url):
-        for candidate_url in candidate_urls_for_input(url, prefer_https=True, include_http_fallback=True):
-            try:
-                path = self._download_favicon(candidate_url)
-                if path and Path(path).exists():
-                    GLib.idle_add(self._apply_downloaded_icon, str(path))
-                    return
-            except (OSError, ValueError, urllib.error.URLError) as error:
-                LOG.debug('Failed to download favicon for %s: %s', candidate_url, error)
+        try:
+            for candidate_url in candidate_urls_for_input(url, prefer_https=True, include_http_fallback=True):
+                try:
+                    path = self._download_favicon(candidate_url)
+                    if path and Path(path).exists():
+                        GLib.idle_add(self._apply_downloaded_icon, str(path))
+                        return
+                except (OSError, ValueError, urllib.error.URLError) as error:
+                    LOG.debug('Failed to download favicon for %s: %s', candidate_url, error)
+                except Exception as error:
+                    LOG.warning('Unexpected error while downloading favicon for %s: %s', candidate_url, error, exc_info=True)
+        except Exception as error:
+            LOG.warning('Unexpected icon download failure for %s: %s', url, error, exc_info=True)
         GLib.idle_add(self._finish_icon_download, t('icon_page_status_download_failed'))
 
     def _finish_icon_download(self, status_text=None):

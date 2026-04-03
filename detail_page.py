@@ -683,7 +683,7 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         value = (value or '').strip()
         if not value or value in {'http://', 'https://'}:
             return False
-        if ' ' in value or value.endswith(('.', ':', '/', '?', '#')):
+        if ' ' in value or value.endswith(('.', ':', '?', '#')):
             return False
         if not is_structurally_valid_url(value):
             return False
