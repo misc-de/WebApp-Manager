@@ -5,12 +5,26 @@ from i18n import t
 class MainWindowNotificationsMixin:
     def _show_busy(self, message=None):
             self.busy_label.set_text(message or t('loading'))
+            self.busy_overlay.remove_css_class('startup-busy')
+            self.busy_label.remove_css_class('startup-busy-label')
+            self.busy_spinner.set_size_request(32, 32)
             self.busy_overlay.set_visible(True)
             self.busy_spinner.start()
 
     def _hide_busy(self):
             self.busy_spinner.stop()
             self.busy_overlay.set_visible(False)
+            self.busy_overlay.remove_css_class('startup-busy')
+            self.busy_label.remove_css_class('startup-busy-label')
+            self.busy_spinner.set_size_request(32, 32)
+
+    def _show_startup_busy(self):
+            self.busy_label.set_text(t('startup_profile_loading'))
+            self.busy_overlay.add_css_class('startup-busy')
+            self.busy_label.add_css_class('startup-busy-label')
+            self.busy_spinner.set_size_request(64, 64)
+            self.busy_overlay.set_visible(True)
+            self.busy_spinner.start()
 
     def _cancel_global_toast_timeout(self):
             if getattr(self, 'global_toast_timeout_id', 0):
@@ -32,4 +46,3 @@ class MainWindowNotificationsMixin:
             self.global_toast_label.set_text(text)
             self.global_toast_revealer.set_reveal_child(True)
             self.global_toast_timeout_id = GLib.timeout_add(timeout_ms, self._hide_global_toast)
-

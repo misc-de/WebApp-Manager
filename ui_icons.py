@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from gi.repository import Gdk, Gtk, GLib
 
+from app_identity import APP_ICON_NAME
 from option_config import overview_status_definitions
 
 APP_DIR = Path(__file__).resolve().parent
@@ -15,7 +16,7 @@ def load_icon_paintable(icon_path: Path):
         return None
 
 
-def create_image_from_ref(icon_ref: str, pixel_size: int = 16, fallback_icon: str = 'applications-internet-symbolic'):
+def create_image_from_ref(icon_ref: str, pixel_size: int = 16, fallback_icon: str = APP_ICON_NAME):
     icon_ref = (icon_ref or '').strip()
     if icon_ref:
         icon_path = Path(icon_ref).expanduser()

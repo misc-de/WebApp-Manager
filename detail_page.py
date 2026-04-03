@@ -50,6 +50,7 @@ from icon_pipeline import get_managed_icon_path, normalize_icon_bytes_to_png, no
 from webapp_constants import (
     APPLICATIONS_DIR,
     ADDRESS_KEY,
+    DESKTOP_NAME_SOURCE_KEY,
     ICON_PATH_KEY,
     USER_AGENT_NAME_KEY,
     USER_AGENT_VALUE_KEY,
@@ -362,6 +363,10 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self.title_entry.set_text(entry.title or '')
         self.title_entry.set_hexpand(True)
         self.title_entry.connect('changed', self.on_name_changed)
+        self.title_entry.set_icon_from_icon_name(Gtk.EntryIconPosition.SECONDARY, 'selection-mode-symbolic')
+        self.title_entry.set_icon_tooltip_text(Gtk.EntryIconPosition.SECONDARY, t('desktop_name_source_use_name'))
+        self.title_entry.set_icon_activatable(Gtk.EntryIconPosition.SECONDARY, True)
+        self.title_entry.connect('icon-press', self.on_desktop_name_icon_pressed, 'title')
         self.title_label = Gtk.Label(label=t('label_name'), halign=Gtk.Align.START)
         self.grid.attach(self.title_label, 0, 0, 1, 1)
         self.grid.attach(self.title_entry, 1, 0, 1, 1)
@@ -371,6 +376,10 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self.description_entry.set_text(entry.description or '')
         self.description_entry.set_hexpand(True)
         self.description_entry.connect('changed', self.on_description_changed)
+        self.description_entry.set_icon_from_icon_name(Gtk.EntryIconPosition.SECONDARY, 'selection-mode-symbolic')
+        self.description_entry.set_icon_tooltip_text(Gtk.EntryIconPosition.SECONDARY, t('desktop_name_source_use_description'))
+        self.description_entry.set_icon_activatable(Gtk.EntryIconPosition.SECONDARY, True)
+        self.description_entry.connect('icon-press', self.on_desktop_name_icon_pressed, 'description')
         self.description_label = Gtk.Label(label=t('label_description'), halign=Gtk.Align.START)
         self.grid.attach(self.description_label, 0, 1, 1, 1)
         self.grid.attach(self.description_entry, 1, 1, 1, 1)
@@ -579,6 +588,7 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self._build_asset_page('css')
         self._build_asset_page('javascript')
         self.refresh_icon_preview()
+        self._update_desktop_name_source_buttons()
         self._update_export_button_state()
         self._update_browser_dependent_controls()
         self.page_stack.set_visible_child_name('main')
@@ -956,6 +966,49 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self.entry.description = new_description
         self.db.update_entry(self.entry.id, description=new_description)
         self._update_export_button_state()
+        if self._desktop_name_source() == 'description':
+            self.save_desktop_file()
+
+    def _desktop_name_source(self):
+        value = str(self._get_option_value(DESKTOP_NAME_SOURCE_KEY) or 'title').strip().lower()
+        if value not in {'title', 'description'}:
+            return 'title'
+        return value
+
+    def _update_desktop_name_source_buttons(self):
+        icons_visible = bool(getattr(self.entry, 'active', False))
+        source = self._desktop_name_source()
+        icon_states = (
+            (getattr(self, 'title_entry', None), source == 'title', t('desktop_name_source_use_name')),
+            (getattr(self, 'description_entry', None), source == 'description', t('desktop_name_source_use_description')),
+        )
+        for entry, selected, tooltip in icon_states:
+            if entry is None:
+                continue
+            entry.set_icon_activatable(Gtk.EntryIconPosition.SECONDARY, icons_visible)
+            entry.set_icon_tooltip_text(Gtk.EntryIconPosition.SECONDARY, tooltip)
+            if not icons_visible:
+                entry.set_icon_from_icon_name(Gtk.EntryIconPosition.SECONDARY, None)
+                continue
+            if selected:
+                entry.set_icon_from_icon_name(Gtk.EntryIconPosition.SECONDARY, 'radio-checked-symbolic')
+            else:
+                entry.set_icon_from_icon_name(Gtk.EntryIconPosition.SECONDARY, 'radio-symbolic')
+
+    def on_desktop_name_source_clicked(self, _button, source):
+        normalized = str(source or '').strip().lower()
+        if normalized not in {'title', 'description'}:
+            return
+        if normalized != self._desktop_name_source():
+            self._set_option_value(DESKTOP_NAME_SOURCE_KEY, normalized)
+            self.save_desktop_file()
+        self._update_desktop_name_source_buttons()
+        self._update_export_button_state()
+
+    def on_desktop_name_icon_pressed(self, _entry, icon_pos, source):
+        if icon_pos != Gtk.EntryIconPosition.SECONDARY:
+            return
+        self.on_desktop_name_source_clicked(None, source)
 
     def on_address_changed(self, entry_widget):
         value = self._normalize_address_for_ui(entry_widget.get_text())

@@ -19,6 +19,7 @@ from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, n
 from webapp_constants import ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_VALUE_KEY
 from input_validation import DESKTOP_CHROME_USER_AGENT, MAX_ICON_FILE_SIZE, build_safe_slug, candidate_urls_for_input, is_structurally_valid_url, validate_icon_source_path
 from browser_profiles import get_profile_size_bytes
+from app_identity import APP_ICON_NAME
 from i18n import t
 from logger_setup import get_logger
 
@@ -71,7 +72,7 @@ class DetailPageIconMixin:
         if not icon_ref:
             return False
         if '/' not in icon_ref and '\\' not in icon_ref:
-            return icon_ref != 'applications-internet'
+            return icon_ref not in {'applications-internet', APP_ICON_NAME}
         return Path(icon_ref).exists()
 
     def _maybe_autofetch_icon(self, value):
@@ -394,7 +395,7 @@ class DetailPageIconMixin:
             image.set_size_request(size, size)
             return _append(image)
 
-        image = Gtk.Image.new_from_icon_name('applications-internet')
+        image = Gtk.Image.new_from_icon_name(APP_ICON_NAME)
         image.set_pixel_size(max(32, size - 16))
         image.set_size_request(size, size)
         return _append(image)
@@ -423,7 +424,7 @@ class DetailPageIconMixin:
 
     def _set_icon_page_preview_placeholder(self):
         self._clear_icon_page_preview_canvas()
-        placeholder = Gtk.Image.new_from_icon_name('applications-internet')
+        placeholder = Gtk.Image.new_from_icon_name(APP_ICON_NAME)
         placeholder.set_pixel_size(48)
         placeholder.set_size_request(64, 64)
         placeholder.set_halign(Gtk.Align.CENTER)

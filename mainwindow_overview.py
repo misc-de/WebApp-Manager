@@ -354,7 +354,7 @@ class MainWindowOverviewMixin:
         icon_frame.add_css_class('overview-icon-frame')
         icon_frame.set_halign(Gtk.Align.START)
         icon_frame.set_valign(Gtk.Align.START)
-        icon_frame.append(create_image_from_ref('', pixel_size=28, fallback_icon='applications-internet'))
+        icon_frame.append(create_image_from_ref('', pixel_size=28))
 
         icon_button = Gtk.Button()
         icon_button.add_css_class('flat')
@@ -619,9 +619,9 @@ class MainWindowOverviewMixin:
             icon_frame.remove(old_icon)
         icon_ref = self._get_options_dict(entry_id).get(ICON_PATH_KEY, '')
         if icon_ref:
-            new_icon = create_image_from_ref(icon_ref, pixel_size=40, fallback_icon='applications-internet')
+            new_icon = create_image_from_ref(icon_ref, pixel_size=40)
         else:
-            new_icon = create_image_from_ref('', pixel_size=28, fallback_icon='applications-internet')
+            new_icon = create_image_from_ref('', pixel_size=28)
         icon_frame.prepend(new_icon)
 
     def _set_profile_size_label(self, profile_size_label, entry_id):

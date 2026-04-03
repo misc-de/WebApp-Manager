@@ -14,7 +14,7 @@ from i18n import t
 from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, normalize_icon_to_png
 from input_validation import build_safe_slug, sanitize_desktop_value, validate_icon_source_path
 from logger_setup import get_logger
-from webapp_constants import ADDRESS_KEY, APP_MODE_KEY, COLOR_SCHEME_KEY, DEFAULT_ZOOM_KEY, ICON_PATH_KEY, OPTION_OPEN_LINKS_IN_TABS_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
+from webapp_constants import ADDRESS_KEY, APP_MODE_KEY, COLOR_SCHEME_KEY, DEFAULT_ZOOM_KEY, DESKTOP_NAME_SOURCE_KEY, ICON_PATH_KEY, OPTION_OPEN_LINKS_IN_TABS_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
 
 LOG = get_logger(__name__)
 ENGINES = available_engines()
@@ -375,8 +375,10 @@ class MainWindowEntriesMixin:
     def _schedule_profile_size_refresh(self, entry_id, profile_path, profile_size_label):
         if not profile_path:
             self._profile_size_cache[entry_id] = {'path': '', 'text': ''}
-            profile_size_label.set_text('')
-            profile_size_label.set_visible(False)
+            if profile_size_label is not None:
+                profile_size_label.set_text('')
+                profile_size_label.set_visible(False)
+            self._maybe_finish_startup_busy()
             return
         if entry_id in self._profile_size_pending:
             return
@@ -389,14 +391,36 @@ class MainWindowEntriesMixin:
                 size_text = ''
             self._profile_size_cache[entry_id] = {'path': profile_path, 'text': size_text}
             self._profile_size_pending.discard(entry_id)
-            current_entry = getattr(profile_size_label, '_entry_id', None)
-            current_path = getattr(profile_size_label, '_profile_path', '')
-            if current_entry == entry_id and current_path == profile_path:
+            current_entry = getattr(profile_size_label, '_entry_id', None) if profile_size_label is not None else None
+            current_path = getattr(profile_size_label, '_profile_path', '') if profile_size_label is not None else ''
+            if profile_size_label is not None and current_entry == entry_id and current_path == profile_path:
                 profile_size_label.set_text(size_text)
                 profile_size_label.set_visible(bool(size_text))
+            self._maybe_finish_startup_busy()
             return False
 
         GLib.idle_add(_compute, priority=GLib.PRIORITY_LOW)
+
+    def _maybe_finish_startup_busy(self):
+        if not getattr(self, '_startup_waiting_for_profile_sizes', False):
+            return
+        if self._profile_size_pending:
+            return
+        self._startup_waiting_for_profile_sizes = False
+        self._hide_busy()
+
+    def _start_startup_profile_size_sync(self):
+        self._startup_waiting_for_profile_sizes = True
+        scheduled = False
+        for index in range(self.entries_store.get_n_items()):
+            entry = self.entries_store.get_item(index)
+            profile_path = str(self._get_options_dict(entry.id).get(PROFILE_PATH_KEY) or '').strip()
+            if not profile_path:
+                continue
+            scheduled = True
+            self._schedule_profile_size_refresh(entry.id, profile_path, None)
+        if not scheduled:
+            self._maybe_finish_startup_busy()
 
     def _get_options_dict(self, entry_id, force_refresh=False):
         if not force_refresh:
@@ -528,6 +552,7 @@ class MainWindowEntriesMixin:
     def _finalize_startup_reconcile(self):
         self._reload_entries()
         self._run_startup_profile_cleanup()
+        self._start_startup_profile_size_sync()
 
     def _upsert_entry_from_file(self, file_data, existing_entry=None):
         title = (file_data.get('title') or '').strip()
@@ -563,6 +588,9 @@ class MainWindowEntriesMixin:
             option_updates[USER_AGENT_NAME_KEY] = file_data.get('user_agent_name', '')
         if file_data.get('user_agent_value') is not None:
             option_updates[USER_AGENT_VALUE_KEY] = file_data.get('user_agent_value', '')
+        desktop_name_source = str((file_data.get('options') or {}).get(DESKTOP_NAME_SOURCE_KEY, 'title') or 'title').strip().lower()
+        if desktop_name_source in {'title', 'description'}:
+            option_updates[DESKTOP_NAME_SOURCE_KEY] = desktop_name_source
         profile_family = self._browser_family_for_options({
             'EngineID': option_updates.get('EngineID', ''),
             'EngineName': option_updates.get('EngineName', ''),
@@ -624,6 +652,11 @@ class MainWindowEntriesMixin:
             'icon_path': bool(file_state.icon_path),
         }
         return db_values != file_values, db_values, file_values
+
+    def start_reconcile_desktop_files(self):
+        self._show_startup_busy()
+        GLib.idle_add(self.reconcile_desktop_files)
+        return False
 
     def reconcile_desktop_files(self):
         managed_files = list_managed_desktop_files(ENGINES)
@@ -738,6 +771,7 @@ class MainWindowEntriesMixin:
         if not self.reconcile_queue:
             self._finalize_startup_reconcile()
             return
+        self._hide_busy()
         conflict = self.reconcile_queue.pop(0)
         if conflict['type'] == 'orphan_file':
             text = t('reconcile_orphan_file', path=str(conflict['file']['path']), title=conflict['file'].get('title', ''))
