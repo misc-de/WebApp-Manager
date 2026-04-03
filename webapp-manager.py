@@ -178,6 +178,7 @@ class MainWindow(MainWindowWindowStateMixin, MainWindowLaunchExportMixin, MainWi
         self._import_cancel_requested = False
         self._import_total = 0
         self._startup_profile_cleanup_done = False
+        self._startup_waiting_for_profile_sizes = False
 
         self._adaptive_split_enabled = bool(
             hasattr(Adw, 'ToolbarView')
@@ -604,7 +605,7 @@ class WebAppManager(Adw.Application):
         win.present()
         if should_prevent_input_autofocus():
             schedule_neutral_focus(win, win._main_neutral_focus_target)
-        GLib.timeout_add(200, win.reconcile_desktop_files)
+        GLib.timeout_add(200, win.start_reconcile_desktop_files)
 
 
 app = WebAppManager()

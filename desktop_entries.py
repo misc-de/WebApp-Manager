@@ -22,6 +22,7 @@ from browser_profiles import (
     resolve_browser_command,
 )
 from custom_assets import chromium_runtime_extension_args
+from app_identity import APP_ICON_NAME
 from icon_pipeline import (
     _allowed_managed_icon_stems,
     _is_safe_managed_icon_path,
@@ -36,6 +37,7 @@ from webapp_constants import (
     APPLICATIONS_DIR,
     CHROMIUM_PROFILE_ROOT,
     COLOR_SCHEME_KEY,
+    DESKTOP_NAME_SOURCE_KEY,
     FIREFOX_ROOT,
     ICON_PATH_KEY,
     ICON_THEME_APPS_DIR,
@@ -150,6 +152,21 @@ def _window_identity_for_entry(entry) -> str:
     if entry_id not in (None, ''):
         return f'webapp-entry-{entry_id}'
     return 'webapp'
+
+
+def desktop_name_source(options_dict) -> str:
+    value = str((options_dict or {}).get(DESKTOP_NAME_SOURCE_KEY, 'title') or 'title').strip().lower()
+    if value not in {'title', 'description'}:
+        return 'title'
+    return value
+
+
+def desktop_display_name(entry, options_dict) -> str:
+    title = sanitize_desktop_value(getattr(entry, 'title', '') or '')[:200]
+    description = sanitize_desktop_value(getattr(entry, 'description', '') or '')[:200]
+    if desktop_name_source(options_dict) == 'description' and description:
+        return description
+    return title
 
 
 def build_launch_command(entry, options_dict, engines_list, logger, prepare_profile=False):
@@ -417,7 +434,10 @@ def parse_desktop_file(path, engines_list):
     except ValueError:
         entry_id = None
 
-    title = sanitize_desktop_value(section.get('Name', ''))[:200]
+    title = sanitize_desktop_value(section.get('X-WebApp-Title', section.get('Name', '')))[:200]
+    desktop_source = str(section.get('X-WebApp-DesktopNameSource', 'title') or 'title').strip().lower()
+    if desktop_source not in {'title', 'description'}:
+        desktop_source = 'title'
 
     if engine_id is None:
         engine_id = infer_engine_id_from_command(command, engines_list)
@@ -452,7 +472,7 @@ def parse_desktop_file(path, engines_list):
         'command': command,
         'profile_name': profile_name,
         'profile_path': profile_path,
-        'options': derived_options,
+        'options': {**derived_options, DESKTOP_NAME_SOURCE_KEY: desktop_source},
     }
 
 def is_managed_desktop_file(path, engines_list=None):
@@ -525,6 +545,8 @@ def _guard_target_path(target_path, engines_list, logger):
 def export_desktop_file(entry, options_dict, engines_list, logger):
     ensure_applications_dir()
     title = (entry.title or '').strip()
+    display_name = desktop_display_name(entry, options_dict)
+    display_source = desktop_name_source(options_dict)
     raw_address = (options_dict.get(ADDRESS_KEY, '') or '').strip()
     address = normalize_address(raw_address, options_dict.get(ONLY_HTTPS_KEY, '0') == '1')
     previous_profile_name = options_dict.get(PROFILE_NAME_KEY, '')
@@ -577,18 +599,20 @@ def export_desktop_file(entry, options_dict, engines_list, logger):
     mode_value = semantic_mode_from_options(options_dict)
     lines = [
         '[Desktop Entry]',
-        f'Name={sanitize_desktop_value(title)}',
+        f'Name={sanitize_desktop_value(display_name)}',
         f'Exec={exec_cmd}',
         'Type=Application',
         f"NoDisplay={'false' if active else 'true'}",
         f'ManagedBy={MANAGED_BY_VALUE}',
         f'EntryId={entry.id}',
         f'X-WebApp-Mode={mode_value}',
+        f'X-WebApp-Title={sanitize_desktop_value(title)}',
+        f'X-WebApp-DesktopNameSource={display_source}',
     ]
     if icon_field:
         lines.append(f'Icon={icon_field}')
     else:
-        lines.append('Icon=applications-internet')
+        lines.append(f'Icon={APP_ICON_NAME}')
     if window_identity:
         lines.append(f'StartupWMClass={window_identity}')
         lines.append(f'X-GNOME-WMClass={window_identity}')

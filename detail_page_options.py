@@ -370,6 +370,8 @@ class DetailPageOptionsMixin:
                     self.mode_dropdown.set_selected(self._current_mode_index())
             finally:
                 self._suspend_change_handlers = previous_suspend
+            if hasattr(self, '_update_desktop_name_source_buttons'):
+                self._update_desktop_name_source_buttons()
             self._refresh_profile_button_label()
             self._refresh_header_meta()
             self._update_browser_dependent_controls()
@@ -618,6 +620,8 @@ class DetailPageOptionsMixin:
     def on_switch_toggled(self, switch, pspec):
             self.entry.active = switch.get_active()
             self.db.update_entry(self.entry.id, active=bool(switch.get_active()))
+            if hasattr(self, '_update_desktop_name_source_buttons'):
+                self._update_desktop_name_source_buttons()
             self.save_desktop_file()
             GLib.idle_add(self._emit_visual_changed)
 

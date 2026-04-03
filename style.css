@@ -154,6 +154,22 @@ listview row:hover > box {
     border-radius: 16px;
 }
 
+.busy-overlay.startup-busy {
+    background: alpha(@window_bg_color, 0.86);
+    border: 1px solid alpha(@accent_bg_color, 0.22);
+    padding: 28px 34px;
+    border-radius: 22px;
+    min-width: 220px;
+    min-height: 150px;
+    box-shadow: 0 18px 38px alpha(black, 0.22);
+}
+
+.startup-busy-label {
+    font-size: 1.05em;
+    font-weight: 600;
+    opacity: 1;
+}
+
 .url-status-subtle {
     font-weight: 400;
     color: alpha(currentColor, 0.26);
@@ -177,7 +193,7 @@ listview row:hover > box {
 .overview-active-dot {
     min-width: 10px;
     min-height: 10px;
-    border-radius: 999px;
+    border-radius: 3px;
     background: alpha(currentColor, 0.25);
     border: 1px solid alpha(currentColor, 0.10);
     margin: 0;
