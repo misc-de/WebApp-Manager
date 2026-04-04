@@ -239,7 +239,7 @@ class DetailPageLayoutMixin:
                 self.desktop_tab_bar.set_margin_top(6 if compact else 10)
                 self.desktop_tab_bar.set_margin_start(4 if compact else 12)
                 self.desktop_tab_bar.set_margin_end(4 if compact else 12)
-                self.desktop_tab_bar.set_margin_bottom(8 if compact else 10)
+                self.desktop_tab_bar.set_margin_bottom(23 if compact else 10)
                 for button in self.desktop_tab_buttons.values():
                     button.set_hexpand(False)
                     button.set_halign(Gtk.Align.CENTER if compact else Gtk.Align.START)
