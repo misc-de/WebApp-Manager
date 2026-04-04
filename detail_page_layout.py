@@ -1,4 +1,4 @@
-from gi.repository import Gtk, GLib, Pango
+from gi.repository import Adw, Gtk, GLib, Pango
 
 from focus_guard import focus_neutral_widget, should_prevent_input_autofocus
 from logger_setup import get_logger
@@ -9,6 +9,16 @@ LOG = get_logger(__name__)
 
 class DetailPageLayoutMixin:
     def _adaptive_wrap_page(self, child, maximum_size=820, tightening_threshold=560):
+            if hasattr(Adw, 'Clamp'):
+                clamp = Adw.Clamp()
+                clamp.set_hexpand(True)
+                clamp.set_valign(Gtk.Align.START)
+                if hasattr(clamp, 'set_maximum_size'):
+                    clamp.set_maximum_size(maximum_size)
+                if hasattr(clamp, 'set_tightening_threshold'):
+                    clamp.set_tightening_threshold(tightening_threshold)
+                clamp.set_child(child)
+                return clamp
             return child
 
     def _effective_layout_width(self):
