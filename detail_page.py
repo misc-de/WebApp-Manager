@@ -534,6 +534,11 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
 
         self.detail_action_status = Gtk.Label(label='', halign=Gtk.Align.START)
         self.detail_action_status.set_xalign(0)
+        self.detail_action_status.set_hexpand(True)
+        self.detail_action_status.set_wrap(True)
+        self.detail_action_status.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.detail_action_status.set_lines(3)
+        self.detail_action_status.set_ellipsize(Pango.EllipsizeMode.END)
         self.detail_action_status.add_css_class('dim-label')
         self.detail_action_status.set_margin_top(0)
         self.detail_action_status.set_visible(False)
