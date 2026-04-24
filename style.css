@@ -5,27 +5,25 @@
 }
 
 .entry-card:hover {
-    background: alpha(@accent_bg_color,0.08);
+    background: alpha(@accent_bg_color, 0.08);
 }
 
-.destructive-action {
+.wam-destructive {
     background-color: #f64646;
     color: white;
     border-radius: 6px;
     padding: 6px 12px;
 }
 
-.destructive-action:hover {
+.wam-destructive:hover {
     background-color: #e53939;
 }
+
 .icon-tile {
     border-radius: 12px;
     min-width: 72px;
     min-height: 72px;
     padding: 8px;
-}
-
-.icon-tile {
     border: 1px solid alpha(currentColor, 0.15);
 }
 
@@ -37,6 +35,7 @@
 .entry-subtitle {
     font-size: 0.88em;
     opacity: 0.78;
+    margin-top: 12px;
 }
 
 
@@ -52,6 +51,7 @@
     font-size: 0.72em;
     opacity: 0.75;
     margin-top: 2px;
+    min-width: 72px;
 }
 
 
@@ -76,13 +76,6 @@
     background-color: #e3b836;
 }
 
-.engine-indicator {
-    min-width: 26px;
-    min-height: 26px;
-    padding-left: 6px;
-    margin-top: 2px;
-}
-
 listview row:selected,
 listview row:selected:focus,
 listview row:selected:hover {
@@ -93,6 +86,12 @@ listview row:focus,
 listview row:focus-within {
     outline: none;
     box-shadow: none;
+}
+
+listview row:focus-visible > box,
+listview row:focus-visible > .entry-card {
+    box-shadow: inset 0 0 0 2px alpha(@accent_bg_color, 0.55);
+    border-radius: 8px;
 }
 
 
@@ -129,22 +128,9 @@ listview row:hover > box {
     margin-top: 2px;
 }
 
-.entry-subtitle {
-    margin-top: 12px;
-}
-
-.overview-status-icon {
-    margin-top: 2px;
-}
-
 .overview-engine-icon {
     margin-top: 2px;
     margin-bottom: 2px;
-}
-
-.profile-size-label {
-    margin-top: 2px;
-    min-width: 72px;
 }
 
 
@@ -204,18 +190,8 @@ listview row:hover > box {
     border-color: alpha(#33d17a, 0.55);
 }
 
-.overview-active-dot.inactive {
-    background: alpha(currentColor, 0.22);
-    border-color: alpha(currentColor, 0.10);
-}
-
 .overview-title {
     font-size: 0.88em;
-}
-
-.overview-title-button {
-    padding: 0;
-    margin: 0;
 }
 
 .overview-icon-button {
@@ -280,11 +256,7 @@ listview row:hover > box {
   color: alpha(currentColor, 0.65);
 }
 
-.inline-editor-light text {
-  background-color: @view_bg_color;
-  color: @view_fg_color;
-}
-
+.inline-editor-light text,
 .inline-editor-dark text {
   background-color: @view_bg_color;
   color: @view_fg_color;
@@ -319,8 +291,8 @@ listview row:hover > box {
 }
 
 .detail-tab-button {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: alpha(currentColor, 0.06);
+  border: 1px solid alpha(currentColor, 0.04);
   min-height: 36px;
   border-radius: 999px;
   box-shadow: none;
@@ -329,7 +301,7 @@ listview row:hover > box {
 }
 
 .detail-tab-button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: alpha(currentColor, 0.1);
   color: @theme_fg_color;
 }
 
@@ -353,9 +325,4 @@ listview row:hover > box {
 .detail-tab-button:checked:focus,
 .detail-tab-button:checked:focus-visible {
   box-shadow: 0 0 0 2px alpha(@theme_selected_fg_color, 0.18);
-}
-
-
-.detail-desktop-tab-offset {
-  margin-left: 0;
 }

@@ -16,7 +16,7 @@ from browser_option_logic import (
     normalize_option_rows,
     supported_browser_option_keys,
 )
-from detail_page_option_state import (
+from detail_page.option_state import (
     coerce_option_updates,
     configured_mode_values_for_engine,
     current_mode_value,
@@ -465,6 +465,8 @@ class FirefoxProfileOptionTests(unittest.TestCase):
                 'id': 'swipe-gestures@de.cais',
                 'marker_file': '.webapp_secure_swipe_extension_id',
                 'bundle_path': '',
+                'dev_bundle_path': '',
+                'allow_unsigned_local_bundle': False,
                 'download_url': 'https://example.invalid/swipe.xpi',
             }
             with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), \

@@ -6,7 +6,7 @@ and JavaScript customizations are actually applied inside managed browser profil
 Serve the folder locally so the pages are reachable over `http://`:
 
 ```bash
-python3 -m http.server 8000 -d manual_test_pages
+python3 -m http.server 8000 -d tests/manual
 ```
 
 Then use one of these addresses in a WebApp entry:

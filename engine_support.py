@@ -63,8 +63,14 @@ def configured_engines() -> list[EngineDefinition]:
     return [EngineDefinition(int(engine['id']), engine['name'], engine.get('command', '')) for engine in raw_engines]
 
 
+_AVAILABLE_ENGINES_CACHE: list[dict] | None = None
+
+
 def available_engines() -> list[dict]:
-    return [engine.__dict__.copy() for engine in configured_engines() if engine_available(engine)]
+    global _AVAILABLE_ENGINES_CACHE
+    if _AVAILABLE_ENGINES_CACHE is None:
+        _AVAILABLE_ENGINES_CACHE = [engine.__dict__.copy() for engine in configured_engines() if engine_available(engine)]
+    return [dict(engine) for engine in _AVAILABLE_ENGINES_CACHE]
 
 
 def engine_icon_name(engine_name: str) -> str:

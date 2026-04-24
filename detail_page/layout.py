@@ -112,6 +112,7 @@ class DetailPageLayoutMixin:
                 (self.engine_label, self.engine_dropdown),
                 (self.user_agent_label, self.user_agent_dropdown),
                 (self.mode_label, self.mode_dropdown),
+                (self.mode_desktop_label, self.mode_desktop_dropdown),
                 (self.color_scheme_label, self.color_scheme_dropdown),
                 (self.default_zoom_label, self.default_zoom_dropdown),
             ]

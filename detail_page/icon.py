@@ -185,7 +185,7 @@ class DetailPageIconMixin:
 
         self.icon_delete_button = Gtk.Button(label=t('icon_action_delete'))
         self.icon_delete_button.set_vexpand(False)
-        self.icon_delete_button.add_css_class('destructive-action')
+        self.icon_delete_button.add_css_class('wam-destructive')
         self.icon_delete_button.connect('clicked', self.on_icon_delete_clicked)
         self.icon_page_content.append(self.icon_delete_button)
         self._icon_page_buttons = [self.icon_download_button, self.icon_upload_button, self.icon_delete_button]

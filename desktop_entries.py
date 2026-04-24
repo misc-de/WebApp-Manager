@@ -11,7 +11,17 @@ from input_validation import (
     normalize_address,
     sanitize_desktop_value,
 )
-from browser_option_logic import apply_semantic_mode, normalize_option_dict, project_options_for_family, semantic_mode_from_options
+from browser_option_logic import (
+    apply_semantic_mode,
+    browser_family_for_command,
+    desktop_mode_value,
+    mobile_mode_value,
+    normalize_option_dict,
+    per_form_factor_modes_differ,
+    project_options_for_family,
+    semantic_mode_from_options,
+)
+from launcher_wrapper import delete_wrapper, wrapper_path_for_slug, write_wrapper
 from browser_profiles import (
     append_unique_csv_arg,
     append_user_agent_argument,
@@ -54,18 +64,6 @@ from webapp_constants import (
 MANAGED_BY_VALUE = t('managed_by')
 
 
-def _browser_family_for_command(command: str) -> str:
-    lowered = (command or '').strip().lower()
-    if 'firefox' in lowered:
-        return 'firefox'
-    if 'chromium' in lowered:
-        return 'chromium'
-    if 'chrome' in lowered:
-        return 'chrome'
-    return 'generic'
-
-
-
 def _chromium_launch_args_for_mode(mode_value: str, address: str, previous_session_enabled: bool) -> list[str]:
     mode = (mode_value or 'standard').strip().lower()
     if mode == 'kiosk':
@@ -93,7 +91,7 @@ def _generic_launch_args_for_mode(address: str, previous_session_enabled: bool) 
 
 
 def _stored_profile_info(configured_command: str, stored_profile_name: str = '', stored_profile_path: str = ''):
-    family = _browser_family_for_command(configured_command)
+    family = browser_family_for_command(configured_command)
     profile_path = ''
     profile_name = (stored_profile_name or '').strip()
     if stored_profile_path:
@@ -169,7 +167,7 @@ def desktop_display_name(entry, options_dict) -> str:
     return title
 
 
-def build_launch_command(entry, options_dict, engines_list, logger, prepare_profile=False):
+def build_launch_command(entry, options_dict, engines_list, logger, prepare_profile=False, mode_override=None):
     title = (getattr(entry, 'title', '') or '').strip()
     raw_address = (options_dict.get(ADDRESS_KEY, '') or '').strip()
     address = normalize_address(raw_address, options_dict.get(ONLY_HTTPS_KEY, '0') == '1')
@@ -204,7 +202,7 @@ def build_launch_command(entry, options_dict, engines_list, logger, prepare_prof
         )
 
     exec_parts = [engine_command]
-    mode_value = semantic_mode_from_options(merged_options)
+    mode_value = mode_override if mode_override else semantic_mode_from_options(merged_options)
     kiosk_mode = mode_value == 'kiosk'
     app_mode = mode_value in {'app', 'seamless'}
     frameless = mode_value == 'seamless'
@@ -509,6 +507,11 @@ def delete_managed_entry_artifacts(entry_id, title, engines_list, logger, keep_p
         except OSError as error:
             logger.error('Failed to delete managed desktop file %s: %s', desktop_path, error)
 
+        wrapper_slug = build_safe_slug(desktop_data.get('title') or '')
+        if wrapper_slug and (not keep_path or wrapper_path_for_slug(wrapper_slug) != keep_path):
+            if delete_wrapper(wrapper_slug):
+                logger.info('Deleted launcher wrapper for slug %s', wrapper_slug)
+
         icon_path = (desktop_data.get('icon_path') or '').strip()
         if icon_path and ('/' in icon_path or '\\' in icon_path) and _is_safe_managed_icon_path(icon_path, entry_id, title):
             icon_resolved = Path(icon_path).resolve()
@@ -564,11 +567,30 @@ def export_desktop_file(entry, options_dict, engines_list, logger):
     if not _guard_target_path(target_path, engines_list, logger):
         return None
 
-    launch_spec = build_launch_command(entry, options_dict, engines_list, logger, prepare_profile=True)
-    if launch_spec is None:
+    mobile_mode = mobile_mode_value(options_dict)
+    desktop_mode = desktop_mode_value(options_dict)
+    mobile_spec = build_launch_command(entry, options_dict, engines_list, logger, prepare_profile=True, mode_override=mobile_mode)
+    if mobile_spec is None:
         delete_managed_entry_artifacts(entry.id, title, engines_list, logger, delete_profiles=False, stored_profile_path=previous_profile_path, stored_profile_name=previous_profile_name)
         return None
-    exec_cmd = shlex.join(launch_spec['argv'])
+    if desktop_mode == mobile_mode:
+        desktop_spec = mobile_spec
+    else:
+        desktop_spec = build_launch_command(entry, options_dict, engines_list, logger, prepare_profile=False, mode_override=desktop_mode)
+        if desktop_spec is None:
+            desktop_spec = mobile_spec
+
+    slug = build_safe_slug(title)
+    if slug and mobile_spec['argv'] != desktop_spec['argv']:
+        wrapper_path = write_wrapper(slug, mobile_spec['argv'], desktop_spec['argv'])
+        exec_cmd = shlex.quote(str(wrapper_path))
+        logger.info('Wrote launcher wrapper %s', wrapper_path)
+    else:
+        exec_cmd = shlex.join(mobile_spec['argv'])
+        if slug:
+            delete_wrapper(slug)
+
+    launch_spec = mobile_spec
     profile_info = launch_spec['profile_info']
     address = launch_spec['normalized_address']
     window_identity = sanitize_desktop_value(launch_spec.get('window_identity', ''))
@@ -596,7 +618,7 @@ def export_desktop_file(entry, options_dict, engines_list, logger):
 
     active = bool(entry.active)
 
-    mode_value = semantic_mode_from_options(options_dict)
+    mode_value = mobile_mode
     lines = [
         '[Desktop Entry]',
         f'Name={sanitize_desktop_value(display_name)}',

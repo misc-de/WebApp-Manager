@@ -11,7 +11,13 @@ from browser_option_registry import (
     supported_option_keys as registry_supported_option_keys,
     visible_browser_option_specs,
 )
-from webapp_constants import OPTION_UI_LABEL_ALIASES, OPTION_UI_LABEL_KEYS
+from webapp_constants import (
+    MODE_DESKTOP_KEY,
+    MODE_MOBILE_KEY,
+    OPTION_UI_LABEL_ALIASES,
+    OPTION_UI_LABEL_KEYS,
+    SEMANTIC_MODE_VALUES,
+)
 
 BROWSER_STATE_PREFIX = '__BrowserState.'
 
@@ -34,6 +40,33 @@ def semantic_mode_from_options(options: dict | None) -> str:
     if normalized.get('App Mode') == '1':
         return 'app'
     return 'standard'
+
+
+def normalize_semantic_mode(value) -> str:
+    candidate = str(value or '').strip().lower()
+    return candidate if candidate in SEMANTIC_MODE_VALUES else 'standard'
+
+
+def mobile_mode_value(options: dict | None) -> str:
+    """Return the configured mobile-form-factor mode, defaulting to the entry's primary mode."""
+    normalized = normalize_option_dict(options)
+    explicit = normalized.get(MODE_MOBILE_KEY)
+    if explicit:
+        return normalize_semantic_mode(explicit)
+    return semantic_mode_from_options(normalized)
+
+
+def desktop_mode_value(options: dict | None) -> str:
+    """Return the configured desktop-form-factor mode, defaulting to the entry's primary mode."""
+    normalized = normalize_option_dict(options)
+    explicit = normalized.get(MODE_DESKTOP_KEY)
+    if explicit:
+        return normalize_semantic_mode(explicit)
+    return semantic_mode_from_options(normalized)
+
+
+def per_form_factor_modes_differ(options: dict | None) -> bool:
+    return mobile_mode_value(options) != desktop_mode_value(options)
 
 
 def apply_semantic_mode(options: dict | None, mode_value: str) -> dict[str, str]:

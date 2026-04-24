@@ -19,7 +19,7 @@ fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
 from detail_page import DetailPage
-from mainwindow_entries import MainWindowEntriesMixin
+from mainwindow import MainWindowEntriesMixin
 
 
 class _DummyStore:
@@ -126,7 +126,7 @@ class UrlReadinessTests(unittest.TestCase):
         detail_page = DetailPage.__new__(DetailPage)
         detail_page._get_option_value = lambda key: 'Custom Agent/1.0' if key == 'UserAgent' or key == 'UserAgentValue' else 'Custom Agent/1.0'
 
-        with mock.patch('detail_page_icon.USER_AGENT_VALUE_KEY', 'UserAgentValue'):
+        with mock.patch('detail_page.icon.USER_AGENT_VALUE_KEY', 'UserAgentValue'):
             self.assertEqual(DetailPage._icon_request_user_agent(detail_page), 'Custom Agent/1.0')
 
     def test_icon_request_user_agent_falls_back_to_default(self):

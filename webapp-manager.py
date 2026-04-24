@@ -69,65 +69,20 @@ from app_state import WebAppState
 from app_models import Entry
 from app_identity import APP_DIR, APP_ID, APP_ICON_NAME, APP_DB_PATH, APP_VERSION
 from manager_integration import ensure_manager_desktop_integration, headerbar_decoration_layout_without_icon
-from mainwindow_window_state import MainWindowWindowStateMixin
-from mainwindow_launch_export import MainWindowLaunchExportMixin
-from mainwindow_notifications import MainWindowNotificationsMixin
-from mainwindow_settings import MainWindowSettingsMixin
-from mainwindow_dialogs import MainWindowDialogsMixin
-from mainwindow_profile_import import MainWindowProfileImportMixin
-from mainwindow_overview import MainWindowOverviewMixin
-from mainwindow_entries import MainWindowEntriesMixin
+from mainwindow import (
+    MainWindowDialogsMixin,
+    MainWindowEntriesMixin,
+    MainWindowLaunchExportMixin,
+    MainWindowNotificationsMixin,
+    MainWindowOverviewMixin,
+    MainWindowProfileImportMixin,
+    MainWindowSettingsMixin,
+    MainWindowWindowStateMixin,
+)
 from ui_flow_state import main_neutral_focus_candidates
 
 Adw.init()
 LOG = get_logger(__name__)
-
-
-MANAGED_IMPORT_OPTION_KEYS = [
-    'Kiosk',
-    APP_MODE_KEY,
-    'Frameless',
-    OPTION_PRESERVE_SESSION_KEY,
-    OPTION_KEEP_IN_BACKGROUND_KEY,
-    OPTION_NOTIFICATIONS_KEY,
-    OPTION_OPEN_LINKS_IN_TABS_KEY,
-    OPTION_SWIPE_KEY,
-    OPTION_ADBLOCK_KEY,
-    ONLY_HTTPS_KEY,
-    OPTION_CLEAR_CACHE_ON_EXIT_KEY,
-    OPTION_CLEAR_COOKIES_ON_EXIT_KEY,
-    OPTION_DISABLE_AI_KEY,
-    OPTION_FORCE_PRIVACY_KEY,
-    COLOR_SCHEME_KEY,
-]
-
-
-def format_profile_size(profile_path: str) -> str:
-    try:
-        path = Path((profile_path or '').strip()).expanduser()
-        if not path.exists():
-            return '0 MB'
-        total = 0
-        if path.is_file():
-            total = path.stat().st_size
-        else:
-            for child in path.rglob('*'):
-                try:
-                    if child.is_file():
-                        total += child.stat().st_size
-                except OSError:
-                    continue
-        if total <= 0:
-            return ''
-        gb = total / (1024 ** 3)
-        if gb >= 1:
-            return f'{gb:.2f} GB'
-        mb = total / (1024 ** 2)
-        return f'{mb:.0f} MB'
-    except OSError:
-        return '0 MB'
-
-
 
 
 CONFIG = {}

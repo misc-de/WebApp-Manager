@@ -1,5 +1,6 @@
 import base64
 import json
+import threading
 from pathlib import Path
 
 from gi.repository import GLib, Gtk, Pango
@@ -18,26 +19,6 @@ from webapp_constants import ADDRESS_KEY, APP_MODE_KEY, COLOR_SCHEME_KEY, DEFAUL
 
 LOG = get_logger(__name__)
 ENGINES = available_engines()
-
-MANAGED_IMPORT_OPTION_KEYS = [
-    'Kiosk',
-    APP_MODE_KEY,
-    'Frameless',
-    'PreserveSession',
-    'KeepInBackground',
-    'Notifications',
-    OPTION_OPEN_LINKS_IN_TABS_KEY,
-    'SwipeNavigation',
-    'AdBlock',
-    'OnlyHTTPS',
-    'ClearCacheOnExit',
-    'ClearCookiesOnExit',
-    'DisableAI',
-    'ForcePrivacy',
-    COLOR_SCHEME_KEY,
-    DEFAULT_ZOOM_KEY,
-]
-
 
 def format_profile_size(profile_path: str) -> str:
     try:
@@ -99,8 +80,11 @@ class MainWindowEntriesMixin:
         entry_rows = self.db.list_entries()
         for row in entry_rows:
             self.entries_store.append(Entry(row[0], row[1], row[2], bool(row[3])))
-        for entry_id, option_key, option_value in self.db.list_option_values():
-            self._options_cache.setdefault(entry_id, {})[option_key] = option_value
+        rows_by_entry: dict[int, list] = {}
+        for row in self.db.list_option_values():
+            rows_by_entry.setdefault(row[1], []).append(row)
+        for entry_id, rows in rows_by_entry.items():
+            self._options_cache[entry_id] = dict(normalize_option_rows(rows))
 
     def _cleanup_detail_pages(self, pages):
         for child in pages:
@@ -384,11 +368,7 @@ class MainWindowEntriesMixin:
             return
         self._profile_size_pending.add(entry_id)
 
-        def _compute():
-            try:
-                size_text = format_profile_size(profile_path)
-            except OSError:
-                size_text = ''
+        def _apply(size_text):
             self._profile_size_cache[entry_id] = {'path': profile_path, 'text': size_text}
             self._profile_size_pending.discard(entry_id)
             current_entry = getattr(profile_size_label, '_entry_id', None) if profile_size_label is not None else None
@@ -399,7 +379,14 @@ class MainWindowEntriesMixin:
             self._maybe_finish_startup_busy()
             return False
 
-        GLib.idle_add(_compute, priority=GLib.PRIORITY_LOW)
+        def _worker():
+            try:
+                size_text = format_profile_size(profile_path)
+            except OSError:
+                size_text = ''
+            GLib.idle_add(_apply, size_text)
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _maybe_finish_startup_busy(self):
         if not getattr(self, '_startup_waiting_for_profile_sizes', False):
@@ -456,21 +443,6 @@ class MainWindowEntriesMixin:
         title.set_max_width_chars(40)
         return title
 
-    def _normalized_option_state(self, values, fallback=None):
-        normalized = {}
-        fallback = fallback or {}
-        for key in MANAGED_IMPORT_OPTION_KEYS:
-            value = values.get(key)
-            if value in (None, ''):
-                value = fallback.get(key)
-            if key == COLOR_SCHEME_KEY:
-                normalized[key] = (value or 'auto')
-            elif key == DEFAULT_ZOOM_KEY:
-                normalized[key] = str(value or '100')
-            else:
-                normalized[key] = '1' if str(value) == '1' else '0'
-        return normalized
-
     def _engine_for_options(self, options):
         try:
             target_id = int((options or {}).get('EngineID') or 0)
@@ -515,23 +487,6 @@ class MainWindowEntriesMixin:
         merged.update(updates)
         updates[browser_state_key(family)] = encode_browser_state(merged, family)
         return updates
-
-    def _reset_imported_option_state(self, entry_id):
-        reset_values = {
-            ADDRESS_KEY: '',
-            ICON_PATH_KEY: '',
-            'EngineID': '',
-            'EngineName': '',
-            USER_AGENT_NAME_KEY: '',
-            USER_AGENT_VALUE_KEY: '',
-            PROFILE_NAME_KEY: '',
-            PROFILE_PATH_KEY: '',
-            COLOR_SCHEME_KEY: 'auto',
-            DEFAULT_ZOOM_KEY: '100',
-        }
-        for key in MANAGED_IMPORT_OPTION_KEYS:
-            reset_values.setdefault(key, '0')
-        self._add_options(entry_id, reset_values)
 
     def _collect_active_profile_paths(self):
         active_paths = []

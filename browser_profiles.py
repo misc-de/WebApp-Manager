@@ -738,6 +738,17 @@ def _content_script_matches_for_address(address):
     return [f'{scheme}://{netloc}/*']
 
 
+def _assert_safe_zip_members(archive, tmp_root):
+    root = tmp_root.resolve()
+    for member in archive.infolist():
+        name = member.filename
+        if name.startswith('/') or '\\' in name or '..' in Path(name).parts:
+            raise ValueError(f'unsafe archive member path: {name!r}')
+        target = (root / name).resolve()
+        if target != root and root not in target.parents:
+            raise ValueError(f'archive member escapes extraction root: {name!r}')
+
+
 def _scope_swipe_extension_payload(xpi_bytes, address):
     matches = _content_script_matches_for_address(address)
     if not matches:
@@ -745,6 +756,7 @@ def _scope_swipe_extension_payload(xpi_bytes, address):
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_root = Path(tmp_dir)
         with zipfile.ZipFile(io.BytesIO(xpi_bytes)) as archive:
+            _assert_safe_zip_members(archive, tmp_root)
             archive.extractall(tmp_root)
         manifest_path = tmp_root / 'manifest.json'
         manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
