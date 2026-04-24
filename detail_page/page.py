@@ -99,11 +99,11 @@ from browser_option_logic import (
 )
 from option_config import option_names
 from browser_option_registry import OPTION_CATEGORY_ORDER, OPTION_CATEGORY_LABEL_KEYS, option_category
-from detail_page_layout import DetailPageLayoutMixin
-from detail_page_assets import DetailPageAssetsMixin
-from detail_page_options import DetailPageOptionsMixin
-from detail_page_icon import DetailPageIconMixin
-from detail_page_transfer import DetailPageTransferMixin
+from .layout import DetailPageLayoutMixin
+from .assets import DetailPageAssetsMixin
+from .options import DetailPageOptionsMixin
+from .icon import DetailPageIconMixin
+from .transfer import DetailPageTransferMixin
 
 LOG = get_logger(__name__)
 
@@ -449,9 +449,15 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         self.mode_values = []
         self.mode_dropdown = Gtk.DropDown.new_from_strings([t('mode_standard')])
         self.mode_dropdown.connect('notify::selected', self.on_mode_changed)
-        self.mode_label = Gtk.Label(label=t('label_mode'), halign=Gtk.Align.START)
+        self.mode_label = Gtk.Label(label=t('label_mode_mobile'), halign=Gtk.Align.START)
         self.grid.attach(self.mode_label, 0, 7, 1, 1)
         self.grid.attach(self.mode_dropdown, 1, 7, 1, 1)
+
+        self.mode_desktop_dropdown = Gtk.DropDown.new_from_strings([t('mode_standard')])
+        self.mode_desktop_dropdown.connect('notify::selected', self.on_desktop_mode_changed)
+        self.mode_desktop_label = Gtk.Label(label=t('label_mode_desktop'), halign=Gtk.Align.START)
+        self.grid.attach(self.mode_desktop_label, 0, 8, 1, 1)
+        self.grid.attach(self.mode_desktop_dropdown, 1, 8, 1, 1)
         self.refresh_mode_options()
 
         self.color_scheme_labels = [t('color_scheme_auto'), t('color_scheme_dark'), t('color_scheme_light')]
@@ -582,6 +588,7 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
 
         self._engine_option_widgets = [
             self.user_agent_label, self.user_agent_dropdown, self.mode_label, self.mode_dropdown,
+            self.mode_desktop_label, self.mode_desktop_dropdown,
             self.color_scheme_label, self.color_scheme_dropdown, self.default_zoom_label, self.default_zoom_dropdown, self.color_scheme_spacer,
             self.options_section, self.export_import_row, self.delete_profile_button,
         ]

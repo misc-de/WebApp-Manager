@@ -3,6 +3,8 @@ import threading
 from gi.repository import GLib, Gtk, Pango
 from browser_option_logic import (
     apply_semantic_mode,
+    desktop_mode_value,
+    mobile_mode_value,
     mode_option_keys,
     browser_family_for_engine,
     browser_state_key,
@@ -12,6 +14,7 @@ from browser_option_logic import (
     browser_managed_option_keys,
     normalize_option_dict,
     normalize_option_rows,
+    normalize_semantic_mode,
     option_ui_label,
     option_ui_label_markup,
     supported_browser_option_keys,
@@ -21,7 +24,7 @@ from browser_option_registry import OPTION_CATEGORY_ORDER, OPTION_CATEGORY_LABEL
 from browser_profiles import apply_profile_settings, ensure_browser_profile, firefox_extension_installed, read_profile_settings
 from desktop_entries import export_desktop_file, get_expected_desktop_path
 from distro_utils import is_furios_distribution
-from detail_page_option_state import (
+from .option_state import (
     coerce_option_updates,
     configured_mode_values_for_engine,
     current_mode_value,
@@ -40,6 +43,8 @@ from webapp_constants import (
     APP_MODE_KEY,
     COLOR_SCHEME_KEY,
     DEFAULT_ZOOM_KEY,
+    MODE_DESKTOP_KEY,
+    MODE_MOBILE_KEY,
     ONLY_HTTPS_KEY,
     OPTION_ADBLOCK_KEY,
     OPTION_DISABLE_AI_KEY,
@@ -189,6 +194,12 @@ class DetailPageOptionsMixin:
     def _current_mode_value(self):
             return current_mode_value(self._options_cache)
 
+    def _current_mobile_mode_value(self):
+            return mobile_mode_value(self._options_cache)
+
+    def _current_desktop_mode_value(self):
+            return desktop_mode_value(self._options_cache)
+
     def _current_mode_index(self):
             value = self._current_mode_value()
             try:
@@ -196,10 +207,21 @@ class DetailPageOptionsMixin:
             except ValueError:
                 return 0
 
+    def _index_for_mode_value(self, value):
+            try:
+                return self.mode_values.index(value)
+            except ValueError:
+                return 0
+
     def _apply_mode_value(self, mode_value):
+            mode_value = normalize_semantic_mode(mode_value)
             selected = {key: value for key, value in apply_semantic_mode({}, mode_value).items() if key in mode_option_keys()}
             for key, value in selected.items():
                 self._set_option_value(key, value)
+            self._set_option_value(MODE_MOBILE_KEY, mode_value)
+
+    def _apply_desktop_mode_value(self, mode_value):
+            self._set_option_value(MODE_DESKTOP_KEY, normalize_semantic_mode(mode_value))
 
     def on_mode_changed(self, dropdown, pspec):
             if self._suspend_change_handlers:
@@ -210,6 +232,17 @@ class DetailPageOptionsMixin:
             except (IndexError, TypeError):
                 mode_value = 'standard'
             self._apply_mode_value(mode_value)
+            self.save_desktop_file()
+
+    def on_desktop_mode_changed(self, dropdown, pspec):
+            if self._suspend_change_handlers:
+                return
+            index = dropdown.get_selected()
+            try:
+                mode_value = self.mode_values[index]
+            except (IndexError, TypeError):
+                mode_value = 'standard'
+            self._apply_desktop_mode_value(mode_value)
             self.save_desktop_file()
 
     def _build_engine_user_agents(self):
@@ -434,21 +467,29 @@ class DetailPageOptionsMixin:
             items = self._available_mode_items()
             self.mode_values = [value for value, _ in items]
             self.mode_labels = [label for _, label in items]
-            current_value = self._current_mode_value()
-            new_dropdown = Gtk.DropDown.new_from_strings(self.mode_labels or [t('mode_standard')])
-            new_dropdown.connect('notify::selected', self.on_mode_changed)
+            engine = self._get_current_engine()
+            mobile_current = self._current_mobile_mode_value()
+            desktop_current = self._current_desktop_mode_value()
+
+            new_mobile = Gtk.DropDown.new_from_strings(self.mode_labels or [t('mode_standard')])
+            new_mobile.connect('notify::selected', self.on_mode_changed)
             self.grid.remove(self.mode_dropdown)
-            self.mode_dropdown = new_dropdown
+            self.mode_dropdown = new_mobile
             self.grid.attach(self.mode_dropdown, 1, 7, 1, 1)
-            try:
-                selected_index = self.mode_values.index(current_value)
-            except ValueError:
-                selected_index = 0
+
+            new_desktop = Gtk.DropDown.new_from_strings(self.mode_labels or [t('mode_standard')])
+            new_desktop.connect('notify::selected', self.on_desktop_mode_changed)
+            self.grid.remove(self.mode_desktop_dropdown)
+            self.mode_desktop_dropdown = new_desktop
+            self.grid.attach(self.mode_desktop_dropdown, 1, 8, 1, 1)
+
             previous_suspend = self._suspend_change_handlers
             self._suspend_change_handlers = True
-            self.mode_dropdown.set_selected(selected_index)
+            self.mode_dropdown.set_selected(self._index_for_mode_value(mobile_current))
+            self.mode_desktop_dropdown.set_selected(self._index_for_mode_value(desktop_current))
             self._suspend_change_handlers = previous_suspend
-            self.mode_dropdown.set_sensitive(bool(self._get_current_engine()))
+            self.mode_dropdown.set_sensitive(bool(engine))
+            self.mode_desktop_dropdown.set_sensitive(bool(engine))
 
     def _options_dict(self):
             return dict(self._options_cache)

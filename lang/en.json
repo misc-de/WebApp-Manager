@@ -92,6 +92,8 @@
   "desktop_name_source_use_description": "Use description as desktop app label",
   "placeholder_address": "Enter an address",
   "label_mode": "Mode",
+  "label_mode_mobile": "Mode (Mobile)",
+  "label_mode_desktop": "Mode (Desktop)",
   "label_swipe_mode": "Runtime Mode",
   "mode_standard": "Standard",
   "mode_kiosk": "Kiosk",

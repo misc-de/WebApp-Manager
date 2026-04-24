@@ -57,11 +57,21 @@ def is_svg_support_missing_error(error):
     return SVG_CAIRO_MISSING_ERROR in str(error or '')
 
 
+def _block_external_svg_resource(url, *args, **kwargs):
+    raise ValueError(f'External resources in SVG icons are not allowed: {url}')
+
+
 def _render_svg_bytes_to_png(svg_bytes, target_path):
     if cairosvg is None:
         raise OSError(SVG_CAIRO_MISSING_ERROR)
     target_path.parent.mkdir(parents=True, exist_ok=True)
-    cairosvg.svg2png(bytestring=svg_bytes, write_to=str(target_path), output_width=256, output_height=256)
+    cairosvg.svg2png(
+        bytestring=svg_bytes,
+        write_to=str(target_path),
+        output_width=256,
+        output_height=256,
+        url_fetcher=_block_external_svg_resource,
+    )
     return target_path
 
 

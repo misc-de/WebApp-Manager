@@ -1,10 +1,48 @@
+import shutil
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from browser_option_logic import option_key_from_any
 from logger_setup import get_logger
 
 LOG = get_logger(__name__)
+
+SCHEMA_VERSION = 1
+
+
+def _migration_v1(cursor):
+    cursor.execute(
+        '''CREATE TABLE IF NOT EXISTS entries (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            title TEXT,
+                            description TEXT,
+                            active INTEGER DEFAULT 1
+                        )'''
+    )
+    cursor.execute(
+        '''CREATE TABLE IF NOT EXISTS options (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            entry_id INTEGER,
+                            option_key TEXT,
+                            option_value TEXT,
+                            FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
+                        )'''
+    )
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_options_entry_id ON options(entry_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_options_entry_key ON options(entry_id, option_key)')
+    cursor.execute(
+        '''DELETE FROM options
+           WHERE id NOT IN (
+               SELECT MAX(id) FROM options GROUP BY entry_id, option_key
+           )'''
+    )
+    cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_options_entry_key_unique ON options(entry_id, option_key)')
+
+
+MIGRATIONS = {
+    1: _migration_v1,
+}
 
 
 class Database:
@@ -18,37 +56,45 @@ class Database:
         self.conn.execute('PRAGMA journal_mode = WAL')
         self.conn.execute('PRAGMA synchronous = NORMAL')
         self.cursor = self.conn.cursor()
-        self.create_tables()
+        self.apply_migrations()
         self.canonicalize_option_keys()
 
-    def create_tables(self):
-        self.cursor.execute(
-            '''CREATE TABLE IF NOT EXISTS entries (
-                                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                title TEXT,
-                                description TEXT,
-                                active INTEGER DEFAULT 1
-                            )'''
-        )
-        self.cursor.execute(
-            '''CREATE TABLE IF NOT EXISTS options (
-                                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                entry_id INTEGER,
-                                option_key TEXT,
-                                option_value TEXT,
-                                FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
-                            )'''
-        )
-        self.cursor.execute('CREATE INDEX IF NOT EXISTS idx_options_entry_id ON options(entry_id)')
-        self.cursor.execute('CREATE INDEX IF NOT EXISTS idx_options_entry_key ON options(entry_id, option_key)')
-        self.cursor.execute(
-            '''DELETE FROM options
-               WHERE id NOT IN (
-                   SELECT MAX(id) FROM options GROUP BY entry_id, option_key
-               )'''
-        )
-        self.cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_options_entry_key_unique ON options(entry_id, option_key)')
-        self.conn.commit()
+    def _current_user_version(self):
+        return int(self.cursor.execute('PRAGMA user_version').fetchone()[0] or 0)
+
+    def _backup_before_migration(self, from_version, to_version):
+        if self.db_name in (':memory:', '') or not Path(self.db_name).exists():
+            return
+        timestamp = datetime.now().strftime('%Y%m%dT%H%M%S')
+        backup_path = Path(f'{self.db_name}.bak-v{from_version}-to-v{to_version}-{timestamp}')
+        try:
+            shutil.copy2(self.db_name, backup_path)
+            LOG.info('Database backup written to %s', backup_path)
+        except OSError as error:
+            LOG.warning('Failed to back up database before migration: %s', error)
+
+    def apply_migrations(self):
+        current = self._current_user_version()
+        if current >= SCHEMA_VERSION:
+            return
+        if current < SCHEMA_VERSION and current > 0:
+            self._backup_before_migration(current, SCHEMA_VERSION)
+        for version in range(current + 1, SCHEMA_VERSION + 1):
+            migration = MIGRATIONS.get(version)
+            if migration is None:
+                raise RuntimeError(f'Missing migration for schema version {version}')
+            try:
+                self.conn.execute('BEGIN')
+                migration(self.cursor)
+                self.cursor.execute(f'PRAGMA user_version = {int(version)}')
+                self.conn.commit()
+                LOG.info('Applied database migration to schema version %s', version)
+            except sqlite3.Error:
+                self.conn.rollback()
+                raise
+
+    def schema_version(self):
+        return self._current_user_version()
 
     def add_entry(self, title, description=''):
         try:
@@ -72,10 +118,19 @@ class Database:
             else:
                 rows = self.cursor.execute('SELECT id, entry_id, option_key, option_value FROM options WHERE entry_id=? ORDER BY id ASC', (entry_id,)).fetchall()
             grouped = {}
-            for row_id, current_entry_id, raw_key, raw_value in rows:
+            needs_rewrite = False
+            seen_pairs = set()
+            for _row_id, current_entry_id, raw_key, raw_value in rows:
                 key = self._canonical_option_key(raw_key)
+                raw_key_str = '' if raw_key is None else str(raw_key)
+                pair = (int(current_entry_id), key)
+                if key != raw_key_str or pair in seen_pairs:
+                    needs_rewrite = True
+                seen_pairs.add(pair)
                 bucket = grouped.setdefault(int(current_entry_id), {})
                 bucket[key] = '' if raw_value is None else str(raw_value)
+            if not needs_rewrite:
+                return
             self.conn.execute('BEGIN')
             if entry_id is None:
                 self.cursor.execute('DELETE FROM options')
@@ -123,7 +178,7 @@ class Database:
         return self.cursor.fetchall()
 
     def list_option_values(self):
-        self.cursor.execute('SELECT entry_id, option_key, option_value FROM options')
+        self.cursor.execute('SELECT id, entry_id, option_key, option_value FROM options')
         return self.cursor.fetchall()
 
     def get_entry(self, entry_id):
