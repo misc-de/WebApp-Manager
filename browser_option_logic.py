@@ -202,7 +202,7 @@ def default_browser_option_values(family: str) -> dict[str, str]:
     return dict(registry_default_option_values(family))
 
 
-def project_options_for_family(options: dict, family: str) -> dict[str, str]:
+def project_options_for_family(options: dict | None, family: str) -> dict[str, str]:
     normalized = normalize_option_dict(options)
     supported = supported_browser_option_keys(family)
     return {

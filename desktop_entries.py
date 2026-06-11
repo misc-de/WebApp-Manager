@@ -17,7 +17,6 @@ from browser_option_logic import (
     desktop_mode_value,
     mobile_mode_value,
     normalize_option_dict,
-    per_form_factor_modes_differ,
     project_options_for_family,
     semantic_mode_from_options,
 )
@@ -53,7 +52,6 @@ from webapp_constants import (
     ICON_THEME_APPS_DIR,
     ONLY_HTTPS_KEY,
     OPTION_DISABLE_AI_KEY,
-    OPTION_FORCE_PRIVACY_KEY,
     OPTION_PRESERVE_SESSION_KEY,
     PROFILE_NAME_KEY,
     PROFILE_PATH_KEY,
@@ -203,9 +201,6 @@ def build_launch_command(entry, options_dict, engines_list, logger, prepare_prof
 
     exec_parts = [engine_command]
     mode_value = mode_override if mode_override else semantic_mode_from_options(merged_options)
-    kiosk_mode = mode_value == 'kiosk'
-    app_mode = mode_value in {'app', 'seamless'}
-    frameless = mode_value == 'seamless'
     disable_ai = merged_options.get(OPTION_DISABLE_AI_KEY, '0') == '1'
     color_scheme = normalize_color_scheme(merged_options.get(COLOR_SCHEME_KEY, 'auto'))
     browser_family = profile_info.get('browser_family') if profile_info else ''
@@ -281,7 +276,7 @@ def _resolve_firefox_profile_reference(value: str) -> str:
     if not profiles_ini.exists():
         return ''
     parser = configparser.ConfigParser(interpolation=None)
-    parser.optionxform = str
+    parser.optionxform = str  # type: ignore[method-assign, assignment]  # keep .ini keys case-sensitive
     try:
         with open(profiles_ini, 'r', encoding='utf-8') as handle:
             parser.read_file(handle)
@@ -367,7 +362,7 @@ def infer_engine_id_from_command(command, engines_list):
 
 def parse_desktop_file(path, engines_list):
     parser = configparser.ConfigParser(interpolation=None)
-    parser.optionxform = str
+    parser.optionxform = str  # type: ignore[method-assign, assignment]  # keep .ini keys case-sensitive
     try:
         with open(path, 'r', encoding='utf-8') as file_handle:
             parser.read_file(file_handle)

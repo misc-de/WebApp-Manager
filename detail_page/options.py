@@ -7,12 +7,8 @@ from browser_option_logic import (
     mobile_mode_value,
     mode_option_keys,
     browser_family_for_engine,
-    browser_state_key,
-    build_family_option_state,
-    decode_browser_state,
     encode_browser_state,
     browser_managed_option_keys,
-    normalize_option_dict,
     normalize_option_rows,
     normalize_semantic_mode,
     option_ui_label,
@@ -35,9 +31,7 @@ from .option_state import (
     ui_boolean_option_active,
 )
 from i18n import t
-from input_validation import DESKTOP_CHROME_USER_AGENT
 from logger_setup import get_logger
-from option_config import option_names
 from webapp_constants import (
     ADDRESS_KEY,
     APP_MODE_KEY,

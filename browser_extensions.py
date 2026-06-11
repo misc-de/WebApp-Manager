@@ -137,8 +137,8 @@ def firefox_extension_installed(profile_dir, extension_name):
             # If Firefox has written a state file but the add-on is not active there,
             # do not treat a stale XPI alone as installed.
             return False
-        except (OSError, ValueError, json.JSONDecodeError) as error:
-            logger = None
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
     return any(path.exists() for path in [*managed['xpi_paths'], *(managed.get('legacy_xpi_paths') or [])])
 
 

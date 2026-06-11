@@ -12,7 +12,6 @@ Detection signals (strong, no heuristics):
 """
 from __future__ import annotations
 
-import os
 import shlex
 import stat
 from pathlib import Path

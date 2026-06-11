@@ -1,0 +1,31 @@
+# Tooling configuration for ruff (lint) and mypy (type check).
+# There is no build/packaging section yet — installation is still
+# `git clone` + `python3 main.py` (see CLAUDE.md "Known gaps").
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+# Keep ruff's default rule set (pyflakes `F` + the pycodestyle error subset).
+# E402 is ignored project-wide: PyGObject requires `gi.require_version(...)`
+# calls before `from gi.repository import ...`, which legitimately puts imports
+# after executable statements in many modules.
+extend-ignore = ["E402"]
+
+[tool.ruff.lint.per-file-ignores]
+# Packages re-export their public API through __init__, so unused-import is
+# expected there.
+"__init__.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.11"
+# This is a large, historically untyped GTK/PyGObject codebase. Keep mypy
+# lenient so it surfaces real errors instead of drowning in missing-stub noise.
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+check_untyped_defs = false
+# Test modules stub `logger_setup` by injecting a dummy module into sys.modules
+# (see CLAUDE.md); mypy cannot model that pattern, so type-checking is scoped to
+# the application code.
+exclude = ["^tests/"]

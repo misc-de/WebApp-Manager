@@ -2,7 +2,6 @@ import logging
 import sys
 import types
 import unittest
-from types import SimpleNamespace
 from unittest import mock
 
 

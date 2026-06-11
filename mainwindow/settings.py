@@ -655,7 +655,6 @@ class MainWindowSettingsMixin:
         self._set_titlebar_button_visibility(True, True)
 
     def _show_overview_header(self):
-        current_detail = self._overview_detail_visible_child()
         if self.search_visible:
             self._show_back_only_header()
             return

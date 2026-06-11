@@ -1,4 +1,4 @@
-from gi.repository import Adw, Gio, GLib, Gdk, Gtk, Pango
+from gi.repository import Adw, GLib, Gdk, Gtk, Pango
 
 from detail_page import DetailPage
 from engine_support import ENGINES, engine_icon_name
