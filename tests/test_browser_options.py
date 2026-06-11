@@ -310,7 +310,7 @@ class FirefoxProfileOptionTests(unittest.TestCase):
             unmanaged_profile = tmp_root / 'unmanaged'
             unmanaged_profile.mkdir(parents=True, exist_ok=True)
 
-            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root):
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root):
                 _write_firefox_user_js(
                     unmanaged_profile,
                     ProfileSettings(
@@ -343,7 +343,7 @@ class FirefoxProfileOptionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             profile_dir = Path(tmpdir)
 
-            with mock.patch('browser_profiles.is_furios_distribution', return_value=True):
+            with mock.patch('browser_settings.is_furios_distribution', return_value=True):
                 _write_firefox_user_js(
                     profile_dir,
                     ProfileSettings(
@@ -393,7 +393,7 @@ class FirefoxProfileOptionTests(unittest.TestCase):
             (external_profile / 'prefs.js').write_text('// existing profile\n', encoding='utf-8')
             (external_profile / 'cookies.sqlite').write_text('db', encoding='utf-8')
 
-            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root):
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root):
                 profile_info = ensure_browser_profile(
                     'Copied App',
                     'firefox',
@@ -421,7 +421,7 @@ class FirefoxProfileOptionTests(unittest.TestCase):
             (managed_profile / 'prefs.js').write_text('// delete me\n', encoding='utf-8')
             _write_managed_profile_marker(managed_profile, 'firefox')
 
-            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root):
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root):
                 delete_managed_browser_profiles('Regular App', logger, stored_profile_path=str(regular_profile))
                 delete_managed_browser_profiles('Managed App', logger, stored_profile_path=str(managed_profile))
 
@@ -446,10 +446,10 @@ class FirefoxProfileOptionTests(unittest.TestCase):
                 'bundle_path': '',
                 'download_url': 'https://example.invalid/swipe.xpi',
             }
-            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), \
-                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), \
-                mock.patch('browser_profiles.get_firefox_extension_config', return_value=config), \
-                mock.patch('browser_profiles.urllib.request.urlopen', return_value=self._FakeUrlopenResponse(payload)):
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), \
+                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root), \
+                mock.patch('browser_extensions.get_firefox_extension_config', return_value=config), \
+                mock.patch('browser_extensions.urllib.request.urlopen', return_value=self._FakeUrlopenResponse(payload)):
                 result = _sync_firefox_swipe_extension(
                     profile_dir,
                     True,
@@ -480,10 +480,10 @@ class FirefoxProfileOptionTests(unittest.TestCase):
                 'allow_unsigned_local_bundle': False,
                 'download_url': 'https://example.invalid/swipe.xpi',
             }
-            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), \
-                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), \
-                mock.patch('browser_profiles.get_firefox_extension_config', return_value=config), \
-                mock.patch('browser_profiles.urllib.request.urlopen', return_value=self._FakeUrlopenResponse(payload)):
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), \
+                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root), \
+                mock.patch('browser_extensions.get_firefox_extension_config', return_value=config), \
+                mock.patch('browser_extensions.urllib.request.urlopen', return_value=self._FakeUrlopenResponse(payload)):
                 result = _sync_firefox_swipe_extension(
                     profile_dir,
                     True,
@@ -518,10 +518,10 @@ class FirefoxProfileOptionTests(unittest.TestCase):
                 'bundle_path': '',
                 'download_url': 'https://example.invalid/swipe.xpi',
             }
-            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), \
-                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), \
-                mock.patch('browser_profiles.get_firefox_extension_config', return_value=config), \
-                mock.patch('browser_profiles.urllib.request.urlopen', return_value=self._FakeUrlopenResponse(payload)):
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), \
+                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root), \
+                mock.patch('browser_extensions.get_firefox_extension_config', return_value=config), \
+                mock.patch('browser_extensions.urllib.request.urlopen', return_value=self._FakeUrlopenResponse(payload)):
                 result = _sync_firefox_swipe_extension(
                     profile_dir,
                     True,
@@ -554,10 +554,10 @@ class FirefoxProfileOptionTests(unittest.TestCase):
                 'allow_unsigned_local_bundle': False,
             }
 
-            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), \
-                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), \
-                mock.patch('browser_profiles.get_firefox_extension_config', return_value=config), \
-                mock.patch('browser_profiles.urllib.request.urlopen', side_effect=urllib.error.URLError('offline')):
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), \
+                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root), \
+                mock.patch('browser_extensions.get_firefox_extension_config', return_value=config), \
+                mock.patch('browser_extensions.urllib.request.urlopen', side_effect=urllib.error.URLError('offline')):
                 result = _sync_firefox_swipe_extension(
                     profile_dir,
                     True,
@@ -579,7 +579,7 @@ class FirefoxProfileOptionTests(unittest.TestCase):
             local_bundle.parent.mkdir(parents=True, exist_ok=True)
             self._write_test_xpi(local_bundle, 'swipe-gestures@de.cais', signed=True)
 
-            with mock.patch('browser_profiles.__file__', str(module_path)):
+            with mock.patch('browser_extensions.__file__', str(module_path)):
                 resolved = _resolve_bundled_extension_path('extensions/swipe-gestures.xpi')
 
             self.assertEqual(resolved, local_bundle.resolve())
@@ -629,9 +629,9 @@ class FirefoxProfileOptionTests(unittest.TestCase):
                 'allow_unsigned_local_bundle': True,
             }
 
-            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), \
-                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), \
-                mock.patch('browser_profiles.get_firefox_extension_config', return_value=config):
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), \
+                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root), \
+                mock.patch('browser_extensions.get_firefox_extension_config', return_value=config):
                 result = _sync_firefox_swipe_extension(
                     profile_dir,
                     True,
