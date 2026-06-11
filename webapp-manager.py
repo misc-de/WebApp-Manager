@@ -62,7 +62,7 @@ from focus_guard import schedule_neutral_focus, should_prevent_input_autofocus
 from custom_assets import count_asset_references, detach_asset_from_entries, format_asset_date, import_custom_asset, list_custom_assets, remove_custom_asset
 from i18n import available_languages, get_app_config, get_configured_language_value, invalidate_i18n_cache, save_app_config, t
 from logger_setup import get_logger
-from engine_support import available_engines, engine_icon_name
+from engine_support import ENGINES, engine_icon_name
 from browser_profiles import inspect_profile_copy_source, read_profile_settings, rename_unused_managed_profile_directories
 from ui_icons import create_image_from_ref
 from app_state import WebAppState
@@ -86,7 +86,6 @@ LOG = get_logger(__name__)
 
 
 CONFIG = {}
-ENGINES = available_engines()
 css_provider = Gtk.CssProvider()
 try:
     css_provider.load_from_path(str(APP_DIR / 'style.css'))

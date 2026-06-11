@@ -1,14 +1,13 @@
 from gi.repository import Adw, Gio, GLib, Gdk, Gtk, Pango
 
 from detail_page import DetailPage
-from engine_support import available_engines, engine_icon_name
+from engine_support import ENGINES, engine_icon_name
 from focus_guard import schedule_neutral_focus, should_prevent_input_autofocus
 from i18n import t
 from logger_setup import get_logger
 from ui_flow_state import next_search_toggle_state
 from ui_icons import create_image_from_ref
 from app_identity import APP_VERSION
-ENGINES = available_engines()
 from app_models import Entry
 from desktop_entries import delete_managed_entry_artifacts
 from webapp_constants import ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY

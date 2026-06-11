@@ -92,6 +92,8 @@
   "desktop_name_source_use_description": "Beschreibung als Beschriftung der Desktop-App verwenden",
   "placeholder_address": "Adresse eingeben",
   "label_mode": "Modus",
+  "label_mode_mobile": "Modus (Mobil)",
+  "label_mode_desktop": "Modus (Desktop)",
   "label_swipe_mode": "Runtime-Mode",
   "mode_standard": "Standard",
   "mode_kiosk": "Kiosk",

@@ -13,14 +13,13 @@ from detail_page import DetailPage
 from app_identity import APP_DB_PATH
 from browser_profiles import read_profile_settings
 from desktop_entries import export_desktop_file, exportable_entry
-from engine_support import available_engines
+from engine_support import ENGINES
 from i18n import t
 from input_validation import load_import_payloads_from_path, payload_contains_inline_javascript
 from logger_setup import get_logger
 from webapp_constants import PROFILE_PATH_KEY
 
 LOG = get_logger(__name__)
-ENGINES = available_engines()
 
 
 class MainWindowProfileImportMixin:

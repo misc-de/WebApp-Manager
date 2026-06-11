@@ -4,12 +4,11 @@ from gi.repository import Adw, Gio, Gtk, GLib
 from custom_assets import count_asset_references, detach_asset_from_entries, format_asset_date, import_custom_asset, list_custom_assets, remove_custom_asset
 from desktop_entries import export_desktop_file, exportable_entry
 from detail_page import DetailPage
-from engine_support import available_engines
+from engine_support import ENGINES
 from i18n import available_languages, get_app_config, invalidate_i18n_cache, save_app_config, t
 from logger_setup import get_logger
 
 LOG = get_logger(__name__)
-ENGINES = available_engines()
 
 
 class MainWindowSettingsMixin:

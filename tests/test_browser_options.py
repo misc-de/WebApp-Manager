@@ -59,6 +59,7 @@ fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
 from browser_profiles import (
+    ProfileSettings,
     _resolve_bundled_extension_path,
     _scope_swipe_extension_payload,
     _write_firefox_user_js,
@@ -263,12 +264,14 @@ class FirefoxProfileOptionTests(unittest.TestCase):
             profile_dir = Path(tmpdir)
             _write_firefox_user_js(
                 profile_dir,
-                clear_cache=False,
-                clear_cookies=False,
-                previous_session=False,
-                notifications_enabled=True,
-                open_links_in_tabs=True,
-                disable_ai=True,
+                ProfileSettings(
+                    clear_cache=False,
+                    clear_cookies=False,
+                    previous_session=False,
+                    notifications_enabled=True,
+                    open_links_in_tabs=True,
+                    disable_ai=True,
+                ),
             )
 
             state = read_profile_settings(str(profile_dir), 'firefox')
@@ -310,10 +313,12 @@ class FirefoxProfileOptionTests(unittest.TestCase):
             with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root):
                 _write_firefox_user_js(
                     unmanaged_profile,
-                    clear_cache=False,
-                    clear_cookies=False,
-                    previous_session=False,
-                    custom_js_enabled=True,
+                    ProfileSettings(
+                        clear_cache=False,
+                        clear_cookies=False,
+                        previous_session=False,
+                        custom_js_enabled=True,
+                    ),
                 )
                 unmanaged_user_js = (unmanaged_profile / 'user.js').read_text(encoding='utf-8')
 
@@ -322,10 +327,12 @@ class FirefoxProfileOptionTests(unittest.TestCase):
                 _write_managed_profile_marker(managed_profile, 'firefox')
                 _write_firefox_user_js(
                     managed_profile,
-                    clear_cache=False,
-                    clear_cookies=False,
-                    previous_session=False,
-                    custom_js_enabled=True,
+                    ProfileSettings(
+                        clear_cache=False,
+                        clear_cookies=False,
+                        previous_session=False,
+                        custom_js_enabled=True,
+                    ),
                 )
                 managed_user_js = (managed_profile / 'user.js').read_text(encoding='utf-8')
 
@@ -339,9 +346,11 @@ class FirefoxProfileOptionTests(unittest.TestCase):
             with mock.patch('browser_profiles.is_furios_distribution', return_value=True):
                 _write_firefox_user_js(
                     profile_dir,
-                    clear_cache=False,
-                    clear_cookies=False,
-                    previous_session=False,
+                    ProfileSettings(
+                        clear_cache=False,
+                        clear_cookies=False,
+                        previous_session=False,
+                    ),
                 )
 
             user_js = (profile_dir / 'user.js').read_text(encoding='utf-8')
@@ -357,10 +366,12 @@ class FirefoxProfileOptionTests(unittest.TestCase):
 
             _write_firefox_user_js(
                 profile_dir,
-                clear_cache=False,
-                clear_cookies=False,
-                previous_session=False,
-                safe_graphics=True,
+                ProfileSettings(
+                    clear_cache=False,
+                    clear_cookies=False,
+                    previous_session=False,
+                    safe_graphics=True,
+                ),
             )
 
             user_js = (profile_dir / 'user.js').read_text(encoding='utf-8')

@@ -61,9 +61,10 @@ the relevant binding kind (e.g. `_write_firefox_user_js` for `profile_setting`).
   download/install (uBlock Origin, swipe-gestures), profile deletion guarded by
   `_safe_remove_tree`. Touch with care.
 - [engine_support.py](engine_support.py) — engine availability detection
-  (cached on first call). The constant `ENGINES = available_engines()` is
-  re-declared at module top-level in 8 mainwindow modules; they all share the
-  same cache.
+  (cached on first call). Exposes a single module-level `ENGINES =
+  available_engines()` snapshot that the UI modules import directly
+  (`from engine_support import ENGINES`); it is never mutated, so all consumers
+  share one list.
 
 ### Desktop integration
 - [desktop_entries.py](desktop_entries.py) — builds `Exec=` line via `shlex.join`
@@ -151,9 +152,6 @@ the relevant binding kind (e.g. `_write_firefox_user_js` for `profile_setting`).
 
 ## Things that look weird but are intentional
 
-- `ENGINES = available_engines()` at the top of 8 modules — looks duplicated,
-  but the underlying function caches via a module-level singleton, so it is
-  effectively one shared list with copies handed out per call.
 - `MANAGED_IMPORT_OPTION_KEYS` lives both in [webapp-manager.py](webapp-manager.py)
   and [mainwindow_entries.py](mainwindow_entries.py). Currently kept in sync by
   hand — consolidate when next touched.
@@ -176,5 +174,8 @@ the relevant binding kind (e.g. `_write_firefox_user_js` for `profile_setting`).
   composed controllers when next refactoring.
 - `browser_profiles.py` mixes profile registration, settings writing, extension
   download and zip handling. Splittable into 4 modules.
-- No automatic translation completeness gate — `tests/test_i18n_integrity.py`
-  reports coverage but does not fail on missing keys.
+- Partial translation completeness gate — `tests/test_i18n_integrity.py` now
+  enforces 100% coverage for the locales in `REQUIRED_COMPLETE_LANGUAGES`
+  (currently `en` reference + `de`); the other ~34 locales sit at ~74% and are
+  only reported, not gated. Add a language to that set once it is fully
+  translated.

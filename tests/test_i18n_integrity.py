@@ -8,6 +8,11 @@ LANG_DIR = Path(__file__).resolve().parent.parent / 'lang'
 REFERENCE_LANGUAGE = 'en'
 META_KEY = '_meta_language_name'
 ALLOWED_MISSING_KEYS = {META_KEY}
+# Locales the project ships as fully translated. These are gated at 100%
+# coverage so that any new key added to en.json must also be translated here;
+# the remaining locales stay best-effort and are only reported (see
+# I18nKeyCompletenessTests). Add a language here once it reaches full coverage.
+REQUIRED_COMPLETE_LANGUAGES = {'de'}
 PLACEHOLDER_PATTERN = re.compile(r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}')
 
 
@@ -57,6 +62,15 @@ class I18nKeyCoverageTests(unittest.TestCase):
             if extras:
                 offenders[code] = sorted(extras)
         self.assertEqual(offenders, {}, f'unknown keys found that are not in {REFERENCE_LANGUAGE}.json: {offenders}')
+
+    def test_required_languages_are_fully_translated(self):
+        gaps = {}
+        for code in sorted(REQUIRED_COMPLETE_LANGUAGES):
+            data = _load_language(code)
+            missing = self.reference_keys - set(data.keys()) - ALLOWED_MISSING_KEYS
+            if missing:
+                gaps[code] = sorted(missing)
+        self.assertEqual(gaps, {}, f'required languages missing keys present in {REFERENCE_LANGUAGE}.json: {gaps}')
 
     def test_other_languages_have_matching_placeholders(self):
         mismatches = {}

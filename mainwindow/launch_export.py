@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from gi.repository import Gdk, Gio, GLib, Gtk
 from desktop_entries import build_launch_command, export_desktop_file, exportable_entry, get_expected_desktop_path, list_managed_desktop_files
-from engine_support import available_engines
+from engine_support import ENGINES
 from i18n import t
 from input_validation import sanitize_desktop_value
 from logger_setup import get_logger
@@ -15,7 +15,6 @@ from webapp_constants import OPTION_PREVENT_MULTIPLE_STARTS_KEY, PROFILE_NAME_KE
 from wapp_transfer import build_wapp_export_bundle_payload, build_wapp_export_payload
 
 LOG = get_logger(__name__)
-ENGINES = available_engines()
 
 
 class MainWindowLaunchExportMixin:
