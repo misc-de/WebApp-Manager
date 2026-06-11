@@ -56,10 +56,29 @@ add a UI label key in `lang/en.json`, then implement the actual behaviour in
 the relevant binding kind (e.g. `_write_firefox_user_js` for `profile_setting`).
 
 ### Browser profile + extension management
-- [browser_profiles.py](browser_profiles.py) — large module (~1800 LOC).
-  Handles profile creation, `user.js` writing, Chromium policies, extension
-  download/install (uBlock Origin, swipe-gestures), profile deletion guarded by
-  `_safe_remove_tree`. Touch with care.
+Split across four modules forming a one-directional dependency graph
+`browser_paths → {browser_settings, browser_extensions} → browser_profiles`:
+- [browser_paths.py](browser_paths.py) — leaf foundation: profile-root math,
+  managed-profile markers, family detection, `_safe_remove_tree`,
+  `get_firefox_extension_config`. Imports only stdlib + `webapp_constants` +
+  `i18n`, never its siblings.
+- [browser_settings.py](browser_settings.py) — `ProfileSettings` value object,
+  Firefox `user.js` / Chromium `Preferences` writers, runtime-cache clearing,
+  app-mode `userChrome.css`, and the round-trip readers (`read_profile_settings`).
+- [browser_extensions.py](browser_extensions.py) — extension discovery, payload
+  loading/scoping, signature heuristics, zip-slip guards
+  (`_assert_safe_zip_members`) and the install/sync state machine (uBlock Origin,
+  swipe-gestures).
+- [browser_profiles.py](browser_profiles.py) — profile lifecycle (creation,
+  copy, Firefox `profiles.ini` registration, deletion guarded by
+  `_safe_remove_tree`), the `apply_profile_settings` orchestrator and browser
+  command resolution. Re-exports the leaf modules' public symbols so historical
+  `from browser_profiles import X` call sites keep working. Touch with care.
+  Note for tests: functions that read module-level globals
+  (`FIREFOX_ROOT`, `get_firefox_extension_config`, `is_furios_distribution`,
+  `urllib`, `__file__`) now live in the leaf modules, so `mock.patch` must
+  target the module that *reads* the name (e.g. `browser_paths.FIREFOX_ROOT`,
+  `browser_extensions.get_firefox_extension_config`).
 - [engine_support.py](engine_support.py) — engine availability detection
   (cached on first call). Exposes a single module-level `ENGINES =
   available_engines()` snapshot that the UI modules import directly
@@ -172,8 +191,6 @@ the relevant binding kind (e.g. `_write_firefox_user_js` for `profile_setting`).
   package root.
 - `MainWindow` mixin hierarchy is wide (8 mixins). Consider splitting into
   composed controllers when next refactoring.
-- `browser_profiles.py` mixes profile registration, settings writing, extension
-  download and zip handling. Splittable into 4 modules.
 - Partial translation completeness gate — `tests/test_i18n_integrity.py` now
   enforces 100% coverage for the locales in `REQUIRED_COMPLETE_LANGUAGES`
   (currently `en` reference + `de`); the other ~34 locales sit at ~74% and are
