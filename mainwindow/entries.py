@@ -10,7 +10,7 @@ from app_state import WebAppState
 from browser_profiles import inspect_profile_copy_source, read_profile_settings, rename_unused_managed_profile_directories
 from browser_option_logic import browser_family_for_command, browser_managed_option_keys, browser_state_key, encode_browser_state, mode_option_keys, normalize_option_dict, normalize_option_rows
 from desktop_entries import export_desktop_file, exportable_entry, get_expected_desktop_path, list_managed_desktop_files
-from engine_support import available_engines
+from engine_support import ENGINES
 from i18n import t
 from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, normalize_icon_to_png
 from input_validation import build_safe_slug, sanitize_desktop_value, validate_icon_source_path
@@ -18,7 +18,6 @@ from logger_setup import get_logger
 from webapp_constants import ADDRESS_KEY, APP_MODE_KEY, COLOR_SCHEME_KEY, DEFAULT_ZOOM_KEY, DESKTOP_NAME_SOURCE_KEY, ICON_PATH_KEY, OPTION_OPEN_LINKS_IN_TABS_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
 
 LOG = get_logger(__name__)
-ENGINES = available_engines()
 
 def format_profile_size(profile_path: str) -> str:
     try:

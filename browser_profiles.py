@@ -8,6 +8,7 @@ import tempfile
 import zipfile
 import urllib.request
 import urllib.error
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -242,9 +243,58 @@ def _clear_chromium_runtime_caches(profile_dir, logger):
     return changed
 
 
-def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_session, user_agent_value='', only_https=False, notifications_enabled=False, swipe_enabled=False, keep_in_background=False, open_links_in_tabs=False, startup_url='', app_mode=False, native_window_frame=False, disable_ai=False, set_privacy=False, color_scheme='auto', custom_css_enabled=False, custom_js_enabled=False, startup_booster=False, safe_graphics=False):
+@dataclass(frozen=True)
+class ProfileSettings:
+    """Resolved per-profile browser settings derived from an entry's options.
+
+    Bundles the ~20 flags that were previously threaded individually through
+    ``_write_firefox_user_js`` / ``_write_chromium_preferences`` so the writers
+    take a single value object instead of a long positional list. Build one via
+    :func:`apply_profile_settings`; both writers read the fields relevant to
+    their browser family and ignore the rest.
+    """
+
+    clear_cache: bool = False
+    clear_cookies: bool = False
+    previous_session: bool = False
+    user_agent_value: str = ''
+    only_https: bool = False
+    notifications_enabled: bool = False
+    swipe_enabled: bool = False
+    keep_in_background: bool = False
+    open_links_in_tabs: bool = False
+    app_mode: bool = False
+    native_window_frame: bool = False
+    disable_ai: bool = False
+    set_privacy: bool = False
+    color_scheme: str = 'auto'
+    custom_css_enabled: bool = False
+    custom_js_enabled: bool = False
+    startup_booster: bool = False
+    safe_graphics: bool = False
+    default_zoom: str = '100'
+
+
+def _write_firefox_user_js(profile_dir, settings):
     profile_dir = Path(profile_dir)
-    only_https = bool(only_https or set_privacy)
+    clear_cache = settings.clear_cache
+    clear_cookies = settings.clear_cookies
+    previous_session = settings.previous_session
+    user_agent_value = settings.user_agent_value
+    only_https = bool(settings.only_https or settings.set_privacy)
+    notifications_enabled = settings.notifications_enabled
+    swipe_enabled = settings.swipe_enabled
+    keep_in_background = settings.keep_in_background
+    open_links_in_tabs = settings.open_links_in_tabs
+    app_mode = settings.app_mode
+    native_window_frame = settings.native_window_frame
+    disable_ai = settings.disable_ai
+    set_privacy = settings.set_privacy
+    color_scheme = settings.color_scheme
+    custom_css_enabled = settings.custom_css_enabled
+    custom_js_enabled = settings.custom_js_enabled
+    startup_booster = settings.startup_booster
+    safe_graphics = settings.safe_graphics
     allow_unsigned_runtime_js = bool(custom_js_enabled and _is_explicitly_managed_profile_dir(profile_dir, 'firefox'))
     user_js = profile_dir / 'user.js'
     start_marker = '// WEBAPP MANAGED START\n'
@@ -469,8 +519,20 @@ def _write_firefox_user_js(profile_dir, clear_cache, clear_cookies, previous_ses
             return
     user_js.write_text(new_content, encoding='utf-8')
 
-def _write_chromium_preferences(profile_dir, clear_cache, clear_cookies, previous_session, logger, user_agent_value='', only_https=False, notifications_enabled=False, keep_in_background=False, disable_ai=False, set_privacy=False, color_scheme='auto', default_zoom='100', startup_booster=False):
+def _write_chromium_preferences(profile_dir, settings, logger):
     profile_dir = Path(profile_dir)
+    clear_cache = settings.clear_cache
+    clear_cookies = settings.clear_cookies
+    previous_session = settings.previous_session
+    user_agent_value = settings.user_agent_value
+    only_https = settings.only_https
+    notifications_enabled = settings.notifications_enabled
+    keep_in_background = settings.keep_in_background
+    disable_ai = settings.disable_ai
+    set_privacy = settings.set_privacy
+    color_scheme = settings.color_scheme
+    default_zoom = settings.default_zoom
+    startup_booster = settings.startup_booster
     default_dir = profile_dir / 'Default'
     default_dir.mkdir(parents=True, exist_ok=True)
     prefs_path = default_dir / 'Preferences'
@@ -1223,33 +1285,31 @@ def apply_profile_settings(profile_info, options_dict, logger):
     default_zoom = normalize_default_zoom(scoped_options.get(DEFAULT_ZOOM_KEY, '100'))
     custom_css_enabled = bool(linked_assets_for_options(options_dict, 'css') or inline_asset_text_for_options(options_dict, 'css'))
     custom_js_enabled = bool(linked_assets_for_options(options_dict, 'javascript') or inline_asset_text_for_options(options_dict, 'javascript'))
+    settings = ProfileSettings(
+        clear_cache=clear_cache,
+        clear_cookies=clear_cookies,
+        previous_session=previous_session,
+        user_agent_value=user_agent_value,
+        only_https=only_https,
+        notifications_enabled=notifications_enabled,
+        swipe_enabled=swipe_enabled,
+        keep_in_background=keep_in_background,
+        open_links_in_tabs=open_links_in_tabs,
+        app_mode=app_mode,
+        native_window_frame=(app_mode and not frameless),
+        disable_ai=disable_ai,
+        set_privacy=set_privacy,
+        color_scheme=color_scheme,
+        custom_css_enabled=custom_css_enabled,
+        custom_js_enabled=custom_js_enabled,
+        startup_booster=startup_booster,
+        safe_graphics=safe_graphics,
+        default_zoom=default_zoom,
+    )
     if family == 'firefox' and profile_path:
-        if set_privacy:
-            only_https = True
         if clear_cache and previous_session:
             _clear_firefox_runtime_caches(profile_path, logger)
-        _write_firefox_user_js(
-            profile_path,
-            clear_cache,
-            clear_cookies,
-            previous_session,
-            user_agent_value=user_agent_value,
-            only_https=only_https,
-            notifications_enabled=notifications_enabled,
-            swipe_enabled=swipe_enabled,
-            keep_in_background=keep_in_background,
-            open_links_in_tabs=open_links_in_tabs,
-            startup_url=(options_dict.get(ADDRESS_KEY, '') or '').strip(),
-            app_mode=app_mode,
-            native_window_frame=(app_mode and not frameless),
-            disable_ai=disable_ai,
-            set_privacy=set_privacy,
-            color_scheme=color_scheme,
-            custom_css_enabled=custom_css_enabled,
-            custom_js_enabled=custom_js_enabled,
-            startup_booster=startup_booster,
-            safe_graphics=safe_graphics,
-        )
+        _write_firefox_user_js(profile_path, settings)
         _sync_firefox_app_mode_css(profile_path, app_mode, frameless, logger)
         _sync_firefox_adblock(profile_path, adblock, logger)
         _sync_firefox_swipe_extension(profile_path, swipe_enabled, logger, options_dict=options_dict)
@@ -1259,22 +1319,7 @@ def apply_profile_settings(profile_info, options_dict, logger):
     if family in {'chrome', 'chromium'} and profile_path:
         if clear_cache and previous_session:
             _clear_chromium_runtime_caches(profile_path, logger)
-        _write_chromium_preferences(
-            profile_path,
-            clear_cache,
-            clear_cookies,
-            previous_session,
-            logger,
-            user_agent_value=user_agent_value,
-            only_https=only_https,
-            notifications_enabled=notifications_enabled,
-            keep_in_background=keep_in_background,
-            disable_ai=disable_ai,
-            set_privacy=set_privacy,
-            color_scheme=color_scheme,
-            default_zoom=default_zoom,
-            startup_booster=startup_booster,
-        )
+        _write_chromium_preferences(profile_path, settings, logger)
         ensure_profile_customizations(profile_info, options_dict, logger)
         return
 

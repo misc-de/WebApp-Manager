@@ -1,11 +1,10 @@
 from gi.repository import Adw
 from desktop_entries import export_desktop_file
-from engine_support import available_engines
+from engine_support import ENGINES
 from i18n import t
 from logger_setup import get_logger
 
 LOG = get_logger(__name__)
-ENGINES = available_engines()
 
 
 class MainWindowDialogsMixin:

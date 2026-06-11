@@ -82,3 +82,10 @@ def engine_icon_name(engine_name: str) -> str:
     if 'chromium' in engine_name:
         return 'chromium-browser'
     return 'applications-internet-symbolic'
+
+
+# Single shared snapshot of the available engines. The previous pattern declared
+# ``ENGINES = available_engines()`` at the top of 8 different modules; since the
+# underlying lookup is cached and the result is never mutated, one module-level
+# constant imported everywhere is equivalent and keeps the source of truth here.
+ENGINES = available_engines()

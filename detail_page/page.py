@@ -169,8 +169,8 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
         if self._style_manager is not None:
             try:
                 self._style_manager.connect('notify::dark', self._on_style_manager_dark_changed)
-            except Exception:
-                pass
+            except (TypeError, GLib.Error) as error:
+                LOG.debug('Could not connect dark-mode style notifier: %s', error)
 
         swipe_back = Gtk.GestureSwipe.new()
         swipe_back.connect('swipe', self.on_swipe)
