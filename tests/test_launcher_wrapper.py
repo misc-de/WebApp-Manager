@@ -1,5 +1,4 @@
 import logging
-import os
 import stat
 import sys
 import tempfile

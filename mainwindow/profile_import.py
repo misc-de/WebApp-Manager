@@ -1,8 +1,6 @@
 import json
 import os
-import shutil
 import sqlite3
-import tempfile
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,8 +10,6 @@ from database import Database
 from detail_page import DetailPage
 from app_identity import APP_DB_PATH
 from browser_profiles import read_profile_settings
-from desktop_entries import export_desktop_file, exportable_entry
-from engine_support import ENGINES
 from i18n import t
 from input_validation import load_import_payloads_from_path, payload_contains_inline_javascript
 from logger_setup import get_logger

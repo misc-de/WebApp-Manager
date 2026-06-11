@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
 import shutil
 
 from i18n import get_app_config
@@ -46,7 +45,12 @@ def _command_candidates(command: str) -> list[str]:
     elif 'chromium' in command:
         candidates.extend(['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable', 'chrome'])
     seen: set[str] = set()
-    return [candidate for candidate in candidates if candidate and not (candidate in seen or seen.add(candidate))]
+    unique: list[str] = []
+    for candidate in candidates:
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            unique.append(candidate)
+    return unique
 
 
 def engine_available(engine: dict | EngineDefinition) -> bool:

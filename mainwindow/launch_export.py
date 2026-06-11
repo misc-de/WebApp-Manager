@@ -5,8 +5,8 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from gi.repository import Gdk, Gio, GLib, Gtk
-from desktop_entries import build_launch_command, export_desktop_file, exportable_entry, get_expected_desktop_path, list_managed_desktop_files
+from gi.repository import Gdk, GLib, Gtk
+from desktop_entries import build_launch_command, exportable_entry, get_expected_desktop_path, list_managed_desktop_files
 from engine_support import ENGINES
 from i18n import t
 from input_validation import sanitize_desktop_value

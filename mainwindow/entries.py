@@ -1,4 +1,3 @@
-import base64
 import json
 import threading
 from pathlib import Path
@@ -13,9 +12,9 @@ from desktop_entries import export_desktop_file, exportable_entry, get_expected_
 from engine_support import ENGINES
 from i18n import t
 from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, normalize_icon_to_png
-from input_validation import build_safe_slug, sanitize_desktop_value, validate_icon_source_path
+from input_validation import build_safe_slug, sanitize_desktop_value
 from logger_setup import get_logger
-from webapp_constants import ADDRESS_KEY, APP_MODE_KEY, COLOR_SCHEME_KEY, DEFAULT_ZOOM_KEY, DESKTOP_NAME_SOURCE_KEY, ICON_PATH_KEY, OPTION_OPEN_LINKS_IN_TABS_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
+from webapp_constants import ADDRESS_KEY, APP_MODE_KEY, DESKTOP_NAME_SOURCE_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
 
 LOG = get_logger(__name__)
 

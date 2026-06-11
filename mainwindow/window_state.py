@@ -1,6 +1,5 @@
 import json
 from gi.repository import GLib, Adw
-from app_identity import APP_DIR
 from i18n import get_app_config, get_configured_language_value, save_app_config
 from logger_setup import get_logger
 

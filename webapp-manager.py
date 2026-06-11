@@ -3,71 +3,14 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
-from pathlib import Path
-import math
-import sqlite3
-import json
-import tempfile
-import shutil
-import base64
-import os
-import subprocess
-import threading
-from datetime import datetime, timezone
-from PIL import Image
-from gi.repository import Adw, Gdk, Gio, GObject, Gtk, GLib, Pango
+from gi.repository import Adw, Gdk, Gio, Gtk, GLib
 
 from database import Database
-from desktop_entries import (
-    build_launch_command,
-    delete_managed_entry_artifacts,
-    export_desktop_file,
-    exportable_entry,
-    get_expected_desktop_path,
-    list_managed_desktop_files,
-)
-from icon_pipeline import get_managed_icon_path, normalize_icon_to_png
-from input_validation import load_import_payloads_from_path, load_and_normalize_wapp_payload_from_path, sanitize_desktop_value, validate_icon_source_path
-from browser_option_logic import (
-    normalize_option_dict,
-    normalize_option_rows,
-    browser_family_for_command,
-    browser_managed_option_keys,
-    browser_state_key,
-    encode_browser_state,
-)
-from webapp_constants import (
-    ADDRESS_KEY,
-    ICON_PATH_KEY,
-    USER_AGENT_NAME_KEY,
-    USER_AGENT_VALUE_KEY,
-    PROFILE_NAME_KEY,
-    PROFILE_PATH_KEY,
-    APP_MODE_KEY,
-    ONLY_HTTPS_KEY,
-    COLOR_SCHEME_KEY,
-    OPTION_ADBLOCK_KEY,
-    OPTION_CLEAR_CACHE_ON_EXIT_KEY,
-    OPTION_CLEAR_COOKIES_ON_EXIT_KEY,
-    OPTION_DISABLE_AI_KEY,
-    OPTION_FORCE_PRIVACY_KEY,
-    OPTION_KEEP_IN_BACKGROUND_KEY,
-    OPTION_NOTIFICATIONS_KEY,
-    OPTION_OPEN_LINKS_IN_TABS_KEY,
-    OPTION_PRESERVE_SESSION_KEY,
-    OPTION_SWIPE_KEY,
-)
-from detail_page import DetailPage
 from focus_guard import schedule_neutral_focus, should_prevent_input_autofocus
-from custom_assets import count_asset_references, detach_asset_from_entries, format_asset_date, import_custom_asset, list_custom_assets, remove_custom_asset
-from i18n import available_languages, get_app_config, get_configured_language_value, invalidate_i18n_cache, save_app_config, t
+from i18n import t
 from logger_setup import get_logger
-from engine_support import ENGINES, engine_icon_name
-from browser_profiles import inspect_profile_copy_source, read_profile_settings, rename_unused_managed_profile_directories
-from ui_icons import create_image_from_ref
-from app_state import WebAppState
 from app_models import Entry
-from app_identity import APP_DIR, APP_ID, APP_ICON_NAME, APP_DB_PATH, APP_VERSION
+from app_identity import APP_DIR, APP_ID, APP_ICON_NAME, APP_DB_PATH
 from manager_integration import ensure_manager_desktop_integration, headerbar_decoration_layout_without_icon
 from mainwindow import (
     MainWindowDialogsMixin,
@@ -85,7 +28,7 @@ Adw.init()
 LOG = get_logger(__name__)
 
 
-CONFIG = {}
+CONFIG: dict = {}
 css_provider = Gtk.CssProvider()
 try:
     css_provider.load_from_path(str(APP_DIR / 'style.css'))

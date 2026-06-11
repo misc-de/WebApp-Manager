@@ -1,14 +1,15 @@
 from browser_profiles import delete_managed_browser_profiles
-from desktop_entries import export_desktop_file, get_expected_desktop_path
+from desktop_entries import export_desktop_file
 from i18n import t
 from logger_setup import get_logger
+import base64
 import binascii
 import json
 from datetime import datetime
 from gi.repository import Gio, GLib, Gtk
 from browser_option_logic import normalize_option_dict
 from icon_pipeline import is_svg_support_missing_error, normalize_icon_bytes_to_png
-from input_validation import load_and_normalize_wapp_payload_from_path, load_import_payloads_from_path, normalize_wapp_payload, payload_contains_inline_javascript
+from input_validation import load_import_payloads_from_path, normalize_wapp_payload, payload_contains_inline_javascript
 from webapp_constants import ADDRESS_KEY, COLOR_SCHEME_KEY, DEFAULT_ZOOM_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
 from wapp_transfer import build_wapp_export_payload
 

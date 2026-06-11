@@ -15,10 +15,8 @@ from pathlib import Path
 
 from custom_assets import ensure_profile_customizations, inline_asset_text_for_options, linked_assets_for_options
 from browser_option_logic import normalize_option_dict, project_options_for_family, semantic_mode_from_options
-from input_validation import build_safe_slug, sanitize_desktop_value
+from input_validation import build_safe_slug
 from webapp_constants import (
-    ADDRESS_KEY,
-    APP_MODE_KEY,
     CHROMIUM_PROFILE_ROOT,
     COLOR_SCHEME_KEY,
     DEFAULT_ZOOM_KEY,
@@ -36,8 +34,6 @@ from webapp_constants import (
     OPTION_OPEN_LINKS_IN_TABS_KEY,
     OPTION_PRESERVE_SESSION_KEY,
     OPTION_SWIPE_KEY,
-    PROFILE_NAME_KEY,
-    PROFILE_PATH_KEY,
     USER_AGENT_VALUE_KEY,
 )
 
@@ -76,6 +72,45 @@ from browser_extensions import (
     _sync_firefox_swipe_extension,
 )
 
+# Public API of this module: locally defined lifecycle/orchestration functions
+# plus the leaf-module symbols re-exported above for backward compatibility
+# (historical ``from browser_profiles import X`` call sites and the test suite).
+__all__ = [
+    'ProfileSettings',
+    'apply_profile_settings',
+    'resolve_browser_command',
+    'append_user_agent_argument',
+    'ensure_browser_profile',
+    'delete_managed_browser_profiles',
+    'inspect_profile_copy_source',
+    'rename_unused_managed_profile_directories',
+    'read_profile_settings',
+    'firefox_extension_installed',
+    'swipe_extension_mode_value',
+    'get_profile_size_bytes',
+    'get_firefox_extension_config',
+    'append_unique_csv_arg',
+    'normalize_color_scheme',
+    'normalize_default_zoom',
+    '_assert_safe_zip_members',
+    '_clear_chromium_runtime_caches',
+    '_clear_firefox_runtime_caches',
+    '_detect_managed_profile_family',
+    '_invalidate_firefox_extension_state',
+    '_is_explicitly_managed_profile_dir',
+    '_profile_root_for_family',
+    '_resolve_bundled_extension_path',
+    '_safe_remove_tree',
+    '_scope_swipe_extension_payload',
+    '_sync_firefox_adblock',
+    '_sync_firefox_app_mode_css',
+    '_sync_firefox_signed_extension',
+    '_sync_firefox_swipe_extension',
+    '_write_chromium_preferences',
+    '_write_firefox_user_js',
+    '_write_managed_profile_marker',
+]
+
 
 def apply_profile_settings(profile_info, options_dict, logger):
     if not profile_info:
@@ -99,7 +134,6 @@ def apply_profile_settings(profile_info, options_dict, logger):
     open_links_in_tabs = scoped_options.get(OPTION_OPEN_LINKS_IN_TABS_KEY, '0') == '1'
     app_mode = mode_value in {'app', 'seamless'}
     frameless = mode_value == 'seamless'
-    kiosk = mode_value == 'kiosk'
     disable_ai = scoped_options.get(OPTION_DISABLE_AI_KEY, '0') == '1'
     set_privacy = scoped_options.get(OPTION_FORCE_PRIVACY_KEY, '0') == '1'
     startup_booster = scoped_options.get(OPTION_STARTUP_BOOSTER_KEY, '0') == '1'
@@ -529,7 +563,6 @@ def ensure_browser_profile(title, configured_command, logger, stored_profile_nam
         allow_profile_copy = bool(source_profile.get('valid'))
     profile_name = _sanitize_profile_id(stored_profile_name) if (stored_profile_name and managed_existing) else _generate_profile_id()
     source_profile_path = source_profile.get('profile_path', '') if allow_profile_copy else ''
-    source_profile_name = source_profile.get('profile_name', '') if source_profile_path else ''
     profile_migrated = False
     if family == 'firefox':
         FIREFOX_ROOT.mkdir(parents=True, exist_ok=True)

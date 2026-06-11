@@ -6,99 +6,37 @@ try:
     gi.require_version('GtkSource', '5')
 except (ValueError, ImportError):
     pass
-from gi.repository import Adw, Gtk, GLib, Gio, Gdk, Pango
+from gi.repository import Adw, Gtk, GLib, Pango
 try:
     from gi.repository import GtkSource
 except (ImportError, ValueError):
     GtkSource = None
-import base64
-import binascii
-import io
-import os
-import json
 import re
-import shutil
-import tempfile
 import threading
-import urllib.request
-import urllib.error
-from datetime import datetime
 from pathlib import Path
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import urlparse
 
-from PIL import Image, UnidentifiedImageError
 
-from browser_profiles import delete_managed_browser_profiles, get_profile_size_bytes, firefox_extension_installed, apply_profile_settings, ensure_browser_profile, read_profile_settings
-from custom_assets import (
-    ASSET_OPTION_KEY_BY_TYPE,
-    CUSTOM_CSS_LINKS_KEY,
-    CUSTOM_JS_LINKS_KEY,
-    INLINE_CUSTOM_CSS_KEY,
-    INLINE_CUSTOM_JS_KEY,
-    INLINE_CUSTOM_CSS_HASH_KEY,
-    INLINE_CUSTOM_JS_HASH_KEY,
-    asset_content_sha256_from_text,
-    encode_linked_asset_ids,
-    format_asset_date,
-    get_custom_asset,
-    list_custom_assets,
-    normalize_linked_asset_ids,
-)
-from distro_utils import is_furios_distribution
-from desktop_entries import export_desktop_file, get_expected_desktop_path
-from icon_pipeline import get_managed_icon_path, normalize_icon_bytes_to_png, normalize_icon_to_png
 from webapp_constants import (
-    APPLICATIONS_DIR,
     ADDRESS_KEY,
     DESKTOP_NAME_SOURCE_KEY,
-    ICON_PATH_KEY,
-    USER_AGENT_NAME_KEY,
-    USER_AGENT_VALUE_KEY,
     PROFILE_NAME_KEY,
     PROFILE_PATH_KEY,
-    ONLY_HTTPS_KEY,
-    OPTION_FORCE_PRIVACY_KEY,
-    APP_MODE_KEY,
     COLOR_SCHEME_KEY,
     DEFAULT_ZOOM_KEY,
-    OPTION_ADBLOCK_KEY,
-    OPTION_DISABLE_AI_KEY,
-    OPTION_KEEP_IN_BACKGROUND_KEY,
-    OPTION_SWIPE_KEY,
-    OPTION_PRESERVE_SESSION_KEY,
-    OPTION_STARTUP_BOOSTER_KEY,
 )
 from input_validation import (
-    DESKTOP_CHROME_USER_AGENT,
-    MAX_ICON_FILE_SIZE,
-    build_safe_slug,
     check_origin_status,
-    candidate_urls_for_input,
     is_structurally_valid_url,
-    is_valid_url,
-    load_and_normalize_wapp_payload_from_path,
-    normalize_wapp_payload,
-    validate_icon_source_path,
 )
 from i18n import get_app_config, t
 from logger_setup import get_logger
 from engine_support import engine_available
 from browser_option_logic import (
     browser_family_for_engine,
-    browser_state_key,
-    build_family_option_state,
-    decode_browser_state,
-    encode_browser_state,
-    browser_managed_option_keys,
-    normalize_option_dict,
     normalize_option_rows,
-    option_ui_label,
-    option_ui_label_markup,
-    supported_browser_option_keys,
-    OPTION_SPEC_BY_KEY,
 )
 from option_config import option_names
-from browser_option_registry import OPTION_CATEGORY_ORDER, OPTION_CATEGORY_LABEL_KEYS, option_category
 from .layout import DetailPageLayoutMixin
 from .assets import DetailPageAssetsMixin
 from .options import DetailPageOptionsMixin

@@ -14,7 +14,7 @@ MUTABLE_CONFIG_KEYS = {'language', 'settings', 'window_state'}
 
 
 _CONFIG_CACHE = None
-_TRANSLATION_CACHE = {}
+_TRANSLATION_CACHE: dict = {}
 _LANGUAGE_METADATA_CACHE = None
 
 

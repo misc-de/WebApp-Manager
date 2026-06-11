@@ -1,9 +1,9 @@
-from gi.repository import Gio, Gtk, Pango, GLib
+from gi.repository import Gtk, GLib
 try:
     from gi.repository import GtkSource
 except (ImportError, ValueError):
     GtkSource = None
-from custom_assets import ASSET_OPTION_KEY_BY_TYPE, CUSTOM_CSS_LINKS_KEY, CUSTOM_JS_LINKS_KEY, INLINE_CUSTOM_CSS_KEY, INLINE_CUSTOM_JS_KEY, INLINE_CUSTOM_CSS_HASH_KEY, INLINE_CUSTOM_JS_HASH_KEY, asset_content_sha256_from_text, encode_linked_asset_ids, format_asset_date, get_custom_asset, list_custom_assets, normalize_linked_asset_ids
+from custom_assets import ASSET_OPTION_KEY_BY_TYPE, INLINE_CUSTOM_CSS_KEY, INLINE_CUSTOM_JS_KEY, INLINE_CUSTOM_CSS_HASH_KEY, INLINE_CUSTOM_JS_HASH_KEY, asset_content_sha256_from_text, encode_linked_asset_ids, format_asset_date, get_custom_asset, list_custom_assets, normalize_linked_asset_ids
 from i18n import t
 
 

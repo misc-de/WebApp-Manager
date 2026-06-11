@@ -64,11 +64,9 @@ from browser_profiles import (
     _scope_swipe_extension_payload,
     _write_firefox_user_js,
     _write_managed_profile_marker,
-    _sync_firefox_signed_extension,
     _sync_firefox_swipe_extension,
     delete_managed_browser_profiles,
     ensure_browser_profile,
-    get_firefox_extension_config,
     read_profile_settings,
     swipe_extension_mode_value,
 )
