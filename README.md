@@ -35,6 +35,8 @@ Without it the app still edits launchers, but cannot find or launch a browser.
 Every permission is commented in
 [flatpak/de.cais.webappmanager.yml](flatpak/de.cais.webappmanager.yml).
 
+Available for x86_64 and aarch64 (phones running Phosh/FuriOS included).
+
 Building the package yourself instead:
 
 ```
