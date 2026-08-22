@@ -20,7 +20,7 @@
   "user_agent_none": "Browser-Standard",
   "user_agent_unavailable": "Für diese Engine sind keine User-Agents konfiguriert.",
   "option_adblock": "Adblocker (ublock)",
-  "option_swipe": "Swipe gesten (Eigenes Addon)",
+  "option_swipe": "Swipe-Gesten (eigenes Add-on)",
   "option_notifications": "Benachrichtigungen",
   "option_open_links_in_tabs": "Links in Tabs statt in neuen Fenstern öffnen",
   "option_delete_cache": "Cache löschen (beim Schließen der App)",

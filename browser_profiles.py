@@ -61,6 +61,8 @@ from browser_settings import (
     _write_firefox_user_js,
 )
 from browser_extensions import (
+    MAX_EXTENSION_DOWNLOAD_SIZE,
+    SCOPED_SWIPE_EXTENSION_NAME,
     firefox_extension_installed,
     swipe_extension_mode_value,
     _assert_safe_zip_members,
@@ -76,7 +78,9 @@ from browser_extensions import (
 # plus the leaf-module symbols re-exported above for backward compatibility
 # (historical ``from browser_profiles import X`` call sites and the test suite).
 __all__ = [
+    'MAX_EXTENSION_DOWNLOAD_SIZE',
     'ProfileSettings',
+    'SCOPED_SWIPE_EXTENSION_NAME',
     'apply_profile_settings',
     'resolve_browser_command',
     'append_user_agent_argument',
@@ -112,15 +116,35 @@ __all__ = [
 ]
 
 
+def _extension_errors_from_results(**results):
+    """Collapse per-extension sync results into {name: error} for failures only."""
+    errors = {}
+    for name, result in results.items():
+        if not isinstance(result, dict):
+            continue
+        error = result.get('error')
+        if error:
+            errors[name] = error
+    return errors
+
+
 def apply_profile_settings(profile_info, options_dict, logger):
+    """Write every profile-level setting for `profile_info`.
+
+    Returns a dict with an ``extension_errors`` mapping (extension name -> error
+    string, only for extensions that failed). Callers that just want the side
+    effects can keep ignoring the return value, but the detail page uses it to
+    tell the user *why* an add-on did not install -- an unsigned payload needs a
+    different message than a missing download source.
+    """
     if not profile_info:
-        return
+        return {'extension_errors': {}}
     family = profile_info.get('browser_family')
     scoped_options = project_options_for_family(normalize_option_dict(options_dict or {}), family)
     profile_path = profile_info.get('profile_path')
     if family in {'firefox', 'chrome', 'chromium'} and profile_path and not _is_explicitly_managed_profile_dir(profile_path, family):
         logger.warning('Refusing to apply settings to non-managed %s profile %s', family, profile_path)
-        return
+        return {'extension_errors': {}}
     clear_cache = scoped_options.get(OPTION_CLEAR_CACHE_ON_EXIT_KEY, '0') == '1'
     clear_cookies = scoped_options.get(OPTION_CLEAR_COOKIES_ON_EXIT_KEY, '0') == '1'
     adblock = scoped_options.get(OPTION_ADBLOCK_KEY, '0') == '1'
@@ -168,17 +192,18 @@ def apply_profile_settings(profile_info, options_dict, logger):
             _clear_firefox_runtime_caches(profile_path, logger)
         _write_firefox_user_js(profile_path, settings)
         _sync_firefox_app_mode_css(profile_path, app_mode, frameless, logger)
-        _sync_firefox_adblock(profile_path, adblock, logger)
-        _sync_firefox_swipe_extension(profile_path, swipe_enabled, logger, options_dict=options_dict)
+        adblock_result = _sync_firefox_adblock(profile_path, adblock, logger)
+        swipe_result = _sync_firefox_swipe_extension(profile_path, swipe_enabled, logger, options_dict=options_dict)
         ensure_profile_customizations(profile_info, options_dict, logger)
         _invalidate_firefox_extension_state(profile_path, logger)
-        return
+        return {'extension_errors': _extension_errors_from_results(adblock=adblock_result, swipe=swipe_result)}
     if family in {'chrome', 'chromium'} and profile_path:
         if clear_cache and previous_session:
             _clear_chromium_runtime_caches(profile_path, logger)
         _write_chromium_preferences(profile_path, settings, logger)
         ensure_profile_customizations(profile_info, options_dict, logger)
-        return
+        return {'extension_errors': {}}
+    return {'extension_errors': {}}
 
 def resolve_browser_command(configured_command, logger):
     candidates = [configured_command]
