@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=WebApp Manager
+Comment=Create and manage web app launchers with dedicated browser profiles
+Exec=webapp-manager
+Icon=de.cais.webappmanager
+Terminal=false
+Categories=Utility;GTK;
+Keywords=webapp;launcher;browser;profile;
+StartupNotify=true
+StartupWMClass=de.cais.webappmanager
+X-GNOME-WMClass=de.cais.webappmanager

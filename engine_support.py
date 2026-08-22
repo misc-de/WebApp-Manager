@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import shutil
 
+from host_commands import host_which
 from i18n import get_app_config
 
 
@@ -55,7 +55,7 @@ def _command_candidates(command: str) -> list[str]:
 
 def engine_available(engine: dict | EngineDefinition) -> bool:
     command = engine.command if isinstance(engine, EngineDefinition) else engine.get('command', '')
-    return any(shutil.which(candidate) for candidate in _command_candidates(command))
+    return any(host_which(candidate) for candidate in _command_candidates(command))
 
 
 def configured_engines() -> list[EngineDefinition]:

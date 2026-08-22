@@ -14,11 +14,30 @@ This project is under active development. Features may change and instability is
 
 ## Installation
 
-### 1. System dependencies
+### Option A: Flatpak
 
-The app is built on GTK 4 / Libadwaita and needs their GObject-Introspection
-bindings. Install them from your distribution rather than from pip — the
-bindings have to match the system GTK build:
+```
+flatpak install flathub org.gnome.Platform//49 org.gnome.Sdk//49
+flatpak-builder --user --install --force-clean build-dir flatpak/de.cais.webappmanager.yml
+flatpak run de.cais.webappmanager
+```
+
+The Flatpak shares its data with a source install: web apps, launchers and
+browser profiles live in the same locations, so you can switch between the two
+without losing anything.
+
+Because this app manages host state, the package needs broader permissions
+than a typical sandboxed app. Notably `--talk-name=org.freedesktop.Flatpak`,
+which lets it detect and start browsers on the host through `flatpak-spawn`.
+Without it the app still edits launchers, but cannot find or launch a browser.
+Every permission is commented in
+[flatpak/de.cais.webappmanager.yml](flatpak/de.cais.webappmanager.yml).
+
+### Option B: Run from source
+
+**1. System dependencies.** The app is built on GTK 4 / Libadwaita and needs
+their GObject-Introspection bindings. Install them from your distribution
+rather than from pip — the bindings have to match the system GTK build:
 
 ```
 # Debian / Ubuntu
@@ -31,19 +50,16 @@ sudo pacman -S python-gobject gtk4 libadwaita python-pillow
 sudo dnf install python3-gobject gtk4 libadwaita python3-pillow
 ```
 
-Optional, each gating one feature:
-`python3-cairosvg` (SVG icon import) and `gir1.2-gtksource-5`
-(syntax highlighting in the custom-asset editor).
-
+Optional, each gating one feature: `python3-cairosvg` (SVG icon import) and
+`gir1.2-gtksource-5` (syntax highlighting in the custom-asset editor).
 See [requirements.txt](requirements.txt) and
 [requirements-optional.txt](requirements-optional.txt) for the pip equivalents.
 
-### 2. Get the source
+**2. Get the source.**
 
 ```
 git clone https://github.com/misc-de/WebApp-Manager.git
 ```
-
 
 ## Startup
 After the first launch, a web app launcher is automatically created on the system.
