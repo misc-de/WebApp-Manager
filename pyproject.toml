@@ -20,12 +20,37 @@ extend-ignore = ["E402"]
 [tool.mypy]
 python_version = "3.11"
 # This is a large, historically untyped GTK/PyGObject codebase. Keep mypy
-# lenient so it surfaces real errors instead of drowning in missing-stub noise.
+# lenient about stubs so it surfaces real errors instead of drowning in
+# missing-stub noise -- but do check the bodies of untyped functions, which is
+# where the actual type errors live in a codebase with few annotations.
 ignore_missing_imports = true
 warn_redundant_casts = true
 warn_unused_ignores = false
-check_untyped_defs = false
+check_untyped_defs = true
 # Test modules stub `logger_setup` by injecting a dummy module into sys.modules
 # (see CLAUDE.md); mypy cannot model that pattern, so type-checking is scoped to
 # the application code.
 exclude = ["^tests/"]
+
+# The UI mixins are the one place where check_untyped_defs cannot work yet:
+# every `MainWindow*Mixin` / `DetailPage*Mixin` reads attributes that only the
+# composed class owns, which mypy reports as `attr-defined` (~880 findings, all
+# of the same shape). Re-enable a module here once its mixin declares the
+# attributes it consumes -- do not add new entries to this list.
+[[tool.mypy.overrides]]
+module = [
+    "detail_page.assets",
+    "detail_page.icon",
+    "detail_page.layout",
+    "detail_page.options",
+    "detail_page.transfer",
+    "mainwindow.dialogs",
+    "mainwindow.entries",
+    "mainwindow.launch_export",
+    "mainwindow.notifications",
+    "mainwindow.overview",
+    "mainwindow.profile_import",
+    "mainwindow.settings",
+    "mainwindow.window_state",
+]
+check_untyped_defs = false

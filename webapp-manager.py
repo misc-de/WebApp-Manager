@@ -1,3 +1,5 @@
+import threading
+
 import gi
 
 gi.require_version('Gtk', '4.0')
@@ -64,7 +66,7 @@ class MainWindow(MainWindowWindowStateMixin, MainWindowLaunchExportMixin, MainWi
         self.ui_settings = self._load_ui_settings()
         self.language_setting = self._load_language_setting()
         self._profile_resync_running = False
-        self._profile_resync_cancel_event = None
+        self._profile_resync_cancel_event: threading.Event | None = None
         self._profile_resync_dialog = None
         self._profile_resync_progress_label = None
         self._profile_resync_progress_bar = None

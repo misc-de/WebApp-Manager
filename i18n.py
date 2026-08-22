@@ -1,4 +1,5 @@
 from copy import deepcopy
+from typing import Any
 import json
 import locale
 import os
@@ -119,7 +120,7 @@ def get_system_language_code():
 
 
 def _filter_mutable_config(data):
-    filtered = {}
+    filtered: dict[str, Any] = {}
     if not isinstance(data, dict):
         return filtered
     for key in MUTABLE_CONFIG_KEYS:
