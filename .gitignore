@@ -5,3 +5,5 @@ __pycache__
 .claude
 .coverage
 htmlcov/
+build-dir/
+.flatpak-builder/

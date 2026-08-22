@@ -30,7 +30,9 @@ check_untyped_defs = true
 # Test modules stub `logger_setup` by injecting a dummy module into sys.modules
 # (see CLAUDE.md); mypy cannot model that pattern, so type-checking is scoped to
 # the application code.
-exclude = ["^tests/"]
+# build-dir/ and .flatpak-builder/ are flatpak-builder scratch space: they
+# contain a copy of the tree plus root-owned files mypy cannot even read.
+exclude = ["^tests/", "^build-dir/", "^\\.flatpak-builder/"]
 
 # The UI mixins are the one place where check_untyped_defs cannot work yet:
 # every `MainWindow*Mixin` / `DetailPage*Mixin` reads attributes that only the

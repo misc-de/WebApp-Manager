@@ -8,6 +8,7 @@ from pathlib import Path
 from gi.repository import Gdk, GLib, Gtk
 from desktop_entries import build_launch_command, exportable_entry, get_expected_desktop_path, list_managed_desktop_files
 from engine_support import ENGINES
+from host_commands import host_argv, running_in_flatpak
 from i18n import t
 from input_validation import sanitize_desktop_value
 from logger_setup import get_logger
@@ -15,6 +16,19 @@ from webapp_constants import OPTION_PREVENT_MULTIPLE_STARTS_KEY, PROFILE_NAME_KE
 from wapp_transfer import build_wapp_export_bundle_payload, build_wapp_export_payload
 
 LOG = get_logger(__name__)
+
+
+# Variables the launch path sets for itself. Everything else (DISPLAY,
+# WAYLAND_DISPLAY, XDG_RUNTIME_DIR, ...) is deliberately not forwarded to a
+# host process: the host already has correct values, and the sandbox's copies
+# can differ.
+_HOST_FORWARDED_ENV_KEYS = ('MOZ_ENABLE_WAYLAND', 'GDK_BACKEND')
+
+
+def _host_env_overrides(env):
+    if not running_in_flatpak():
+        return {}
+    return {key: env[key] for key in _HOST_FORWARDED_ENV_KEYS if env.get(key)}
 
 
 class MainWindowLaunchExportMixin:
@@ -211,8 +225,14 @@ class MainWindowLaunchExportMixin:
                 if 'firefox' in engine and not display and wayland_display:
                     env['MOZ_ENABLE_WAYLAND'] = '1'
                     env.setdefault('GDK_BACKEND', 'wayland')
+                # Inside a Flatpak the browser lives on the host, so the
+                # argv is wrapped in flatpak-spawn. The display-related
+                # variables have to travel with it: flatpak-spawn does not
+                # carry the sandbox environment over. Outside a sandbox this
+                # is the unchanged argv and the full env below still applies.
+                launch_argv = host_argv(argv, env_overrides=_host_env_overrides(env))
                 process = subprocess.Popen(
-                    argv,
+                    launch_argv,
                     stdin=subprocess.DEVNULL,
                     stdout=None,
                     stderr=None,
@@ -230,7 +250,7 @@ class MainWindowLaunchExportMixin:
                         self._running_launch_processes = running
                     running[entry_id] = {
                         'process': process,
-                        'argv': list(argv),
+                        'argv': list(launch_argv),
                         'title': getattr(entry, 'title', ''),
                     }
 
