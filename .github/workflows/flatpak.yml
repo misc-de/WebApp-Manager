@@ -47,7 +47,11 @@ jobs:
       - name: Install flatpak-builder
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder ostree
+          # elfutils provides eu-strip, which flatpak-builder shells out to when
+          # separating debug symbols. Ubuntu's flatpak-builder does not pull it
+          # in, and the build fails at the first compiled module without it.
+          sudo apt-get install -y --no-install-recommends \
+            flatpak flatpak-builder ostree elfutils
           flatpak remote-add --if-not-exists --user \
             flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
