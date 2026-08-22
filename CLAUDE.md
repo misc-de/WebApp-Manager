@@ -133,6 +133,12 @@ Split across four modules forming a one-directional dependency graph
   PyGObject and pycairo; Pillow and the cairosvg chain are built as modules
   (pure-python ones from `py3-none-any` wheels, Pillow and cffi from sdists so
   the manifest stays architecture-independent for aarch64 phones).
+- [.github/workflows/flatpak.yml](.github/workflows/flatpak.yml) — builds the
+  package natively for x86_64 and aarch64 (GitHub's `ubuntu-24.04-arm` runners
+  are free for public repos) and uploads each OSTree repo as an unsigned
+  artifact. It never signs or publishes: the key stays on the maintainer's
+  machine. Note `elfutils` in the apt list — flatpak-builder shells out to
+  `eu-strip`, and Ubuntu's package does not depend on it.
 - [Makefile](Makefile) — the release path. `make flatpak-build` builds and
   signs the host architecture into `repo/`, `make flatpak-merge ARM_REPO=…`
   folds in an aarch64 repo built on a phone, `make flatpak-publish` writes
@@ -146,6 +152,11 @@ Split across four modules forming a one-directional dependency graph
   directory up. `make flatpak-repofile` regenerates the `.flatpakrepo` from the
   keyring, so the published key can never drift from the signing key; it runs
   as part of `flatpak-publish`.
+- **Normal release:** `make release-from-ci && git push origin gh-pages`. It
+  takes the newest successful Flatpak workflow run (or `RUN=<id>`), unpacks
+  both architectures, signs every ref locally and publishes. Building on a
+  phone over SSH — how aarch64 used to be produced — is no longer needed;
+  `make flatpak-build` / `flatpak-merge` remain for building without CI.
 - **Host vs. runtime:** inside a Flatpak `/etc/os-release` describes the
   *runtime*, not the machine. `distro_utils` therefore reads
   `/run/host/os-release` first — without it `is_furios_distribution()` returns
@@ -265,14 +276,11 @@ Split across four modules forming a one-directional dependency graph
   additionally need a git source pinned to a release tag instead of
   `type: dir`, screenshots in the metainfo, and proof of ownership for the
   `de.cais` domain the app ID claims.
-- `repo/` only ever holds architectures that were actually built, and aarch64
-  has no CI: it is built on a phone over SSH and merged in by hand before every
-  release, or ARM users silently keep the previous version. The device has no
-  `flatpak-builder`/`ostree`/`make`, so the build there runs as
-  `flatpak run --filesystem=home org.flatpak.Builder --force-clean --repo=repo
-  .flatpak-build/aarch64 flatpak/de.cais.webappmanager.yml`; copy the resulting
-  `repo/` back, then `make flatpak-merge ARM_REPO=… && make flatpak-publish &&
-  make flatpak-pages`.
+- Releasing still needs a manual step, by design: CI cannot sign. The full
+  cycle is `make release-from-ci` (downloads both CI-built architectures,
+  merges, signs, publishes to gh-pages) followed by `git push origin gh-pages`.
+  Signing on a runner would mean putting the private key into a repository
+  secret.
 - `MainWindow` mixin hierarchy is wide (8 mixins). Consider splitting into
   composed controllers when next refactoring.
 - UI test coverage is thin. The logic layer is reasonably covered
