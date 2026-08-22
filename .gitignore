@@ -1,14 +1,37 @@
-__pycache__
-.mypy_cache
-.pytest_cache
-.ruff_cache
-.claude
+# Python
+__pycache__/
+*.py[co]
+.venv/
+venv/
+
+# Tool caches and coverage reports
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
+
+# Claude Code session data
+.claude/
+
+# Flatpak build scratch space
 build-dir/
-.flatpak-builder/
-.gnupg-flatpak/
-repo/
-.ci-artifacts/
-repo-arm/
 .flatpak-build/
+.flatpak-builder/
+*.flatpak
+
+# Flatpak repositories. repo/ is published to the gh-pages branch by
+# `make flatpak-pages`, never committed on main. repo-arm/ and .ci-artifacts/
+# are transient inputs: a repo copied from a phone, and the unpacked CI
+# artifacts that `make release-from-ci` consumes.
+repo/
+repo-arm/
+.ci-artifacts/
+
+# Temporary worktree that `make flatpak-pages` creates and removes again.
+# Listed because an interrupted run leaves it behind.
+.pages-worktree/
+
+# Keyring holding the private key that signs the Flatpak repository. It must
+# never be committed; back it up out of band (see CLAUDE.md, Packaging).
+.gnupg-flatpak/
