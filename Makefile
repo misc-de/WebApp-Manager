@@ -47,10 +47,22 @@ flatpak-build:
 		$(FP_BUILDDIR) $(FP_MANIFEST)
 	@echo "$(FP_ARCH) is in $(FP_REPO)/. Refs: make flatpak-repo-info"
 
-# Merges a repo built on another architecture (ARM_REPO=<path>).
+# Merges a repo built on another architecture (ARM_REPO=<path>) and signs the
+# commits it brought in. The phone has no access to the signing key, so it
+# builds unsigned; without this second step flatpak would reject the aarch64
+# ref on any remote with gpg-verify enabled -- which is every normal install.
 flatpak-merge:
 	@test -n "$(ARM_REPO)" || { echo "pass ARM_REPO=<path> (the repo/ copied from the phone)"; exit 1; }
 	ostree --repo=$(FP_REPO) pull-local $(ARM_REPO)
+	@if [ -n "$(FP_GPG)" ]; then \
+		for ref in $$(ostree --repo=$(ARM_REPO) refs); do \
+			commit=$$(ostree --repo=$(FP_REPO) rev-parse $$ref) || continue; \
+			ostree --repo=$(FP_REPO) gpg-sign \
+				$(if $(FP_GPGHOME),--gpg-homedir=$(FP_GPGHOME),) \
+				$$commit $(FP_GPG) >/dev/null 2>&1 \
+				&& echo "signed $$ref" || echo "already signed: $$ref"; \
+		done; \
+	fi
 	@echo "Merged. Next: make flatpak-publish"
 
 # Writes summary/AppStream/static deltas and signs them.

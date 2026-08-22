@@ -3,7 +3,14 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+# /run/host/os-release comes first on purpose. Inside a Flatpak, /etc/os-release
+# describes the *runtime* (ID=org.gnome.Platform), not the machine -- so a
+# sandboxed run on FuriOS would not recognise FuriOS and would silently skip
+# every FuriOS-specific browser tweak. Flatpak exposes the real one under
+# /run/host. Outside a sandbox that path does not exist and the usual files
+# are used.
 _OS_RELEASE_PATHS = (
+    Path('/run/host/os-release'),
     Path('/etc/os-release'),
     Path('/usr/lib/os-release'),
 )
