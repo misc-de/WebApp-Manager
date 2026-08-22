@@ -127,7 +127,34 @@ Split across four modules forming a one-directional dependency graph
   function. The VS Code CSS linter flags the latter as invalid — it is valid
   GTK CSS, just not standard CSS. Ignore those diagnostics.
 
+### Packaging
+- [flatpak/de.cais.webappmanager.yml](flatpak/de.cais.webappmanager.yml) —
+  Flatpak manifest against org.gnome.Platform 49, which already ships Python,
+  PyGObject and pycairo; Pillow and the cairosvg chain are built as modules
+  (pure-python ones from `py3-none-any` wheels, Pillow and cffi from sdists so
+  the manifest stays architecture-independent for aarch64 phones).
+  Build: `flatpak-builder --user --install --force-clean build-dir
+  flatpak/de.cais.webappmanager.yml`.
+- **Sandbox model:** the package intentionally does *not* keep app data inside
+  the sandbox. `--filesystem=xdg-data/webapp-manager` and
+  `--filesystem=xdg-config/webapp-manager` make Flatpak mirror the host
+  directories into the app's XDG dirs, so a sandboxed run shares its database
+  and settings with a source install. Managed artifacts (`.desktop` files,
+  icons, Firefox/Chromium profiles) must live on the host anyway — the host's
+  shell and browsers read them.
+
 ### Cross-cutting
+- [host_commands.py](host_commands.py) — the single place that knows whether
+  the process is sandboxed. `host_which()` and `host_argv()` are pass-throughs
+  natively and route through `flatpak-spawn --host` inside a Flatpak, because
+  browsers live on the host. Two things to keep in mind when touching it:
+  the command name is always passed as an *argument*, never interpolated into
+  a shell string; and host lookups run with `cwd='/'`, since the app's own
+  directory (`/app/share/webapp-manager`) does not exist outside the sandbox
+  and inheriting it makes every browser look uninstalled.
+  What must *not* go through it: the `Exec=` line of a generated `.desktop`
+  file and the launcher wrapper scripts — those are started by the host's
+  shell and have to stay plain host commands.
 - [i18n.py](i18n.py) — translation lookup with `t(key, **kwargs)`. Translations
   in [lang/](lang/) (37 languages). User language overrides config; system
   language is auto-detected.
@@ -173,6 +200,10 @@ Split across four modules forming a one-directional dependency graph
 - **Zip extraction** of any external/downloaded archive must be guarded by
   `browser_profiles._assert_safe_zip_members` before `extractall` — this rejects
   `..`, absolute paths and `\`.
+- **Host commands** (looking for a browser binary, launching one) must go
+  through `host_commands.host_which` / `host_commands.host_argv` rather than
+  `shutil.which` / a bare `subprocess.Popen`, or the app breaks when packaged
+  as a Flatpak. Covered by `tests/test_host_commands.py`.
 - **Outbound HTTP requests** (favicon fetch, icon discovery, extension
   download) must go through `input_validation.open_guarded_url`, never through
   `urllib.request.urlopen` directly. It validates the scheme on the initial URL
@@ -208,10 +239,13 @@ Split across four modules forming a one-directional dependency graph
 
 ## Known gaps
 
-- No Flatpak manifest / packaging — installation is `git clone` + `python3 main.py`.
-  A full `src/webapp_manager/` package layout pairs naturally with this and
-  would also let the `mainwindow`/`detail_page` packages move under the
-  package root.
+- No PyPI/distribution packaging. A Flatpak manifest exists (see Packaging),
+  but a source install is still `git clone` + `python3 main.py`. A full
+  `src/webapp_manager/` package layout would let the `mainwindow`/`detail_page`
+  packages move under a package root.
+- The Flatpak is not on Flathub. Getting there needs a git source pinned to a
+  release tag instead of `type: dir`, screenshots in the metainfo, and proof
+  of ownership for the `de.cais` domain that the app ID claims.
 - `MainWindow` mixin hierarchy is wide (8 mixins). Consider splitting into
   composed controllers when next refactoring.
 - UI test coverage is thin. The logic layer is reasonably covered

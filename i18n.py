@@ -8,7 +8,11 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parent
 LANG_DIR = APP_DIR / 'lang'
 DEFAULT_CONFIG_PATH = APP_DIR / 'config.json'
-USER_CONFIG_DIR = Path.home() / '.config' / 'webapp-manager'
+# XDG_CONFIG_HOME, not a hard-coded ~/.config: outside a sandbox the two are
+# the same, but inside a Flatpak this keeps the user config next to the
+# database (app_identity resolves APP_CONFIG_DIR the same way) instead of
+# splitting app state across two locations.
+USER_CONFIG_DIR = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'webapp-manager'
 USER_CONFIG_PATH = USER_CONFIG_DIR / 'config.json'
 DEFAULT_LANGUAGE_CODE = 'en'
 MUTABLE_CONFIG_KEYS = {'language', 'settings', 'window_state'}
