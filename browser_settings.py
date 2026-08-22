@@ -8,6 +8,7 @@ dependency graph and is never imported by them.
 import json
 import re
 from dataclasses import dataclass
+from typing import Any
 from pathlib import Path
 
 from distro_utils import is_furios_distribution
@@ -42,6 +43,11 @@ from browser_extensions import firefox_extension_installed
 
 FIREFOX_APP_MODE_START = '/* WEBAPP APP MODE START */\n'
 FIREFOX_APP_MODE_END = '/* WEBAPP APP MODE END */\n'
+
+# Reverse lookup for layout.css.prefers-color-scheme.content-override. The
+# pref is read back from an untrusted user.js, so the key type stays loose:
+# anything that is not one of the four known ints falls back to 'auto'.
+_COLOR_SCHEME_BY_PREF: dict[Any, str] = {0: 'dark', 1: 'light', 2: 'auto', 3: 'auto'}
 def _clear_firefox_runtime_caches(profile_dir, logger):
     profile_dir = Path(profile_dir)
     changed = False
@@ -607,7 +613,7 @@ def _read_firefox_profile_settings(profile_dir):
         APP_MODE_KEY: '1' if app_mode_enabled else '0',
         'Frameless': '1' if frameless else '0',
         USER_AGENT_VALUE_KEY: prefs.get('general.useragent.override', '') or '',
-        COLOR_SCHEME_KEY: {0: 'dark', 1: 'light', 2: 'auto', 3: 'auto'}.get(prefs.get('layout.css.prefers-color-scheme.content-override'), 'auto'),
+        COLOR_SCHEME_KEY: _COLOR_SCHEME_BY_PREF.get(prefs.get('layout.css.prefers-color-scheme.content-override'), 'auto'),
     }
 
 def _read_chromium_profile_settings(profile_dir):

@@ -1,0 +1,11 @@
+# Optional dependencies. The app starts and runs without them; each one
+# unlocks a single feature and is probed with a guarded import.
+
+# SVG icon import (icon_pipeline.py)
+cairosvg>=2.5
+
+# Syntax highlighting in the custom-asset code editor (detail_page/assets.py).
+# GtkSource is a GObject-Introspection typelib, not a pip package:
+#   Debian/Ubuntu: gir1.2-gtksource-5
+#   Arch:          gtksourceview5
+#   Fedora:        gtksourceview5

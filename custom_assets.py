@@ -337,7 +337,7 @@ def count_asset_references(db, asset_id):
 
 def detach_asset_from_entries(db, asset_id):
     target = str(asset_id or '').strip()
-    affected_entry_ids = []
+    affected_entry_ids: list[int] = []
     if not target:
         return affected_entry_ids
     rows = db.cursor.execute(

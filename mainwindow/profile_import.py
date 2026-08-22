@@ -19,6 +19,11 @@ LOG = get_logger(__name__)
 
 
 class MainWindowProfileImportMixin:
+    # Declared here so the type is Optional for every mixin consumer: the
+    # attribute is created in MainWindow.__init__ as None and only holds an
+    # Event while a resync worker is running.
+    _profile_resync_cancel_event: threading.Event | None
+
     def on_refresh_clicked(self, button):
         if self._profile_resync_running:
             return

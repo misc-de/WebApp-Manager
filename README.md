@@ -13,6 +13,33 @@ This project is under active development. Features may change and instability is
 - Manage icons, user-agent preferences, modes and browser-specific options
 
 ## Installation
+
+### 1. System dependencies
+
+The app is built on GTK 4 / Libadwaita and needs their GObject-Introspection
+bindings. Install them from your distribution rather than from pip — the
+bindings have to match the system GTK build:
+
+```
+# Debian / Ubuntu
+sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 python3-pil
+
+# Arch
+sudo pacman -S python-gobject gtk4 libadwaita python-pillow
+
+# Fedora
+sudo dnf install python3-gobject gtk4 libadwaita python3-pillow
+```
+
+Optional, each gating one feature:
+`python3-cairosvg` (SVG icon import) and `gir1.2-gtksource-5`
+(syntax highlighting in the custom-asset editor).
+
+See [requirements.txt](requirements.txt) and
+[requirements-optional.txt](requirements-optional.txt) for the pip equivalents.
+
+### 2. Get the source
+
 ```
 git clone https://github.com/misc-de/WebApp-Manager.git
 ```

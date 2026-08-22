@@ -58,8 +58,11 @@ fake_logger_setup = types.ModuleType('logger_setup')
 fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
+import browser_extensions
 from browser_profiles import (
+    MAX_EXTENSION_DOWNLOAD_SIZE,
     ProfileSettings,
+    SCOPED_SWIPE_EXTENSION_NAME,
     _resolve_bundled_extension_path,
     _scope_swipe_extension_payload,
     _write_firefox_user_js,
@@ -223,8 +226,10 @@ class FirefoxProfileOptionTests(unittest.TestCase):
         def __init__(self, payload: bytes):
             self.payload = payload
 
-        def read(self):
-            return self.payload
+        def read(self, amount=None):
+            if amount is None:
+                return self.payload
+            return self.payload[:amount]
 
         def __enter__(self):
             return self
@@ -447,7 +452,7 @@ class FirefoxProfileOptionTests(unittest.TestCase):
             with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), \
                 mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root), \
                 mock.patch('browser_extensions.get_firefox_extension_config', return_value=config), \
-                mock.patch('browser_extensions.urllib.request.urlopen', return_value=self._FakeUrlopenResponse(payload)):
+                mock.patch('browser_extensions.open_guarded_url', return_value=self._FakeUrlopenResponse(payload)):
                 result = _sync_firefox_swipe_extension(
                     profile_dir,
                     True,
@@ -481,7 +486,7 @@ class FirefoxProfileOptionTests(unittest.TestCase):
             with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), \
                 mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root), \
                 mock.patch('browser_extensions.get_firefox_extension_config', return_value=config), \
-                mock.patch('browser_extensions.urllib.request.urlopen', return_value=self._FakeUrlopenResponse(payload)):
+                mock.patch('browser_extensions.open_guarded_url', return_value=self._FakeUrlopenResponse(payload)):
                 result = _sync_firefox_swipe_extension(
                     profile_dir,
                     True,
@@ -490,6 +495,94 @@ class FirefoxProfileOptionTests(unittest.TestCase):
 
             self.assertFalse(result['installed'])
             self.assertEqual(result['error'], 'unsigned-extension-payload')
+
+    def test_refresh_of_existing_extension_resolves_payload_only_once(self):
+        """A refresh used to resolve the payload twice -- once to compare
+        against the installed XPI, once to install it -- which meant a second
+        download. The install path now reuses what the comparison loaded."""
+        logger = _build_test_logger('refresh-single-resolve')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            firefox_root = tmp_root / 'firefox-root'
+            chromium_root = tmp_root / 'chromium-root'
+            profile_dir = firefox_root / 'webapp_testprofile'
+            extensions_dir = profile_dir / 'extensions'
+            extensions_dir.mkdir(parents=True, exist_ok=True)
+            _write_managed_profile_marker(profile_dir, 'firefox')
+
+            # Installed copy differs from the bundle, so the refresh proceeds.
+            (extensions_dir / 'swipe-gestures@de.cais.xpi').write_bytes(b'stale-installed-payload')
+            new_bundle = tmp_root / 'new-swipe.xpi'
+            self._write_test_xpi(new_bundle, 'swipe-gestures@de.cais', signed=True)
+
+            config = {
+                'id': 'swipe-gestures@de.cais',
+                'marker_file': '.webapp_secure_swipe_extension_id',
+                'bundle_path': str(new_bundle),
+                'dev_bundle_path': '',
+                'allow_unsigned_local_bundle': False,
+                'download_url': '',
+            }
+            real_loader = browser_extensions._load_firefox_extension_payload
+            calls = []
+
+            def counting_loader(*args, **kwargs):
+                calls.append(1)
+                return real_loader(*args, **kwargs)
+
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), \
+                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root), \
+                mock.patch('browser_extensions.get_firefox_extension_config', return_value=config), \
+                mock.patch('browser_extensions._resolve_bundled_extension_path', return_value=new_bundle), \
+                mock.patch('browser_extensions._load_firefox_extension_payload', side_effect=counting_loader):
+                result = _sync_firefox_swipe_extension(profile_dir, True, logger)
+
+            self.assertTrue(result['installed'])
+            self.assertTrue(result['changed'])
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(
+                (extensions_dir / 'swipe-gestures@de.cais.xpi').read_bytes(),
+                new_bundle.read_bytes(),
+            )
+
+    def test_oversized_download_is_rejected_without_installing(self):
+        logger = _build_test_logger('oversized-swipe-download')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            firefox_root = tmp_root / 'firefox-root'
+            chromium_root = tmp_root / 'chromium-root'
+            profile_dir = firefox_root / 'webapp_testprofile'
+            (profile_dir / 'extensions').mkdir(parents=True, exist_ok=True)
+            _write_managed_profile_marker(profile_dir, 'firefox')
+
+            # One byte past the cap is enough: the reader asks for cap+1 bytes
+            # and rejects anything longer, so no real 32 MB payload is needed.
+            oversized = b'x' * (MAX_EXTENSION_DOWNLOAD_SIZE + 1)
+
+            config = {
+                'id': 'swipe-gestures@de.cais',
+                'marker_file': '.webapp_secure_swipe_extension_id',
+                'bundle_path': '',
+                'dev_bundle_path': '',
+                'allow_unsigned_local_bundle': False,
+                'download_url': 'https://example.invalid/swipe.xpi',
+            }
+            with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), \
+                mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root), \
+                mock.patch('browser_extensions.get_firefox_extension_config', return_value=config), \
+                mock.patch('browser_extensions._resolve_bundled_extension_path', return_value=None), \
+                mock.patch('browser_extensions.open_guarded_url', return_value=self._FakeUrlopenResponse(oversized)):
+                result = _sync_firefox_swipe_extension(
+                    profile_dir,
+                    True,
+                    logger,
+                )
+
+            self.assertFalse(result['installed'])
+            # Guards against the test passing for the wrong reason (e.g. a
+            # missing source) instead of because the cap was hit.
+            self.assertEqual(result['error'], 'missing-extension-payload')
+            self.assertFalse((profile_dir / 'extensions' / 'swipe-gestures@de.cais.xpi').exists())
 
     def test_secure_swipe_install_replaces_legacy_swipe_bundle(self):
         logger = _build_test_logger('secure-swipe-migration')
@@ -519,7 +612,7 @@ class FirefoxProfileOptionTests(unittest.TestCase):
             with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), \
                 mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root), \
                 mock.patch('browser_extensions.get_firefox_extension_config', return_value=config), \
-                mock.patch('browser_extensions.urllib.request.urlopen', return_value=self._FakeUrlopenResponse(payload)):
+                mock.patch('browser_extensions.open_guarded_url', return_value=self._FakeUrlopenResponse(payload)):
                 result = _sync_firefox_swipe_extension(
                     profile_dir,
                     True,
@@ -555,7 +648,7 @@ class FirefoxProfileOptionTests(unittest.TestCase):
             with mock.patch('browser_profiles.FIREFOX_ROOT', firefox_root), mock.patch('browser_paths.FIREFOX_ROOT', firefox_root), \
                 mock.patch('browser_profiles.CHROMIUM_PROFILE_ROOT', chromium_root), mock.patch('browser_paths.CHROMIUM_PROFILE_ROOT', chromium_root), \
                 mock.patch('browser_extensions.get_firefox_extension_config', return_value=config), \
-                mock.patch('browser_extensions.urllib.request.urlopen', side_effect=urllib.error.URLError('offline')):
+                mock.patch('browser_extensions.open_guarded_url', side_effect=urllib.error.URLError('offline')):
                 result = _sync_firefox_swipe_extension(
                     profile_dir,
                     True,
@@ -601,7 +694,7 @@ class FirefoxProfileOptionTests(unittest.TestCase):
                 manifest = json.loads(archive.read('manifest.json').decode('utf-8'))
                 names = archive.namelist()
 
-        self.assertEqual(manifest['name'], 'Swipe Gesten (Eigenes Addon)')
+        self.assertEqual(manifest['name'], SCOPED_SWIPE_EXTENSION_NAME)
         self.assertEqual(manifest['host_permissions'], ['https://example.com/*'])
         self.assertEqual(manifest['content_scripts'][0]['matches'], ['https://example.com/*'])
         self.assertFalse(any(name.upper().startswith('META-INF/') for name in names))

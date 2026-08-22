@@ -1,0 +1,6 @@
+# Tooling used by CI and local development.
+-r requirements.txt
+
+ruff
+mypy
+coverage

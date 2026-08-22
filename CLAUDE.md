@@ -16,9 +16,14 @@ python3 main.py
 
 `main.py` only execs `webapp-manager.py` — that is the real entry point
 (`WebAppManager(Adw.Application)` → `MainWindow`). System dependencies:
-GTK 4, Libadwaita 1, GObject Introspection. Python deps: `Pillow`, `PyGObject`,
-`cairosvg` (optional — gates SVG icon import), `GtkSource` (optional — code editor
-in custom-asset dialog).
+GTK 4, Libadwaita 1, GObject Introspection.
+
+Python dependencies are declared in [requirements.txt](requirements.txt)
+(`PyGObject`, `Pillow`), [requirements-optional.txt](requirements-optional.txt)
+(`cairosvg` — gates SVG icon import; `GtkSource` typelib — gates the code editor
+in the custom-asset dialog) and [requirements-dev.txt](requirements-dev.txt)
+(ruff, mypy, coverage). On most distributions the packaged `python3-gi` build is
+preferable to a pip install, because it matches the system GTK exactly.
 
 User data lives in:
 - `~/.config/webapp-manager/config.json` — language, settings, window state
@@ -48,7 +53,7 @@ User data lives in:
 - [browser_option_logic.py](browser_option_logic.py) — option normalisation,
   semantic mode (`standard` / `kiosk` / `app` / `seamless`), browser-state
   encoding for round-tripping.
-- [option_config.py](option_config.py), [detail_page_option_state.py](detail_page_option_state.py) — UI binding helpers.
+- [option_config.py](option_config.py), [detail_page/option_state.py](detail_page/option_state.py) — UI binding helpers.
 
 **Adding a new option:** define a new `BrowserOptionSpec` in
 `_VISIBLE_BROWSER_OPTION_SPECS`, add the key constant in `webapp_constants.py`,
@@ -140,9 +145,21 @@ Split across four modules forming a one-directional dependency graph
 ### Tests
 - [tests/](tests/) — pure `unittest`, no pytest. Each test file stubs
   `logger_setup` via a dummy module so the real logger does not write to disk.
+  [tests/test_outbound_request_guard.py](tests/test_outbound_request_guard.py)
+  is the exception that talks to the network: it starts a loopback HTTP server,
+  because the redirect guard hooks into urllib's redirect machinery and cannot
+  be exercised by stubbing a single function. It skips itself where loopback
+  sockets are unavailable.
+  [tests/test_plugin_feedback.py](tests/test_plugin_feedback.py) shows the
+  pattern for testing UI logic without a widget tree: a stub object borrows the
+  real methods and hand-implements what they call back into.
 - Run: `python3 -m unittest discover -s tests -v`
-- CI: [.github/workflows/test.yml](.github/workflows/test.yml) runs the suite
-  on Python 3.11 / 3.12 / 3.13 with coverage.
+- CI: [.github/workflows/test.yml](.github/workflows/test.yml) has two jobs.
+  `test` installs the distribution's GTK 4 / Libadwaita bindings via apt and
+  runs the full suite with coverage — four test modules import `mainwindow` /
+  `detail_page` and therefore need PyGObject. `quality` runs byte-compilation,
+  ruff and mypy across Python 3.11 / 3.12 / 3.13 without GTK, which is what
+  gives the version matrix.
 
 ## Conventions
 
@@ -156,6 +173,15 @@ Split across four modules forming a one-directional dependency graph
 - **Zip extraction** of any external/downloaded archive must be guarded by
   `browser_profiles._assert_safe_zip_members` before `extractall` — this rejects
   `..`, absolute paths and `\`.
+- **Outbound HTTP requests** (favicon fetch, icon discovery, extension
+  download) must go through `input_validation.open_guarded_url`, never through
+  `urllib.request.urlopen` directly. It validates the scheme on the initial URL
+  *and on every redirect hop*, and blocks a public → private/loopback pivot.
+  Reaching a private host directly stays allowed on purpose — running a web app
+  against `http://192.168.1.10:8080` is a normal use of this program — so pass
+  `allow_private_targets=False` only where no LAN target is ever legitimate
+  (currently the extension download). Covered by
+  `tests/test_outbound_request_guard.py`.
 - **Launch-mode decisions** are split across two keys: `Mode (Mobile)` and
   `Mode (Desktop)`. When either is absent (legacy entries), it falls back to
   `semantic_mode_from_options(options)` — the legacy `Kiosk` / `App Mode` /
@@ -171,9 +197,6 @@ Split across four modules forming a one-directional dependency graph
 
 ## Things that look weird but are intentional
 
-- `MANAGED_IMPORT_OPTION_KEYS` lives both in [webapp-manager.py](webapp-manager.py)
-  and [mainwindow_entries.py](mainwindow_entries.py). Currently kept in sync by
-  hand — consolidate when next touched.
 - The `_options_cache` on `MainWindow` stores per-entry option dicts with
   canonical keys; populated in `load_entries_from_db` via
   `normalize_option_rows`. Direct `db.list_option_values()` rows must be passed
@@ -191,6 +214,16 @@ Split across four modules forming a one-directional dependency graph
   package root.
 - `MainWindow` mixin hierarchy is wide (8 mixins). Consider splitting into
   composed controllers when next refactoring.
+- UI test coverage is thin. The logic layer is reasonably covered
+  (`browser_option_logic` ~83%, `database` ~80%, `launcher_wrapper` ~86%), but
+  the mixin modules sit in the 7–17% range, so the ~5k lines of UI code —
+  including all worker-thread handling — are effectively untested.
+- `check_untyped_defs` is enabled for 32 of 45 modules. The 13 UI mixins are
+  excluded in [pyproject.toml](pyproject.toml) because each mixin reads
+  attributes owned by the composed class (~880 `attr-defined` findings). Remove
+  a module from that override list once its mixin declares those attributes —
+  see `MainWindowProfileImportMixin._profile_resync_cancel_event` for the
+  pattern.
 - Partial translation completeness gate — `tests/test_i18n_integrity.py` now
   enforces 100% coverage for the locales in `REQUIRED_COMPLETE_LANGUAGES`
   (currently `en` reference + `de`); the other ~34 locales sit at ~74% and are
