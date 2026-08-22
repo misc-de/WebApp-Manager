@@ -61,8 +61,8 @@ class AvailableEnginesCachingTests(unittest.TestCase):
         engine_support._AVAILABLE_ENGINES_CACHE = None
 
     def test_second_call_does_not_re_probe_path(self):
-        """After the first call, shutil.which must not be consulted again."""
-        with mock.patch('engine_support.shutil.which') as which_mock:
+        """After the first call, the binary lookup must not run again."""
+        with mock.patch('engine_support.host_which') as which_mock:
             which_mock.side_effect = lambda cmd: f'/usr/bin/{cmd}'
             first = engine_support.available_engines()
             which_mock.reset_mock()
@@ -73,7 +73,7 @@ class AvailableEnginesCachingTests(unittest.TestCase):
 
     def test_returns_independent_copies(self):
         """Callers must not be able to mutate each other's data through the cache."""
-        with mock.patch('engine_support.shutil.which', side_effect=lambda cmd: f'/usr/bin/{cmd}'):
+        with mock.patch('engine_support.host_which', side_effect=lambda cmd: f'/usr/bin/{cmd}'):
             first = engine_support.available_engines()
             if not first:
                 self.skipTest('no engines configured on this system')
@@ -84,7 +84,7 @@ class AvailableEnginesCachingTests(unittest.TestCase):
 
     def test_cache_respects_availability(self):
         """Engines whose command cannot be resolved must not appear."""
-        with mock.patch('engine_support.shutil.which', return_value=None):
+        with mock.patch('engine_support.host_which', return_value=None):
             engine_support._AVAILABLE_ENGINES_CACHE = None
             result = engine_support.available_engines()
         self.assertEqual(result, [])

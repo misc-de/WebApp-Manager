@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>de.cais.webappmanager</id>
+
+  <name>WebApp Manager</name>
+  <summary>Create web app launchers with dedicated browser profiles</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      WebApp Manager turns a website into a proper desktop or mobile
+      application: a launcher in the application menu, its own icon, and a
+      browser profile that belongs to that app alone, separate from everyday
+      browsing.
+    </p>
+    <p>Each web app can be configured individually:</p>
+    <ul>
+      <li>Firefox, Chrome or Chromium as the underlying engine</li>
+      <li>Window mode per form factor, so the same app can open kiosk-style on a phone and windowed on a desktop</li>
+      <li>Privacy and cleanup options, such as clearing cache or cookies on exit</li>
+      <li>A user agent per app</li>
+      <li>Custom CSS and JavaScript injected into the site</li>
+      <li>Import and export of web apps as .wapp files</li>
+    </ul>
+    <p>
+      Browsers, launchers and profiles live on the host system, so the web apps
+      created here work exactly like natively installed applications.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">de.cais.webappmanager.desktop</launchable>
+
+  <url type="homepage">https://github.com/misc-de/WebApp-Manager</url>
+  <url type="bugtracker">https://github.com/misc-de/WebApp-Manager/issues</url>
+
+  <developer id="de.cais">
+    <name>Christian</name>
+  </developer>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+
+  <requires>
+    <!-- The layout adapts down to phone widths (Phosh, Plasma Mobile). -->
+    <display_length compare="ge">360</display_length>
+  </requires>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="69" date="2026-08-22">
+      <description>
+        <p>Adds a Flatpak package. Browser detection and launching are routed
+        to the host so the sandboxed build behaves like the native one.</p>
+      </description>
+    </release>
+  </releases>
+</component>

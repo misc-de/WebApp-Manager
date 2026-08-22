@@ -1,0 +1,188 @@
+# Flatpak manifest for WebApp Manager.
+#
+# Build and install locally:
+#   flatpak-builder --user --install --force-clean build-dir \
+#       flatpak/de.cais.webappmanager.yml
+#   flatpak run de.cais.webappmanager
+#
+# On the sandbox permissions below: this app exists to manage host state --
+# it writes .desktop launchers the host's shell starts, creates browser
+# profiles the host's browsers read, and launches those browsers. That work
+# cannot happen inside a sealed sandbox, so the permissions are broad by
+# necessity, not by accident. Each one is justified where it is granted, and
+# nothing wider than needed is requested (notably: no --filesystem=home).
+app-id: de.cais.webappmanager
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+command: webapp-manager
+
+finish-args:
+  # Display, GPU and IPC -- an ordinary GTK 4 app.
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Favicon download, icon discovery and add-on downloads. Every request goes
+  # through input_validation.open_guarded_url, which validates the scheme on
+  # each redirect hop and refuses a public -> private pivot.
+  - --share=network
+
+  # The launchers this app produces, and their icons. They are read by the
+  # host's desktop shell, so they have to live in the real home directory.
+  - --filesystem=xdg-data/applications:create
+  - --filesystem=xdg-data/icons:create
+  # Wrapper scripts for entries whose mobile and desktop modes differ
+  # (launcher_wrapper.py), plus the entry database. Flatpak mirrors an
+  # xdg-data grant into the app's own data directory, so the sandboxed run
+  # reads and writes the same ~/.local/share/webapp-manager as a native
+  # install: switching between the two keeps every web app.
+  - --filesystem=xdg-data/webapp-manager:create
+  # Same idea for the app's own settings (language, window state), so they do
+  # not silently fork between a native and a sandboxed run.
+  - --filesystem=xdg-config/webapp-manager:create
+  # Managed browser profiles. These belong to the host's Firefox/Chromium,
+  # which is why they are not kept inside the sandbox.
+  - --filesystem=~/.mozilla/firefox:create
+  - --filesystem=xdg-config/webapp-browser-profiles:create
+
+  # Browser detection and launching. The browsers live on the host, so
+  # host_commands.py routes `which` lookups and process starts through
+  # flatpak-spawn --host. This is the widest permission here: it lets the app
+  # run commands outside the sandbox. Without it the app can still edit
+  # launchers, but it can neither find a browser nor start one.
+  - --talk-name=org.freedesktop.Flatpak
+
+modules:
+  # --- Python dependencies -------------------------------------------------
+  # org.gnome.Platform 49 ships Python 3.13, PyGObject and pycairo, but not
+  # Pillow (required) or cairosvg (optional, gates SVG icon import). Built
+  # from sdists so the manifest stays architecture-independent -- this app
+  # targets mobile devices (Phosh/FuriOS on aarch64) as well as desktops.
+  - name: python3-deps
+    buildsystem: simple
+    build-commands: []
+    modules:
+      # Build requirement of Pillow 12. Taken as a wheel: the sdist builds
+      # through scikit-build-core, which would drag in its own dependency
+      # chain that --no-build-isolation cannot resolve.
+      - name: python3-pybind11
+        buildsystem: simple
+        build-commands:
+          - pip3 install --verbose --exists-action=i --no-index --no-build-isolation
+            --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} pybind11 --no-cache-dir
+        sources:
+          - type: file
+            url: https://files.pythonhosted.org/packages/33/fd/8762f7ee3e4e4be6d1d846cffb4916dd9bb02b2f800d3603718a0efe494c/pybind11-3.1.0-py3-none-any.whl
+            sha256: b8488090f8acffbcb6b5d6a85571a6827a0a2981ffb75e5a0b27b87c4a6b7dd0
+      # Required (icon_pipeline). Compiled from sdist against the SDK's
+      # zlib/libjpeg, so the manifest stays architecture independent.
+      - name: python3-pillow
+        buildsystem: simple
+        build-commands:
+          - pip3 install --verbose --exists-action=i --no-index --no-build-isolation
+            --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} pillow --no-cache-dir
+        sources:
+          - type: file
+            url: https://files.pythonhosted.org/packages/1c/3d/bb7fca845737cf9d7dbde16ed1843984665ff2e0a518f5db43e77ec540b9/pillow-12.3.0.tar.gz
+            sha256: 3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce
+      - name: python3-pycparser
+        buildsystem: simple
+        build-commands:
+          - pip3 install --verbose --exists-action=i --no-index --no-build-isolation
+            --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} pycparser --no-cache-dir
+        sources:
+          - type: file
+            url: https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl
+            sha256: b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
+      - name: python3-cffi
+        buildsystem: simple
+        build-commands:
+          - pip3 install --verbose --exists-action=i --no-index --no-build-isolation
+            --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} cffi --no-cache-dir
+        sources:
+          - type: file
+            url: https://files.pythonhosted.org/packages/9e/ef/008a1939e372c06329a3fce4279c02f328488f3526744906eeec3da7ad5f/cffi-2.1.1.tar.gz
+            sha256: dd31f52ea1086513bb9df30f8fcee9b8918323ae067a3d5b78bc826a000712be
+      - name: python3-webencodings
+        buildsystem: simple
+        build-commands:
+          - pip3 install --verbose --exists-action=i --no-index --no-build-isolation
+            --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} webencodings --no-cache-dir
+        sources:
+          - type: file
+            url: https://files.pythonhosted.org/packages/77/c6/040cbc72480d789a5f40d63fb484d3106554c4dfa2d2b70ad5022057750f/webencodings-0.6.1-py3-none-any.whl
+            sha256: 7fab6269c8bf237c657876b52058ccb182e861518d1c695c1a9aaa8c1c105d5b
+      - name: python3-tinycss2
+        buildsystem: simple
+        build-commands:
+          - pip3 install --verbose --exists-action=i --no-index --no-build-isolation
+            --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} tinycss2 --no-cache-dir
+        sources:
+          - type: file
+            url: https://files.pythonhosted.org/packages/60/45/c7b5c3168458db837e8ceab06dc77824e18202679d0463f0e8f002143a97/tinycss2-1.5.1-py3-none-any.whl
+            sha256: 3415ba0f5839c062696996998176c4a3751d18b7edaaeeb658c9ce21ec150661
+      - name: python3-cssselect2
+        buildsystem: simple
+        build-commands:
+          - pip3 install --verbose --exists-action=i --no-index --no-build-isolation
+            --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} cssselect2 --no-cache-dir
+        sources:
+          - type: file
+            url: https://files.pythonhosted.org/packages/21/0e/8459ca4413e1a21a06c97d134bfaf18adfd27cea068813dc0faae06cbf00/cssselect2-0.9.0-py3-none-any.whl
+            sha256: 6a99e5f91f9a016a304dd929b0966ca464bcfda15177b6fb4a118fc0fb5d9563
+      - name: python3-defusedxml
+        buildsystem: simple
+        build-commands:
+          - pip3 install --verbose --exists-action=i --no-index --no-build-isolation
+            --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} defusedxml --no-cache-dir
+        sources:
+          - type: file
+            url: https://files.pythonhosted.org/packages/0f/d5/c66da9b79e5bdb124974bfe172b4daf3c984ebd9c2a06e2b8a4dc7331c72/defusedxml-0.7.1.tar.gz
+            sha256: 1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69
+      - name: python3-cairocffi
+        buildsystem: simple
+        build-commands:
+          - pip3 install --verbose --exists-action=i --no-index --no-build-isolation
+            --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} cairocffi --no-cache-dir
+        sources:
+          - type: file
+            url: https://files.pythonhosted.org/packages/93/d8/ba13451aa6b745c49536e87b6bf8f629b950e84bd0e8308f7dc6883b67e2/cairocffi-1.7.1-py3-none-any.whl
+            sha256: 9803a0e11f6c962f3b0ae2ec8ba6ae45e957a146a004697a1ac1bbf16b073b3f
+      # Optional: gates SVG icon import. Everything from here down is its
+      # dependency chain.
+      - name: python3-cairosvg
+        buildsystem: simple
+        build-commands:
+          - pip3 install --verbose --exists-action=i --no-index --no-build-isolation
+            --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} cairosvg --no-cache-dir
+        sources:
+          - type: file
+            url: https://files.pythonhosted.org/packages/bf/e0/5011747466414c12cac8a8df77aa235068669a6a5a5df301a96209db6054/cairosvg-2.9.0-py3-none-any.whl
+            sha256: 4b82d07d145377dffdfc19d9791bd5fb65539bb4da0adecf0bdbd9cd4ffd7c68
+
+  # --- The application itself ---------------------------------------------
+  - name: webapp-manager
+    buildsystem: simple
+    build-commands:
+      - install -d /app/share/webapp-manager
+      - cp -r *.py lang mainwindow detail_page extension style.css config.json
+        de.cais.webappmanager.png /app/share/webapp-manager/
+      - install -Dm755 flatpak/webapp-manager.sh /app/bin/webapp-manager
+      - install -Dm644 de.cais.webappmanager.png
+        /app/share/icons/hicolor/512x512/apps/de.cais.webappmanager.png
+      - install -Dm644 flatpak/de.cais.webappmanager.desktop
+        /app/share/applications/de.cais.webappmanager.desktop
+      - install -Dm644 flatpak/de.cais.webappmanager.metainfo.xml
+        /app/share/metainfo/de.cais.webappmanager.metainfo.xml
+    sources:
+      # Local checkout. For a Flathub submission this becomes a git source
+      # pinned to a release tag.
+      - type: dir
+        path: ..
+        skip:
+          - .git
+          - .github
+          - build-dir
+          - .flatpak-builder
+          - tests

@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from custom_assets import ensure_profile_customizations, inline_asset_text_for_options, linked_assets_for_options
+from host_commands import host_which
 from browser_option_logic import normalize_option_dict, project_options_for_family, semantic_mode_from_options
 from input_validation import build_safe_slug
 from webapp_constants import (
@@ -216,7 +217,7 @@ def resolve_browser_command(configured_command, logger):
         candidates = ['firefox', 'firefox-esr']
 
     for candidate in candidates:
-        if shutil.which(candidate):
+        if host_which(candidate):
             return candidate
     logger.warning("No installed browser found for configured command '%s'; using raw value", configured_command)
     return configured_command

@@ -4,6 +4,7 @@ import shlex
 from pathlib import Path
 
 from app_identity import APP_ID, APP_ICON_NAME, APP_ICON_SOURCE
+from host_commands import running_in_flatpak
 from i18n import t
 
 
@@ -26,6 +27,13 @@ def headerbar_decoration_layout_without_icon() -> str:
 
 
 def ensure_manager_desktop_integration(app_dir: Path, logger) -> None:
+    # A Flatpak ships its own .desktop file and icon, installed under /app by
+    # the package. Writing a second one into the host's ~/.local/share would
+    # produce a duplicate menu entry whose Exec= points at /app/... -- a path
+    # the host cannot see, so the entry would simply fail to start.
+    if running_in_flatpak():
+        logger.debug('Running inside Flatpak; leaving desktop integration to the package')
+        return
     try:
         local_applications = Path.home() / '.local/share/applications'
         local_icons = Path.home() / '.local/share/icons/hicolor/512x512/apps'

@@ -4,7 +4,9 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 APP_NAME = 'webapp'
-LOG_DIR = Path.home() / '.local/state' / APP_NAME
+# See the note in i18n.py: honour XDG_STATE_HOME so a sandboxed run logs into
+# its own state directory rather than the host's.
+LOG_DIR = Path(os.environ.get('XDG_STATE_HOME', Path.home() / '.local/state')) / APP_NAME
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / 'app.log'
 
