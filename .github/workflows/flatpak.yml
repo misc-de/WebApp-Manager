@@ -1,0 +1,82 @@
+name: Flatpak
+
+# Builds the Flatpak natively for both architectures and uploads each OSTree
+# repo as an artifact. It deliberately does NOT sign or publish: the signing
+# key stays on the maintainer's machine. Turn the artifacts into a release
+# with `make release-from-ci` (see the Makefile), which merges, signs and
+# pushes gh-pages locally.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.py'
+      - 'flatpak/**'
+      - 'lang/**'
+      - 'style.css'
+      - 'config.json'
+      - 'extension/**'
+      - '.github/workflows/flatpak.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flatpak-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Native runners for both architectures -- ubuntu-24.04-arm is free
+          # for public repositories, which is what makes the phone build
+          # unnecessary. No QEMU, no cross-compilation.
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder ostree
+          flatpak remote-add --if-not-exists --user \
+            flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      # The runtime is ~1 GB and identical between runs; caching it turns a
+      # multi-minute download into a restore.
+      - name: Cache GNOME runtime
+        id: runtime-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/flatpak
+          key: flatpak-runtime-${{ matrix.arch }}-gnome49-v1
+
+      - name: Install GNOME 49 runtime
+        run: flatpak install -y --user flathub org.gnome.Platform//49 org.gnome.Sdk//49
+
+      - name: Build into an OSTree repo
+        run: |
+          flatpak-builder --force-clean --disable-rofiles-fuse \
+            --repo=repo build-dir flatpak/de.cais.webappmanager.yml
+          ostree --repo=repo refs | sort
+
+      # Packed as a tar because the artifact upload does not round-trip an
+      # OSTree repo's symlinks and permissions reliably.
+      - name: Pack the repo
+        run: tar -cf repo-${{ matrix.arch }}.tar repo
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-repo-${{ matrix.arch }}
+          path: repo-${{ matrix.arch }}.tar
+          retention-days: 30
+          compression-level: 0

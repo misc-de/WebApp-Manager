@@ -9,3 +9,6 @@ build-dir/
 .flatpak-builder/
 .gnupg-flatpak/
 repo/
+.ci-artifacts/
+repo-arm/
+.flatpak-build/

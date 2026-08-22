@@ -28,7 +28,7 @@ PAGES_BRANCH ?= gh-pages
 PAGES_WORKTREE = .pages-worktree
 
 .PHONY: test lint flatpak-build flatpak-merge flatpak-publish flatpak-repo-info \
-	flatpak-repofile flatpak-pages flatpak-key
+	flatpak-repofile flatpak-pages flatpak-key release-from-ci ci-artifacts
 
 # --- Development ----------------------------------------------------------
 
@@ -101,6 +101,57 @@ flatpak-pages:
 		&& (git diff --cached --quiet || git commit -q -m "Publish $(APPID) $$(date -u +%Y-%m-%dT%H:%MZ)")
 	git worktree remove --force $(PAGES_WORKTREE)
 	@echo "Committed to $(PAGES_BRANCH). Push it:  git push origin $(PAGES_BRANCH)"
+
+# --- Release from CI artifacts --------------------------------------------
+#
+# The Flatpak workflow builds both architectures natively and uploads each
+# OSTree repo as an artifact, unsigned -- CI has no access to the signing key.
+# This target pulls those artifacts in, signs everything here, and publishes.
+#
+#   make release-from-ci              # newest successful Flatpak run
+#   make release-from-ci RUN=1234567  # a specific run
+CI_WORKFLOW ?= flatpak.yml
+CI_ARTIFACT_DIR = .ci-artifacts
+
+ci-artifacts:
+	@command -v gh >/dev/null || { echo "gh (GitHub CLI) is required"; exit 1; }
+	@run="$(RUN)"; \
+	if [ -z "$$run" ]; then \
+		run=$$(gh run list --workflow=$(CI_WORKFLOW) --status=success \
+			--limit=1 --json databaseId --jq '.[0].databaseId'); \
+		test -n "$$run" || { echo "no successful $(CI_WORKFLOW) run found"; exit 1; }; \
+		echo "using latest successful run $$run"; \
+	fi; \
+	rm -rf $(CI_ARTIFACT_DIR) && mkdir -p $(CI_ARTIFACT_DIR); \
+	gh run download "$$run" -D $(CI_ARTIFACT_DIR) \
+		-n flatpak-repo-x86_64 -n flatpak-repo-aarch64
+	@for arch in x86_64 aarch64; do \
+		tar -xf $(CI_ARTIFACT_DIR)/flatpak-repo-$$arch/repo-$$arch.tar \
+			-C $(CI_ARTIFACT_DIR) --transform "s|^repo|repo-$$arch|" \
+			|| { echo "artifact for $$arch is missing"; exit 1; }; \
+		echo "unpacked $$arch"; \
+	done
+
+# Merges both CI-built architectures, signs them, and publishes to gh-pages.
+release-from-ci: ci-artifacts
+	@test -d $(FP_REPO) || ostree --repo=$(FP_REPO) init --mode=archive
+	@for arch in x86_64 aarch64; do \
+		src=$(CI_ARTIFACT_DIR)/repo-$$arch; \
+		echo "--- merging $$arch"; \
+		ostree --repo=$(FP_REPO) pull-local $$src || exit 1; \
+		for ref in $$(ostree --repo=$$src refs); do \
+			commit=$$(ostree --repo=$(FP_REPO) rev-parse $$ref) || continue; \
+			ostree --repo=$(FP_REPO) gpg-sign \
+				$(if $(FP_GPGHOME),--gpg-homedir=$(FP_GPGHOME),) \
+				$$commit $(FP_GPG) >/dev/null 2>&1 \
+				&& echo "  signed $$ref" || echo "  already signed: $$ref"; \
+		done; \
+	done
+	$(MAKE) flatpak-publish
+	$(MAKE) flatpak-pages
+	@echo
+	@echo "Both architectures signed and committed. Publish with:"
+	@echo "    git push origin $(PAGES_BRANCH)"
 
 # Shows which app refs (architectures) the repo currently holds.
 flatpak-repo-info:
