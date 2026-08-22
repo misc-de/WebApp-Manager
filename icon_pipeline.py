@@ -57,20 +57,25 @@ def is_svg_support_missing_error(error):
     return SVG_CAIRO_MISSING_ERROR in str(error or '')
 
 
-def _block_external_svg_resource(url, *args, **kwargs):
-    raise ValueError(f'External resources in SVG icons are not allowed: {url}')
-
-
 def _render_svg_bytes_to_png(svg_bytes, target_path):
     if cairosvg is None:
         raise OSError(SVG_CAIRO_MISSING_ERROR)
     target_path.parent.mkdir(parents=True, exist_ok=True)
+    # unsafe=False is what actually contains a hostile SVG: it makes cairosvg
+    # refuse XML entities (no XXE) and skip every external resource, so an
+    # <image xlink:href="http://..."> is never fetched -- no tracking pixel, no
+    # request to a link-local metadata endpoint. It is cairosvg's default, but
+    # it is stated explicitly because the whole SVG import path depends on it.
+    #
+    # This used to pass url_fetcher=<blocking callback>, which cairosvg has no
+    # such parameter for (it is a WeasyPrint concept). Every SVG import raised
+    # TypeError, and the "protection" it looked like was never in effect.
     cairosvg.svg2png(
         bytestring=svg_bytes,
         write_to=str(target_path),
         output_width=256,
         output_height=256,
-        url_fetcher=_block_external_svg_resource,
+        unsafe=False,
     )
     return target_path
 

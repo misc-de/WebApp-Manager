@@ -1,6 +1,13 @@
-# Tooling used by CI and local development.
--r requirements.txt
+# Tooling used by CI and local development. Install alongside
+# requirements.txt -- this file deliberately does not pull it in, because the
+# lint/type job runs without GTK and cannot build PyGObject.
+#
+# Versions are pinned on purpose. Lint tools change their default rule set
+# between releases (ruff 0.16 added isort to the defaults, which turned a green
+# tree red on the first CI run), so an unpinned `pip install ruff` makes CI
+# results depend on the day it ran. Bump these deliberately, with the code
+# change that the new rules require.
 
-ruff
-mypy
-coverage
+ruff==0.15.14
+mypy==2.1.0
+coverage==7.13.5

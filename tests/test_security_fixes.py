@@ -1,8 +1,10 @@
+import http.server
 import io
 import json
 import logging
 import sys
 import tempfile
+import threading
 import types
 import unittest
 import zipfile
@@ -21,7 +23,6 @@ fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
 from browser_profiles import _assert_safe_zip_members, _scope_swipe_extension_payload
-from icon_pipeline import _block_external_svg_resource
 
 try:
     import cairosvg
@@ -141,37 +142,18 @@ class ScopeSwipeXpiTests(unittest.TestCase):
             _scope_swipe_extension_payload(xpi, 'https://app.example.com/')
 
 
-class BlockExternalSvgResourceTests(unittest.TestCase):
-    def test_raises_for_http_url(self):
-        with self.assertRaises(ValueError) as context:
-            _block_external_svg_resource('http://169.254.169.254/latest/meta-data/')
-        self.assertIn('not allowed', str(context.exception))
-
-    def test_raises_for_https_url(self):
-        with self.assertRaises(ValueError):
-            _block_external_svg_resource('https://evil.example.com/leak')
-
-    def test_raises_for_file_scheme(self):
-        with self.assertRaises(ValueError):
-            _block_external_svg_resource('file:///etc/passwd')
-
-    def test_raises_for_ftp_scheme(self):
-        with self.assertRaises(ValueError):
-            _block_external_svg_resource('ftp://example.com/resource')
-
-    def test_accepts_extra_args(self):
-        with self.assertRaises(ValueError):
-            _block_external_svg_resource('http://x/', resource_type='image')
-
-
 @unittest.skipUnless(cairosvg is not None, 'cairosvg is not installed')
 class RenderSvgExternalBlockingTests(unittest.TestCase):
+    """What protects the SVG import path is cairosvg's unsafe=False, not a
+    fetcher callback of ours. These tests assert the behaviour that actually
+    matters: nothing is fetched, and entities are refused."""
+
     MINIMAL_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="red"/></svg>'
 
-    SVG_WITH_EXTERNAL_IMAGE = (
-        b'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="16" height="16">'
-        b'<image xlink:href="http://169.254.169.254/latest/meta-data/" width="16" height="16"/>'
-        b'</svg>'
+    SVG_WITH_ENTITY = (
+        b'<?xml version="1.0"?>\n'
+        b'<!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/hostname">]>\n'
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><text x="0" y="10">&xxe;</text></svg>'
     )
 
     def test_plain_svg_renders(self):
@@ -181,11 +163,55 @@ class RenderSvgExternalBlockingTests(unittest.TestCase):
             self.assertTrue(target.exists())
             self.assertGreater(target.stat().st_size, 0)
 
-    def test_svg_with_external_image_ref_is_blocked(self):
+    def test_xml_entities_are_refused(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            target = Path(tmpdir) / 'blocked.png'
+            target = Path(tmpdir) / 'xxe.png'
             with self.assertRaises(Exception):
-                _render_svg_bytes_to_png(self.SVG_WITH_EXTERNAL_IMAGE, target)
+                _render_svg_bytes_to_png(self.SVG_WITH_ENTITY, target)
+
+    def test_external_image_reference_is_never_fetched(self):
+        """The SSRF-relevant property: rendering must not perform the request.
+
+        Checked against a real server rather than a stub, because the fetch
+        would happen inside cairosvg, where a stub of ours cannot observe it.
+        """
+        requested = []
+
+        class _Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                requested.append(self.path)
+                self.send_response(200)
+                self.send_header('Content-Type', 'image/png')
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+
+            def log_message(self, fmt, *args):
+                pass
+
+        server = http.server.HTTPServer(('127.0.0.1', 0), _Handler)
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            svg = (
+                '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="16" height="16">'
+                f'<image xlink:href="http://127.0.0.1:{port}/tracker.png" width="16" height="16"/>'
+                '</svg>'
+            ).encode('utf-8')
+            with tempfile.TemporaryDirectory() as tmpdir:
+                target = Path(tmpdir) / 'external.png'
+                try:
+                    _render_svg_bytes_to_png(svg, target)
+                except Exception:
+                    # Refusing outright is also acceptable -- the assertion
+                    # below is about the request never being made.
+                    pass
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(requested, [])
 
 
 if __name__ == '__main__':
