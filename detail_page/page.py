@@ -1,3 +1,4 @@
+from typing import Any
 import gi
 
 gi.require_version('Gtk', '4.0')
@@ -443,7 +444,7 @@ class DetailPage(DetailPageLayoutMixin, DetailPageAssetsMixin, DetailPageOptions
 
         self.option_names = option_names()
         self.switches = {}
-        self._option_row_widgets = {}
+        self._option_row_widgets: dict[str, Any] = {}
         self._subpage_compact = None
         self._options_compact = None
         self._form_compact = None

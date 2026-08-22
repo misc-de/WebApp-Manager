@@ -531,6 +531,61 @@ class DetailPageOptionsMixin:
                 return 'swipe'
             return ''
 
+    def _plugin_option_updates(self, profile_info, export_result):
+            """Option writes implied by the worker's results."""
+            updates = {}
+            if isinstance(profile_info, dict):
+                updates.update({
+                    PROFILE_NAME_KEY: profile_info.get('profile_name', '') or '',
+                    PROFILE_PATH_KEY: profile_info.get('profile_path', '') or '',
+                })
+            if isinstance(export_result, dict):
+                normalized_address = export_result.get('normalized_address', '') or ''
+                if normalized_address and normalized_address != self.address_entry.get_text().strip():
+                    updates[ADDRESS_KEY] = normalized_address
+            return updates
+
+    def _verified_plugin_state(self, option_key, option_name):
+            """Read back what actually landed in the profile.
+
+            The switch state is not evidence: the add-on may have been rejected
+            after the toggle. Returns (enabled, installed, verified_value).
+            """
+            plugin_profile = self._get_option_value(PROFILE_PATH_KEY) or ''
+            enabled = self._get_option_value(option_key) == '1'
+            installed = firefox_extension_installed(plugin_profile, option_name) if plugin_profile else False
+            verified_value = '1' if installed else '0'
+            if plugin_profile:
+                try:
+                    verified_state = read_profile_settings(plugin_profile, 'firefox')
+                    verified_value = '1' if str(verified_state.get(option_key, verified_value)) == '1' else '0'
+                except (OSError, ValueError, json.JSONDecodeError) as error:
+                    LOG.warning('Failed to verify Firefox plugin state for entry %s: %s', self.entry.id, error)
+            return enabled, installed, verified_value
+
+    @staticmethod
+    def _plugin_result_banner(error_text, option_name, enabled, installed):
+            """Pick the banner for a finished plugin operation.
+
+            Returns (i18n key, timeout_ms) or (None, 0) when nothing should be
+            shown. `error_text` carries either an exception message or an
+            extension error code forwarded by apply_profile_settings.
+            """
+            if error_text == 'unsigned-extension-payload':
+                key = 'plugin_install_unsigned_swipe' if option_name == 'swipe' else 'plugin_install_unsigned'
+                return key, 4200
+            if error_text == 'missing-extension-source' and option_name == 'swipe':
+                return 'plugin_install_swipe_production_unavailable', 4200
+            if error_text:
+                return 'plugin_install_failed', 0
+            if enabled and installed:
+                return 'plugin_install_ready_restart', 0
+            if enabled and not installed:
+                return 'plugin_install_failed', 0
+            if not enabled and not installed:
+                return 'plugin_remove_ready_restart', 0
+            return None, 0
+
     def _run_plugin_save_async(self, option_key):
             engine = self._get_current_engine()
             if browser_family_for_engine(engine) != 'firefox':
@@ -563,84 +618,67 @@ class DetailPageOptionsMixin:
                         stored_profile_path=previous_profile_path,
                     )
                     if profile_info:
-                        apply_profile_settings(profile_info, self._options_dict(), LOG)
-                        needs_export = False
-                        new_profile_path = (profile_info.get('profile_path') or '').strip()
-                        if new_profile_path and new_profile_path != previous_profile_path:
-                            needs_export = True
-                        else:
-                            target_path = get_expected_desktop_path(self.entry.title)
-                            if target_path is not None and not target_path.exists():
-                                needs_export = True
-                        if needs_export:
+                        apply_result = apply_profile_settings(profile_info, self._options_dict(), LOG)
+                        # An add-on that fails to install is not an exception --
+                        # it is reported in the result. Surface it so the user
+                        # gets the specific reason instead of a generic failure.
+                        extension_errors = (apply_result or {}).get('extension_errors') or {}
+                        error_text = extension_errors.get(option_name, '') or ''
+                        if self._plugin_export_needed(profile_info, previous_profile_path):
                             export_result = export_desktop_file(self.entry, self._options_dict(), self.engines_list, LOG)
-                except OSError as error:
+                except (OSError, ValueError) as error:
                     error_text = str(error)
                     LOG.error('Failed to apply Firefox plugin change for entry %s: %s', self.entry.id, error)
-                except (ValueError, OSError) as error:
+                except Exception as error:
+                    # Last resort: without this the UI would stay locked, since
+                    # finish() -- which re-enables the switches -- never runs.
                     error_text = str(error)
                     LOG.error('Unexpected Firefox plugin failure for entry %s: %s', self.entry.id, error, exc_info=True)
 
-                def finish():
-                    if serial != self._plugin_operation_serial:
-                        return False
-                    updates = {}
-                    if isinstance(profile_info, dict):
-                        updates.update({
-                            PROFILE_NAME_KEY: profile_info.get('profile_name', '') or '',
-                            PROFILE_PATH_KEY: profile_info.get('profile_path', '') or '',
-                        })
-                    if isinstance(export_result, dict):
-                        normalized_address = export_result.get('normalized_address', '') or ''
-                        if normalized_address and normalized_address != self.address_entry.get_text().strip():
-                            updates[ADDRESS_KEY] = normalized_address
-                    if updates:
-                        self._add_options(updates)
-                    self._reload_options_cache_from_db()
-                    self._apply_option_values_to_controls()
-                    for name, sw in self.switches.items():
-                        if name in self._visible_option_names_in_order():
-                            sw.set_sensitive(bool(self._get_current_engine()))
-                    self._plugin_operation_in_progress = False
-                    self._set_inline_busy(False)
-                    plugin_profile = self._get_option_value(PROFILE_PATH_KEY) or ''
-                    enabled = self._get_option_value(option_key) == '1'
-                    installed = firefox_extension_installed(plugin_profile, option_name) if plugin_profile else False
-                    verified_value = '1' if installed else '0'
-                    if plugin_profile:
-                        try:
-                            verified_state = read_profile_settings(plugin_profile, 'firefox')
-                            verified_value = '1' if str(verified_state.get(option_key, verified_value)) == '1' else '0'
-                        except (OSError, ValueError, json.JSONDecodeError) as error:
-                            LOG.warning('Failed to verify Firefox plugin state for entry %s: %s', self.entry.id, error)
-                    if verified_value != self._get_option_value(option_key):
-                        self._add_options({option_key: verified_value})
-                        enabled = verified_value == '1'
-                        installed = enabled
-                    self._set_plugin_activity('', active=False)
-                    if error_text == 'unsigned-extension-payload':
-                        if option_name == 'swipe':
-                            self._show_plugin_banner(t('plugin_install_unsigned_swipe'), timeout_ms=4200)
-                        else:
-                            self._show_plugin_banner(t('plugin_install_unsigned'), timeout_ms=4200)
-                    elif error_text == 'missing-extension-source' and option_name == 'swipe':
-                        self._show_plugin_banner(t('plugin_install_swipe_production_unavailable'), timeout_ms=4200)
-                    elif error_text:
-                        self._show_plugin_banner(t('plugin_install_failed'))
-                    elif enabled and installed:
-                        self._show_plugin_banner(t('plugin_install_ready_restart'))
-                    elif enabled and not installed:
-                        self._show_plugin_banner(t('plugin_install_failed'))
-                    elif not enabled and not installed:
-                        self._show_plugin_banner(t('plugin_remove_ready_restart'))
-                    if self.on_title_changed:
-                        self.on_title_changed(self.entry)
-                    GLib.idle_add(self._emit_visual_changed)
-                    return False
-
-                GLib.idle_add(finish)
+                GLib.idle_add(self._finish_plugin_save, serial, option_key, option_name, profile_info, export_result, error_text)
 
             threading.Thread(target=worker, daemon=True).start()
+
+    def _plugin_export_needed(self, profile_info, previous_profile_path):
+            """A new profile path, or a missing .desktop file, needs an export."""
+            new_profile_path = (profile_info.get('profile_path') or '').strip()
+            if new_profile_path and new_profile_path != previous_profile_path:
+                return True
+            target_path = get_expected_desktop_path(self.entry.title)
+            return target_path is not None and not target_path.exists()
+
+    def _finish_plugin_save(self, serial, option_key, option_name, profile_info, export_result, error_text):
+            """Main-loop half of _run_plugin_save_async. Must always run, or the
+            option switches stay disabled."""
+            if serial != self._plugin_operation_serial:
+                return False
+            updates = self._plugin_option_updates(profile_info, export_result)
+            if updates:
+                self._add_options(updates)
+            self._reload_options_cache_from_db()
+            self._apply_option_values_to_controls()
+            for name, sw in self.switches.items():
+                if name in self._visible_option_names_in_order():
+                    sw.set_sensitive(bool(self._get_current_engine()))
+            self._plugin_operation_in_progress = False
+            self._set_inline_busy(False)
+
+            enabled, installed, verified_value = self._verified_plugin_state(option_key, option_name)
+            if verified_value != self._get_option_value(option_key):
+                self._add_options({option_key: verified_value})
+                enabled = verified_value == '1'
+                installed = enabled
+            self._set_plugin_activity('', active=False)
+
+            banner_key, timeout_ms = self._plugin_result_banner(error_text, option_name, enabled, installed)
+            if banner_key and timeout_ms:
+                self._show_plugin_banner(t(banner_key), timeout_ms=timeout_ms)
+            elif banner_key:
+                self._show_plugin_banner(t(banner_key))
+            if self.on_title_changed:
+                self.on_title_changed(self.entry)
+            GLib.idle_add(self._emit_visual_changed)
+            return False
 
     def _is_only_https_enabled(self):
             switch = self.switches.get(ONLY_HTTPS_KEY)
