@@ -8,6 +8,7 @@ graph: it imports only stdlib + webapp_constants + i18n, never its siblings.
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 from i18n import get_app_config
 from webapp_constants import CHROMIUM_PROFILE_ROOT, FIREFOX_ROOT
@@ -26,7 +27,9 @@ COLOR_SCHEME_PREF_VALUES = {
 }
 
 
-DEFAULT_FIREFOX_EXTENSIONS = {
+# Values are heterogeneous (str/bool) and merged with user config, so the
+# per-extension mapping is deliberately typed loosely.
+DEFAULT_FIREFOX_EXTENSIONS: dict[str, dict[str, Any]] = {
     'adblock': {
         'id': 'uBlock0@raymondhill.net',
         'download_url': 'https://addons.mozilla.org/firefox/downloads/latest/uBlock0@raymondhill.net/latest.xpi',

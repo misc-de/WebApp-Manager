@@ -117,7 +117,7 @@ class Database:
                 rows = self.cursor.execute('SELECT id, entry_id, option_key, option_value FROM options ORDER BY entry_id ASC, id ASC').fetchall()
             else:
                 rows = self.cursor.execute('SELECT id, entry_id, option_key, option_value FROM options WHERE entry_id=? ORDER BY id ASC', (entry_id,)).fetchall()
-            grouped = {}
+            grouped: dict[int, dict[str, str]] = {}
             needs_rewrite = False
             seen_pairs = set()
             for _row_id, current_entry_id, raw_key, raw_value in rows:

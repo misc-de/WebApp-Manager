@@ -85,8 +85,8 @@ def normalize_icon_bytes_to_png(payload, target_path, source_name='', content_ty
         return _render_svg_bytes_to_png(payload, target_path)
     with Image.open(io.BytesIO(payload)) as image:
         image.load()
-        image = image.convert('RGBA')
-        image.save(target_path, 'PNG')
+        rgba = image.convert('RGBA')
+        rgba.save(target_path, 'PNG')
     return target_path
 
 
