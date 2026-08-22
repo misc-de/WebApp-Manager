@@ -146,6 +146,13 @@ Split across four modules forming a one-directional dependency graph
   directory up. `make flatpak-repofile` regenerates the `.flatpakrepo` from the
   keyring, so the published key can never drift from the signing key; it runs
   as part of `flatpak-publish`.
+- **Host vs. runtime:** inside a Flatpak `/etc/os-release` describes the
+  *runtime*, not the machine. `distro_utils` therefore reads
+  `/run/host/os-release` first — without it `is_furios_distribution()` returns
+  False on a FuriOS phone, and the FuriOS Firefox preferences
+  (`browser_settings`) plus the background-mode option
+  (`detail_page.options`) silently disappear. Any future host-property check
+  belongs in `distro_utils` for the same reason.
 - **Sandbox model:** the package intentionally does *not* keep app data inside
   the sandbox. `--filesystem=xdg-data/webapp-manager` and
   `--filesystem=xdg-config/webapp-manager` make Flatpak mirror the host
@@ -258,9 +265,14 @@ Split across four modules forming a one-directional dependency graph
   additionally need a git source pinned to a release tag instead of
   `type: dir`, screenshots in the metainfo, and proof of ownership for the
   `de.cais` domain the app ID claims.
-- `repo/` only ever holds the architectures that were actually built. Right now
-  that is x86_64; aarch64 has to be built on a device and merged in with
-  `make flatpak-merge` before a release, or phone users get nothing.
+- `repo/` only ever holds architectures that were actually built, and aarch64
+  has no CI: it is built on a phone over SSH and merged in by hand before every
+  release, or ARM users silently keep the previous version. The device has no
+  `flatpak-builder`/`ostree`/`make`, so the build there runs as
+  `flatpak run --filesystem=home org.flatpak.Builder --force-clean --repo=repo
+  .flatpak-build/aarch64 flatpak/de.cais.webappmanager.yml`; copy the resulting
+  `repo/` back, then `make flatpak-merge ARM_REPO=… && make flatpak-publish &&
+  make flatpak-pages`.
 - `MainWindow` mixin hierarchy is wide (8 mixins). Consider splitting into
   composed controllers when next refactoring.
 - UI test coverage is thin. The logic layer is reasonably covered
