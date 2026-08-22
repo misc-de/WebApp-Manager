@@ -14,7 +14,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, normalize_icon_bytes_to_png, normalize_icon_to_png
 from webapp_constants import ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_VALUE_KEY
-from input_validation import DESKTOP_CHROME_USER_AGENT, MAX_ICON_FILE_SIZE, build_safe_slug, candidate_urls_for_input, is_structurally_valid_url, validate_icon_source_path
+from input_validation import DESKTOP_CHROME_USER_AGENT, MAX_ICON_FILE_SIZE, build_safe_slug, candidate_urls_for_input, is_structurally_valid_url, open_guarded_url, validate_icon_source_path
 from browser_profiles import get_profile_size_bytes
 from app_identity import APP_ICON_NAME
 from i18n import t
@@ -840,8 +840,10 @@ class DetailPageIconMixin:
         return candidates
 
     def _download_image_bytes(self, url):
-        request = urllib.request.Request(url, headers={'User-Agent': self._icon_request_user_agent(), 'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', 'Connection': 'close'})
-        with urllib.request.urlopen(request, timeout=10) as response:
+        # open_guarded_url re-checks the scheme on every redirect hop and
+        # refuses a public -> private pivot; see input_validation.
+        headers = {'User-Agent': self._icon_request_user_agent(), 'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9', 'Connection': 'close'}
+        with open_guarded_url(url, headers=headers, timeout=10) as response:
             content_length = response.headers.get('Content-Length')
             if content_length:
                 try:
@@ -920,8 +922,8 @@ class DetailPageIconMixin:
         return candidates
 
     def _download_text_response(self, url, accept_header, timeout=8):
-        request = urllib.request.Request(url, headers={'User-Agent': self._icon_request_user_agent(), 'Accept': accept_header, 'Accept-Language': 'en-US,en;q=0.9', 'Connection': 'close'})
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        headers = {'User-Agent': self._icon_request_user_agent(), 'Accept': accept_header, 'Accept-Language': 'en-US,en;q=0.9', 'Connection': 'close'}
+        with open_guarded_url(url, headers=headers, timeout=timeout) as response:
             content_type = response.headers.get_content_type()
             content_length = response.headers.get('Content-Length')
             if content_length:

@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 import re
 import ipaddress
+import socket
 
 from webapp_constants import NON_PORTABLE_WAPP_OPTION_KEYS
 
@@ -195,6 +196,142 @@ def build_safe_slug(value) -> str:
     value = re.sub(r'[^a-z0-9._-]+', '_', value)
     value = re.sub(r'_+', '_', value)
     return value.strip('._-')
+
+
+# --- Outbound request guard -------------------------------------------------
+#
+# Every URL this app fetches (favicons, icon discovery, extension downloads)
+# ultimately comes from user-controlled data -- including .wapp import files
+# written by someone else. Two things are guarded here:
+#
+#   1. A redirect may never change the scheme away from http/https. Without
+#      this, a remote server can bounce a fetch to file:// or ftp://.
+#   2. A redirect may never cross from a public host into a private/loopback
+#      target. That is the classic SSRF pivot ("http://evil.example" -> 302 ->
+#      "http://127.0.0.1:8080/admin").
+#
+# Reaching a private host *directly* stays allowed by default: running a web
+# app against http://192.168.1.10:8080 or http://nas.local is a legitimate and
+# common use of this program. Only the cross-scope pivot is blocked. Callers
+# that never have a legitimate LAN target (the extension download) pass
+# allow_private_targets=False and get the strict variant.
+#
+# Note on DNS rebinding: the guard resolves the host to decide, and urllib
+# resolves it again when connecting. A hostile DNS server can answer the two
+# lookups differently. Closing that hole would require driving the socket
+# ourselves; it is out of scope for a desktop launcher manager.
+
+MAX_REDIRECTS = 5
+
+
+class UnsafeRedirectError(urllib.error.URLError):
+    """Raised when a redirect target fails the outbound request guard."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+
+
+def _ip_is_private_or_local(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return bool(
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def host_is_private_or_local(host) -> bool:
+    """True if `host` is loopback/private/link-local, resolving names if needed.
+
+    Unresolvable names return False: they are not evidence of a private target,
+    and the connection attempt will fail on its own.
+    """
+    host = str(host or '').strip().strip('.').lower()
+    if not host:
+        return True
+    if host == 'localhost' or host.endswith('.localhost') or host.endswith('.local'):
+        return True
+    try:
+        return _ip_is_private_or_local(ipaddress.ip_address(host.strip('[]')))
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except (OSError, UnicodeError):
+        return False
+    addresses = {info[4][0] for info in infos}
+    if not addresses:
+        return False
+    resolved = []
+    for address in addresses:
+        try:
+            resolved.append(ipaddress.ip_address(str(address).split('%', 1)[0]))
+        except ValueError:
+            continue
+    if not resolved:
+        return False
+    return any(_ip_is_private_or_local(ip) for ip in resolved)
+
+
+class _GuardedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-validates every redirect hop instead of trusting the first URL."""
+
+    max_redirections = MAX_REDIRECTS
+
+    def __init__(self, allow_private_targets: bool) -> None:
+        super().__init__()
+        self._allow_private_targets = allow_private_targets
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        try:
+            parsed = urlparse(newurl)
+        except ValueError as error:
+            raise UnsafeRedirectError(f'malformed redirect target: {error}') from error
+        if parsed.scheme not in {'http', 'https'}:
+            raise UnsafeRedirectError(f'redirect to non-http scheme: {parsed.scheme!r}')
+        if not self._allow_private_targets and host_is_private_or_local(parsed.hostname):
+            raise UnsafeRedirectError(f'redirect to private host: {parsed.hostname!r}')
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def build_guarded_opener(allow_private_targets: bool = True) -> urllib.request.OpenerDirector:
+    """Opener with the redirect guard and *without* the file/ftp/data handlers.
+
+    Built by hand rather than via build_opener(), which would install
+    FileHandler, FTPHandler and DataHandler. Leaving them out means a redirect
+    into one of those schemes cannot be served even if the guard were bypassed:
+    UnknownHandler raises URLError for anything but http/https.
+    """
+    opener = urllib.request.OpenerDirector()
+    for handler in (
+        urllib.request.ProxyHandler(),
+        urllib.request.HTTPHandler(),
+        urllib.request.HTTPSHandler(),
+        urllib.request.HTTPDefaultErrorHandler(),
+        urllib.request.HTTPErrorProcessor(),
+        _GuardedRedirectHandler(allow_private_targets),
+        urllib.request.UnknownHandler(),
+    ):
+        opener.add_handler(handler)
+    return opener
+
+
+def open_guarded_url(url, headers=None, timeout=10, allow_private_targets=True):
+    """urlopen() with scheme validation on the initial URL and every redirect.
+
+    Returns the open response; the caller is responsible for closing it and for
+    limiting how much it reads.
+    """
+    parsed = urlparse(str(url))
+    if parsed.scheme not in {'http', 'https'}:
+        raise UnsafeRedirectError(f'refusing non-http request scheme: {parsed.scheme!r}')
+    if not allow_private_targets and host_is_private_or_local(parsed.hostname):
+        raise UnsafeRedirectError(f'refusing request to private host: {parsed.hostname!r}')
+    request = urllib.request.Request(str(url), headers=dict(headers or {}))
+    opener = build_guarded_opener(allow_private_targets)
+    return opener.open(request, timeout=timeout)
 
 
 def _origin_request_headers() -> dict[str, str]:
