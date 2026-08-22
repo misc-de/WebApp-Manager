@@ -133,8 +133,19 @@ Split across four modules forming a one-directional dependency graph
   PyGObject and pycairo; Pillow and the cairosvg chain are built as modules
   (pure-python ones from `py3-none-any` wheels, Pillow and cffi from sdists so
   the manifest stays architecture-independent for aarch64 phones).
-  Build: `flatpak-builder --user --install --force-clean build-dir
-  flatpak/de.cais.webappmanager.yml`.
+- [Makefile](Makefile) — the release path. `make flatpak-build` builds and
+  signs the host architecture into `repo/`, `make flatpak-merge ARM_REPO=…`
+  folds in an aarch64 repo built on a phone, `make flatpak-publish` writes
+  summary/AppStream/static deltas, and `make flatpak-pages` copies `repo/` plus
+  the `.flatpakrepo` into the `gh-pages` branch through a git worktree (the
+  main checkout is never touched). Users install from
+  `https://misc-de.github.io/WebApp-Manager/de.cais.webappmanager.flatpakrepo`.
+- **Signing:** the repo is GPG-signed with `flatpak@cais.de`, whose private key
+  lives in `.gnupg-flatpak/` — gitignored, and only on the maintainer's
+  machine. Losing it means every user has to re-add the remote, so back that
+  directory up. `make flatpak-repofile` regenerates the `.flatpakrepo` from the
+  keyring, so the published key can never drift from the signing key; it runs
+  as part of `flatpak-publish`.
 - **Sandbox model:** the package intentionally does *not* keep app data inside
   the sandbox. `--filesystem=xdg-data/webapp-manager` and
   `--filesystem=xdg-config/webapp-manager` make Flatpak mirror the host
@@ -243,9 +254,13 @@ Split across four modules forming a one-directional dependency graph
   but a source install is still `git clone` + `python3 main.py`. A full
   `src/webapp_manager/` package layout would let the `mainwindow`/`detail_page`
   packages move under a package root.
-- The Flatpak is not on Flathub. Getting there needs a git source pinned to a
-  release tag instead of `type: dir`, screenshots in the metainfo, and proof
-  of ownership for the `de.cais` domain that the app ID claims.
+- The Flatpak is distributed from its own repo, not Flathub. Flathub would
+  additionally need a git source pinned to a release tag instead of
+  `type: dir`, screenshots in the metainfo, and proof of ownership for the
+  `de.cais` domain the app ID claims.
+- `repo/` only ever holds the architectures that were actually built. Right now
+  that is x86_64; aarch64 has to be built on a device and merged in with
+  `make flatpak-merge` before a release, or phone users get nothing.
 - `MainWindow` mixin hierarchy is wide (8 mixins). Consider splitting into
   composed controllers when next refactoring.
 - UI test coverage is thin. The logic layer is reasonably covered

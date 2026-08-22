@@ -14,13 +14,15 @@ This project is under active development. Features may change and instability is
 
 ## Installation
 
-### Option A: Flatpak
+### Option A: Flatpak (recommended)
 
 ```
-flatpak install flathub org.gnome.Platform//49 org.gnome.Sdk//49
-flatpak-builder --user --install --force-clean build-dir flatpak/de.cais.webappmanager.yml
+flatpak remote-add --if-not-exists webappmanager https://misc-de.github.io/WebApp-Manager/de.cais.webappmanager.flatpakrepo
+flatpak install webappmanager de.cais.webappmanager
 flatpak run de.cais.webappmanager
 ```
+
+Updates then come with `flatpak update`. The repository is GPG-signed.
 
 The Flatpak shares its data with a source install: web apps, launchers and
 browser profiles live in the same locations, so you can switch between the two
@@ -32,6 +34,14 @@ which lets it detect and start browsers on the host through `flatpak-spawn`.
 Without it the app still edits launchers, but cannot find or launch a browser.
 Every permission is commented in
 [flatpak/de.cais.webappmanager.yml](flatpak/de.cais.webappmanager.yml).
+
+Building the package yourself instead:
+
+```
+flatpak install flathub org.gnome.Platform//49 org.gnome.Sdk//49
+make flatpak-build
+flatpak install --user repo de.cais.webappmanager
+```
 
 ### Option B: Run from source
 

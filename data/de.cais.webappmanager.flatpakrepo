@@ -1,0 +1,7 @@
+[Flatpak Repo]
+Title=WebApp Manager
+Url=https://misc-de.github.io/WebApp-Manager/repo/
+Homepage=https://github.com/misc-de/WebApp-Manager
+Comment=Web app launchers with dedicated browser profiles
+Description=WebApp Manager - GTK4/libadwaita tool for creating Linux web app launchers with their own browser profiles (desktop and mobile).
+GPGKey=mDMEaolRAxYJKwYBBAHaRw8BAQdAr9Syx136hSPLVPwiE3FaZ0w4IH9SWkleJi1/3NlomL60LVdlYkFwcCBNYW5hZ2VyIEZsYXRwYWsgUmVwbyA8ZmxhdHBha0BjYWlzLmRlPoiQBBMWCgA4FiEEtDRGKK2r5Oi+nV8PvStGHSWPiokFAmqJUQMCGwMFCwkIBwIGFQoJCAsCBBYCAwECHgECF4AACgkQvStGHSWPiol5XQD9GNWNGEXKBe5O8zWNFqeWacMXq5la/aNwsSreKiaeeJ0A/0jhfPh2XngU31hgdViov/0DznUDQrZFpguPD0w/31cB
