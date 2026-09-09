@@ -6,6 +6,7 @@ browser_profiles lifecycle module. This is the leaf of the browser_* dependency
 graph: it imports only stdlib + webapp_constants + i18n, never its siblings.
 """
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -152,21 +153,36 @@ def get_firefox_extension_config(name):
     return merged
 
 def get_profile_size_bytes(profile_path):
+    """Total byte size of a profile directory.
+
+    Uses os.scandir rather than Path.rglob: a browser profile routinely holds
+    a few thousand files, and rglob costs three syscalls per entry (readdir,
+    is_file, stat) where scandir's DirEntry answers both questions from the
+    directory read it already did. Symlinks are not followed, so a profile
+    that links elsewhere cannot make the walk escape it or loop.
+    """
     if not profile_path:
         return 0
     try:
         path = Path(profile_path).resolve()
     except OSError:
         return 0
-    if not path.exists():
-        return 0
     total = 0
-    for candidate in path.rglob('*'):
-        if candidate.is_file():
-            try:
-                total += candidate.stat().st_size
-            except OSError:
-                pass
+    stack = [str(path)]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append(entry.path)
+                        elif entry.is_file(follow_symlinks=False):
+                            total += entry.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        continue
+        except OSError:
+            continue
     return total
 
 def _remove_path_if_exists(path, logger, kind='cache path'):

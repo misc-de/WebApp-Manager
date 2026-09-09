@@ -1,4 +1,6 @@
 import json
+import os
+import queue
 import threading
 from pathlib import Path
 
@@ -14,34 +16,68 @@ from i18n import t
 from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, normalize_icon_to_png
 from input_validation import build_safe_slug, sanitize_desktop_value
 from logger_setup import get_logger
+import profile_size_cache
 from webapp_constants import ADDRESS_KEY, APP_MODE_KEY, DESKTOP_NAME_SOURCE_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
 
 LOG = get_logger(__name__)
 
 def format_profile_size(profile_path: str) -> str:
-    try:
-        path = Path((profile_path or '').strip()).expanduser()
-        if not path.exists():
-            return '0 MB'
-        total = 0
-        if path.is_file():
-            total = path.stat().st_size
-        else:
-            for child in path.rglob('*'):
-                try:
-                    if child.is_file():
-                        total += child.stat().st_size
-                except OSError:
-                    continue
-        if total <= 0:
-            return '0 MB'
-        gb = total / (1024 ** 3)
-        if gb >= 1:
-            return f'{gb:.2f} GB'
-        mb = total / (1024 ** 2)
-        return f'{mb:.0f} MB'
-    except OSError:
+    """Measure a profile and return its display size, remembering the result."""
+    path = (profile_path or '').strip()
+    if not path:
         return '0 MB'
+    return profile_size_cache.measure(path) or '0 MB'
+
+
+# Profile measurements run on one background thread rather than one thread per
+# WebApp. The work is disk-bound, so a dozen concurrent recursive walks only
+# make the head seek between trees -- painfully so on the eMMC of a phone --
+# while a single queued walker keeps the UI thread free just as well.
+_PROFILE_SIZE_QUEUE: queue.Queue = queue.Queue()
+_PROFILE_SIZE_WORKER: threading.Thread | None = None
+_PROFILE_SIZE_WORKER_LOCK = threading.Lock()
+
+
+def _profile_size_worker_loop():
+    while True:
+        profile_path, on_done = _PROFILE_SIZE_QUEUE.get()
+        try:
+            size_text = format_profile_size(profile_path)
+        except OSError:
+            size_text = ''
+        finally:
+            _PROFILE_SIZE_QUEUE.task_done()
+        GLib.idle_add(on_done, size_text)
+
+
+def queue_profile_size_measurement(profile_path, on_done):
+    global _PROFILE_SIZE_WORKER
+    with _PROFILE_SIZE_WORKER_LOCK:
+        if _PROFILE_SIZE_WORKER is None or not _PROFILE_SIZE_WORKER.is_alive():
+            _PROFILE_SIZE_WORKER = threading.Thread(target=_profile_size_worker_loop, daemon=True)
+            _PROFILE_SIZE_WORKER.start()
+    _PROFILE_SIZE_QUEUE.put((profile_path, on_done))
+
+
+def _find_files_named(root, wanted_names):
+    """Every file in the `root` tree whose filename is in `wanted_names`."""
+    matches = []
+    stack = [str(root)]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append(entry.path)
+                        elif entry.name in wanted_names and entry.is_file():
+                            matches.append(Path(entry.path))
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    return matches
 
 
 class MainWindowEntriesMixin:
@@ -83,6 +119,22 @@ class MainWindowEntriesMixin:
             rows_by_entry.setdefault(row[1], []).append(row)
         for entry_id, rows in rows_by_entry.items():
             self._options_cache[entry_id] = dict(normalize_option_rows(rows))
+        self._seed_profile_size_cache()
+
+    def _seed_profile_size_cache(self):
+        """Fill the in-memory sizes from the last run's remembered values.
+
+        Without this the first bind of every row would have to walk a browser
+        profile before it could show anything, which is what used to keep the
+        startup spinner up for seconds.
+        """
+        for entry_id, options in self._options_cache.items():
+            profile_path = str(options.get(PROFILE_PATH_KEY) or '').strip()
+            if not profile_path:
+                continue
+            remembered, _stale = profile_size_cache.lookup(profile_path)
+            if remembered is not None:
+                self._profile_size_cache[entry_id] = {'path': profile_path, 'text': remembered}
 
     def _cleanup_detail_pages(self, pages):
         for child in pages:
@@ -168,19 +220,25 @@ class MainWindowEntriesMixin:
         self._present_info_dialog(message)
         LOG.info('Blocked duplicate .wapp import for entry %s (%s)', entry.id, title)
 
+    def _drop_profile_size_cache(self, entry_id):
+        stale = self._profile_size_cache.pop(entry_id, None)
+        self._profile_size_pending.discard(entry_id)
+        # Also forget that the profile was already measured this run, or the
+        # size would keep showing the value from before the change.
+        if stale and stale.get('path'):
+            self._profile_size_measured.discard(stale['path'])
+
     def _invalidate_entry_cache(self, entry_id, clear_profile_size=False):
         self._options_cache.pop(entry_id, None)
         if clear_profile_size:
-            self._profile_size_cache.pop(entry_id, None)
-            self._profile_size_pending.discard(entry_id)
+            self._drop_profile_size_cache(entry_id)
 
     def _cache_options(self, entry_id, updates):
         cached = dict(self._get_options_dict(entry_id))
         cached.update({key: '' if value is None else str(value) for key, value in updates.items()})
         self._options_cache[entry_id] = cached
         if any(key in updates for key in (PROFILE_PATH_KEY, PROFILE_NAME_KEY, ICON_PATH_KEY, 'EngineName')):
-            self._profile_size_cache.pop(entry_id, None)
-            self._profile_size_pending.discard(entry_id)
+            self._drop_profile_size_cache(entry_id)
 
     def _add_options(self, entry_id, updates):
         clean_updates = {key: '' if value is None else str(value) for key, value in updates.items()}
@@ -260,16 +318,14 @@ class MainWindowEntriesMixin:
             Path('/usr/share/icons'),
             Path('/usr/share/pixmaps'),
         ]
+        wanted = {name} if explicit_suffix else {f'{stem}.svg', f'{stem}.png', f'{stem}.ico', f'{stem}.xpm'}
         found = []
         for root in icon_dirs:
-            if not root.exists():
-                continue
-            patterns = [name] if explicit_suffix else [f'{stem}.svg', f'{stem}.png', f'{stem}.ico', f'{stem}.xpm']
-            for pattern in patterns:
-                try:
-                    found.extend(path for path in root.rglob(pattern) if path.is_file())
-                except OSError:
-                    continue
+            # One scandir walk per root instead of one rglob per filename
+            # pattern: an icon theme tree holds tens of thousands of files, and
+            # walking it four times over was the slow part of importing a
+            # detected desktop file.
+            found.extend(_find_files_named(root, wanted))
         if not found:
             return None
 
@@ -354,6 +410,24 @@ class MainWindowEntriesMixin:
             return cached.get('text', '0 MB' if profile_path else '')
         return '0 MB' if profile_path else ''
 
+    def _profile_size_needs_measurement(self, entry_id, profile_path):
+        """True when the profile has to be walked before its size can be shown.
+
+        A size that is already on screen is only re-taken once per run, and
+        only when the remembered value looks stale -- re-walking on every list
+        bind is what made scrolling the overview feel sluggish.
+        """
+        cached = self._profile_size_cache.get(entry_id)
+        if not (cached and cached.get('path') == profile_path and cached.get('text')):
+            return True
+        if profile_path in self._profile_size_measured:
+            return False
+        _remembered, stale = profile_size_cache.lookup(profile_path)
+        if not stale:
+            self._profile_size_measured.add(profile_path)
+            return False
+        return True
+
     def _schedule_profile_size_refresh(self, entry_id, profile_path, profile_size_label):
         if not profile_path:
             self._profile_size_cache[entry_id] = {'path': '', 'text': ''}
@@ -364,27 +438,26 @@ class MainWindowEntriesMixin:
             return
         if entry_id in self._profile_size_pending:
             return
+        if not self._profile_size_needs_measurement(entry_id, profile_path):
+            self._maybe_finish_startup_busy()
+            return
         self._profile_size_pending.add(entry_id)
 
         def _apply(size_text):
             self._profile_size_cache[entry_id] = {'path': profile_path, 'text': size_text}
             self._profile_size_pending.discard(entry_id)
+            self._profile_size_measured.add(profile_path)
             current_entry = getattr(profile_size_label, '_entry_id', None) if profile_size_label is not None else None
             current_path = getattr(profile_size_label, '_profile_path', '') if profile_size_label is not None else ''
             if profile_size_label is not None and current_entry == entry_id and current_path == profile_path:
                 profile_size_label.set_text(size_text)
                 profile_size_label.set_visible(bool(size_text))
             self._maybe_finish_startup_busy()
+            if not self._profile_size_pending:
+                profile_size_cache.flush()
             return False
 
-        def _worker():
-            try:
-                size_text = format_profile_size(profile_path)
-            except OSError:
-                size_text = ''
-            GLib.idle_add(_apply, size_text)
-
-        threading.Thread(target=_worker, daemon=True).start()
+        queue_profile_size_measurement(profile_path, _apply)
 
     def _maybe_finish_startup_busy(self):
         if not getattr(self, '_startup_waiting_for_profile_sizes', False):
@@ -500,10 +573,17 @@ class MainWindowEntriesMixin:
         if self._startup_profile_cleanup_done:
             return
         self._startup_profile_cleanup_done = True
-        rename_unused_managed_profile_directories(self._collect_active_profile_paths(), LOG)
+        active_paths = self._collect_active_profile_paths()
+        profile_size_cache.flush(active_paths)
+        rename_unused_managed_profile_directories(active_paths, LOG)
 
     def _finalize_startup_reconcile(self):
-        self._reload_entries()
+        # The reload rebuilds the store and drops every open detail page, so
+        # it is only worth doing when a conflict or import actually touched
+        # the data. A clean start reaches this point with nothing to redo.
+        if getattr(self, '_reconcile_dirty', False):
+            self._reconcile_dirty = False
+            self._reload_entries()
         self._run_startup_profile_cleanup()
         self._start_startup_profile_size_sync()
 
@@ -608,23 +688,45 @@ class MainWindowEntriesMixin:
 
     def start_reconcile_desktop_files(self):
         self._show_startup_busy()
-        GLib.idle_add(self.reconcile_desktop_files)
+
+        # Reading and parsing every .desktop file used to happen in an idle
+        # callback, so the window stayed frozen for as long as it took. Only
+        # the comparison against the store has to be on the main thread.
+        def _worker():
+            try:
+                managed_files = list_managed_desktop_files(ENGINES)
+            except OSError as error:
+                LOG.warning('Failed to scan managed desktop files: %s', error)
+                managed_files = []
+            GLib.idle_add(self.reconcile_desktop_files, managed_files)
+
+        threading.Thread(target=_worker, daemon=True).start()
         return False
 
-    def reconcile_desktop_files(self):
-        managed_files = list_managed_desktop_files(ENGINES)
+    def reconcile_desktop_files(self, managed_files=None):
+        if managed_files is None:
+            managed_files = list_managed_desktop_files(ENGINES)
         matched_ids = set()
         conflicts = []
         imports = []
+
+        # One pass over the store instead of a linear search per desktop file:
+        # the loop below used to be quadratic in the number of WebApps.
+        entries_by_id = {}
+        entries_by_title: dict[str, list] = {}
+        for index in range(self.entries_store.get_n_items()):
+            entry = self.entries_store.get_item(index)
+            entries_by_id[entry.id] = entry
+            entries_by_title.setdefault(entry.title, []).append(entry)
 
         for file_data in managed_files:
             entry = None
             file_entry_id = file_data.get('entry_id')
             had_explicit_entry_id = file_entry_id not in (None, '')
             if had_explicit_entry_id:
-                entry = self._find_entry_by_id(file_entry_id)
+                entry = entries_by_id.get(file_entry_id)
             if entry is None and (not had_explicit_entry_id) and file_data.get('title'):
-                matches = self._find_entry_by_title(file_data['title'])
+                matches = entries_by_title.get(file_data['title'], [])
                 if len(matches) == 1:
                     entry = matches[0]
             if entry is None:
@@ -638,8 +740,7 @@ class MainWindowEntriesMixin:
             if is_mismatch:
                 conflicts.append({'type': 'mismatch', 'entry': entry, 'file': file_data, 'db': db_values, 'file_values': file_values})
 
-        for index in range(self.entries_store.get_n_items()):
-            entry = self.entries_store.get_item(index)
+        for entry in entries_by_id.values():
             if entry.id in matched_ids:
                 continue
             options = self._get_options_dict(entry.id)
@@ -713,7 +814,8 @@ class MainWindowEntriesMixin:
                 imported_count += 1
             except (OSError, ValueError, json.JSONDecodeError) as error:
                 LOG.warning('Failed to import managed desktop file %s: %s', file_data.get('path'), error)
-            self._reload_entries()
+            # _finish_detected_desktop_imports reloads once at the end; doing
+            # it per file made a bulk import quadratic in the entry count.
             GLib.idle_add(self._update_import_progress, state['index'], total, '')
             GLib.idle_add(process_next)
             return False
@@ -725,6 +827,9 @@ class MainWindowEntriesMixin:
             self._finalize_startup_reconcile()
             return
         self._hide_busy()
+        # Every answer to a conflict dialog either rewrites the desktop file or
+        # the database, so from here on the final reload has to happen.
+        self._reconcile_dirty = True
         conflict = self.reconcile_queue.pop(0)
         if conflict['type'] == 'orphan_file':
             text = t('reconcile_orphan_file', path=str(conflict['file']['path']), title=conflict['file'].get('title', ''))
