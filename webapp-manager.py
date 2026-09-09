@@ -62,6 +62,8 @@ class MainWindow(MainWindowWindowStateMixin, MainWindowLaunchExportMixin, MainWi
         self._options_cache = {}
         self._profile_size_cache = {}
         self._profile_size_pending = set()
+        self._profile_size_measured = set()
+        self._reconcile_dirty = False
         self._running_launch_processes = {}
         self.ui_settings = self._load_ui_settings()
         self.language_setting = self._load_language_setting()

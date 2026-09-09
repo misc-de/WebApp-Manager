@@ -29,6 +29,8 @@ User data lives in:
 - `~/.config/webapp-manager/config.json` — language, settings, window state
 - `~/.local/share/webapp-manager/webappmanager.db` — entries + options (SQLite, WAL)
 - `~/.local/state/webapp/app.log` — rotated app log
+- `~/.cache/webapp-manager/profile-sizes.json` — remembered profile sizes
+  (disposable: deleting it only costs one re-measurement)
 - `~/.mozilla/firefox/webapp_*` and `~/.config/webapp-browser-profiles/{chrome,chromium}/` — managed browser profiles
 
 ## Architecture map
@@ -41,6 +43,12 @@ User data lives in:
   unique index on `(entry_id, option_key)`.
 - [app_models.py](app_models.py) — `Entry` GObject for GTK list models.
 - [app_state.py](app_state.py) — `WebAppState` dataclass.
+- [profile_size_cache.py](profile_size_cache.py) — disk-backed sizes of managed
+  browser profiles. Measuring one means walking a few thousand files, and the
+  overview shows the number on every row, so the value is remembered across
+  restarts and only re-taken when the profile root's mtime changed or the
+  record aged past `MAX_CACHE_AGE_SECONDS`. GTK-free on purpose; the
+  scheduling half lives in `mainwindow/entries.py`.
 - [webapp_constants.py](webapp_constants.py) — every option key, alias map,
   filesystem roots (`FIREFOX_ROOT`, `CHROMIUM_PROFILE_ROOT`, `APPLICATIONS_DIR`).
 
@@ -262,6 +270,15 @@ Split across four modules forming a one-directional dependency graph
   `normalize_option_rows`. Direct `db.list_option_values()` rows must be passed
   through `normalize_option_rows` before caching, otherwise legacy aliases
   leak into the cache.
+- The overview shows a *remembered* profile size first and only re-measures in
+  the background when the record looks stale. A size that is a few minutes out
+  of date on a list row is worth far more than a window that cannot open until
+  every browser profile has been walked — which is what it used to do, once per
+  entry, on every start and again on every list re-bind.
+- `list_managed_desktop_files` reads each `.desktop` file and looks for the
+  bytes `ManagedBy` before handing it to ConfigParser. The parser still decides
+  whether the *value* matches, so the shortcut cannot change which files count
+  as managed; it only keeps the ~90% of foreign launchers out of the parser.
 - `_xpi_has_signature` only checks for the presence of `META-INF/` files. It is
   a heuristic, not a real signature verification — Firefox itself does the
   cryptographic check. Do not rename without thinking through the consequences.
@@ -287,6 +304,9 @@ Split across four modules forming a one-directional dependency graph
   (`browser_option_logic` ~83%, `database` ~80%, `launcher_wrapper` ~86%), but
   the mixin modules sit in the 7–17% range, so the ~5k lines of UI code —
   including all worker-thread handling — are effectively untested.
+- Startup still walks every browser profile the *first* time it sees it (no
+  cached size yet), and that walk holds the startup spinner. Subsequent starts
+  read the remembered sizes and open immediately.
 - `check_untyped_defs` is enabled for 32 of 45 modules. The 13 UI mixins are
   excluded in [pyproject.toml](pyproject.toml) because each mixin reads
   attributes owned by the composed class (~880 `attr-defined` findings). Remove

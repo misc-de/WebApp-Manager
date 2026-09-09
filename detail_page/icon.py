@@ -16,6 +16,7 @@ from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, n
 from webapp_constants import ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_VALUE_KEY
 from input_validation import DESKTOP_CHROME_USER_AGENT, MAX_ICON_FILE_SIZE, build_safe_slug, candidate_urls_for_input, is_structurally_valid_url, open_guarded_url, validate_icon_source_path
 from browser_profiles import get_profile_size_bytes
+import profile_size_cache
 from app_identity import APP_ICON_NAME
 from i18n import t
 from logger_setup import get_logger
@@ -252,11 +253,23 @@ class DetailPageIconMixin:
             self._profile_size_pending_path = ''
             self._apply_profile_button_label(profile_path, cached_size)
             return
+        # Share the overview's remembered sizes rather than walking the profile
+        # again the first time a detail page is opened.
+        remembered, stale = profile_size_cache.lookup_bytes(profile_path)
+        if remembered is not None:
+            self._apply_profile_button_label(profile_path, remembered)
+            if not stale:
+                self._profile_size_cache[profile_path] = remembered
+                self._profile_size_pending_path = ''
+                return
+        else:
+            self._apply_profile_button_label(profile_path, None)
         self._profile_size_pending_path = profile_path
-        self._apply_profile_button_label(profile_path, None)
 
         def worker(path_value, token):
             size_bytes = get_profile_size_bytes(path_value)
+            profile_size_cache.store(path_value, size_bytes)
+            profile_size_cache.flush()
             GLib.idle_add(self._finish_profile_size_refresh, token, path_value, size_bytes)
 
         threading.Thread(target=worker, args=(profile_path, serial), daemon=True).start()
