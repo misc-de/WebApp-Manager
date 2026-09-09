@@ -1,14 +1,29 @@
 from pathlib import Path
+from functools import lru_cache
 import io
 
-from PIL import Image
-
-try:
-    import cairosvg
-except ImportError:
-    cairosvg = None
-
 SVG_CAIRO_MISSING_ERROR = 'SVG support is unavailable: cairosvg is not installed'
+
+
+# Pillow and the cairosvg chain are only needed when an icon is actually
+# imported, but this module is pulled in by desktop_entries and therefore
+# by every start of the app. Importing them on first use keeps roughly the
+# cost of loading PIL.Image (plus all of cairo/tinycss2 where cairosvg is
+# installed) out of the startup path.
+@lru_cache(maxsize=1)
+def _pillow_image():
+    from PIL import Image
+
+    return Image
+
+
+@lru_cache(maxsize=1)
+def _cairosvg():
+    try:
+        import cairosvg
+    except ImportError:
+        return None
+    return cairosvg
 
 from input_validation import build_safe_slug, validate_icon_source_path
 from webapp_constants import APPLICATIONS_DIR, ICON_THEME_APPS_DIR
@@ -50,7 +65,7 @@ def _looks_like_svg(payload: bytes) -> bool:
 
 
 def svg_support_available():
-    return cairosvg is not None
+    return _cairosvg() is not None
 
 
 def is_svg_support_missing_error(error):
@@ -58,6 +73,7 @@ def is_svg_support_missing_error(error):
 
 
 def _render_svg_bytes_to_png(svg_bytes, target_path):
+    cairosvg = _cairosvg()
     if cairosvg is None:
         raise OSError(SVG_CAIRO_MISSING_ERROR)
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -88,7 +104,7 @@ def normalize_icon_bytes_to_png(payload, target_path, source_name='', content_ty
     is_svg = suffix == '.svg' or 'image/svg+xml' in str(content_type or '').lower() or _looks_like_svg(payload)
     if is_svg:
         return _render_svg_bytes_to_png(payload, target_path)
-    with Image.open(io.BytesIO(payload)) as image:
+    with _pillow_image().open(io.BytesIO(payload)) as image:
         image.load()
         rgba = image.convert('RGBA')
         rgba.save(target_path, 'PNG')
