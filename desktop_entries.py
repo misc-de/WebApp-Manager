@@ -473,11 +473,30 @@ def is_managed_desktop_file(path, engines_list=None):
         return False
     return parse_desktop_file(path, engines_list or []) is not None
 
+# ConfigParser is the expensive half of reading a .desktop file, and the
+# applications directory is full of launchers this app never wrote. A single
+# read plus a substring test rejects those before the parser ever sees them;
+# a file that does carry the key still goes through parse_desktop_file, which
+# is what actually decides whether the value matches, so the fast path cannot
+# change which files count as managed.
+_MANAGED_BY_MARKER = b'ManagedBy'
+
+
+def _may_be_managed_desktop_file(path):
+    try:
+        with open(path, 'rb') as file_handle:
+            return _MANAGED_BY_MARKER in file_handle.read()
+    except OSError:
+        return False
+
+
 def list_managed_desktop_files(engines_list):
     if not APPLICATIONS_DIR.exists():
         return []
     results = []
     for path in sorted(APPLICATIONS_DIR.glob('*.desktop')):
+        if not _may_be_managed_desktop_file(path):
+            continue
         entry = parse_desktop_file(path, engines_list)
         if entry is not None:
             results.append(entry)
