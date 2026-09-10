@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
 from gi.repository import Gdk, Gtk, GLib
 
 from app_identity import APP_ICON_NAME

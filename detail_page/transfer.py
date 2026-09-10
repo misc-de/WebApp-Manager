@@ -6,6 +6,7 @@ import base64
 import binascii
 import json
 from datetime import datetime
+import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
 from gi.repository import Gio, GLib, Gtk
 from browser_option_logic import normalize_option_dict
 from icon_pipeline import is_svg_support_missing_error, normalize_icon_bytes_to_png

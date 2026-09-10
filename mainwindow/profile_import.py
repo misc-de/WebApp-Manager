@@ -4,6 +4,7 @@ import sqlite3
 import threading
 from pathlib import Path
 from types import SimpleNamespace
+import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
 from gi.repository import Gio, GLib, Gtk
 from browser_option_logic import browser_managed_option_keys, browser_state_key, encode_browser_state, mode_option_keys, normalize_option_dict, normalize_option_rows
 from database import Database

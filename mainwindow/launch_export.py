@@ -5,6 +5,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
+import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
 from gi.repository import Gdk, GLib, Gtk
 from desktop_entries import build_launch_command, exportable_entry, get_expected_desktop_path, list_managed_desktop_files
 from engine_support import ENGINES

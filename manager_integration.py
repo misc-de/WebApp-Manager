@@ -10,8 +10,7 @@ from i18n import t
 
 def headerbar_decoration_layout_without_icon() -> str:
     try:
-        import gi
-        gi.require_version('Gtk', '4.0')
+        import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
         from gi.repository import Gtk
         settings = Gtk.Settings.get_default()
         layout = settings.get_property('gtk-decoration-layout') if settings is not None else None

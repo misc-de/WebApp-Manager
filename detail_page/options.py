@@ -1,5 +1,6 @@
 import json
 import threading
+import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
 from gi.repository import GLib, Gtk, Pango
 from browser_option_logic import (
     apply_semantic_mode,

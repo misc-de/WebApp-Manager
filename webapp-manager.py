@@ -1,10 +1,6 @@
 import threading
 
-import gi
-
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
-
+import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
 from gi.repository import Adw, Gdk, Gio, Gtk, GLib
 
 from database import Database
