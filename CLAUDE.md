@@ -196,6 +196,14 @@ Split across four modules forming a one-directional dependency graph
   What must *not* go through it: the `Exec=` line of a generated `.desktop`
   file and the launcher wrapper scripts — those are started by the host's
   shell and have to stay plain host commands.
+- [gi_versions.py](gi_versions.py) — the single place that pins the
+  GObject-Introspection versions (`Gtk 4.0`, `Adw 1`, `GtkSource 5`, …). Every
+  module that touches `gi.repository` imports it first
+  (`import gi_versions  # noqa: F401`), because PyGObject resolves a namespace
+  on first import and, unpinned, takes whatever version it finds. Declaring
+  this in the entry points was not enough: `detail_page/__init__.py` imports
+  `.assets` before `.page`, so GtkSource really was loaded unpinned.
+  `tests/test_gi_version_pinning.py` keeps the arrangement from drifting.
 - [i18n.py](i18n.py) — translation lookup with `t(key, **kwargs)`. Translations
   in [lang/](lang/) (37 languages). User language overrides config; system
   language is auto-detected.
