@@ -2,7 +2,7 @@ from pathlib import Path
 from functools import lru_cache
 import io
 
-SVG_CAIRO_MISSING_ERROR = 'SVG support is unavailable: cairosvg is not installed'
+SVG_CAIRO_MISSING_ERROR = 'SVG support is unavailable: neither cairosvg nor a GdkPixbuf SVG loader is installed'
 
 
 # Pillow and the cairosvg chain are only needed when an icon is actually
@@ -24,6 +24,28 @@ def _cairosvg():
     except ImportError:
         return None
     return cairosvg
+
+
+# Fallback for source installs without cairosvg: GTK already pulls in
+# gdk-pixbuf, and on any desktop that ships librsvg its SVG loader is
+# registered there. Sites that only publish an SVG favicon (increasingly
+# common) would otherwise silently end up without an icon.
+@lru_cache(maxsize=1)
+def _gdk_pixbuf_svg():
+    try:
+        import gi
+
+        gi.require_version('GdkPixbuf', '2.0')
+        from gi.repository import Gio, GLib, GdkPixbuf
+    except (ImportError, ValueError, AttributeError):
+        return None
+    try:
+        has_svg_loader = any('svg' in (fmt.get_name() or '') for fmt in GdkPixbuf.Pixbuf.get_formats())
+    except Exception:  # pragma: no cover - defensive, get_formats is not expected to fail
+        return None
+    if not has_svg_loader:
+        return None
+    return GdkPixbuf, Gio, GLib
 
 from input_validation import build_safe_slug, validate_icon_source_path
 from webapp_constants import APPLICATIONS_DIR, ICON_THEME_APPS_DIR
@@ -65,16 +87,40 @@ def _looks_like_svg(payload: bytes) -> bool:
 
 
 def svg_support_available():
-    return _cairosvg() is not None
+    return _cairosvg() is not None or _gdk_pixbuf_svg() is not None
 
 
 def is_svg_support_missing_error(error):
     return SVG_CAIRO_MISSING_ERROR in str(error or '')
 
 
+def _render_svg_with_gdk_pixbuf(svg_bytes, target_path):
+    GdkPixbuf, Gio, GLib = _gdk_pixbuf_svg()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    # No base URI is handed to the loader, so librsvg has nothing to resolve a
+    # relative reference against, and it never speaks http(s) itself -- the
+    # same containment cairosvg's unsafe=False gives us.
+    stream = Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(svg_bytes))
+    try:
+        pixbuf = GdkPixbuf.Pixbuf.new_from_stream_at_scale(stream, 256, 256, True, None)
+    except GLib.Error as error:
+        raise OSError(f'SVG could not be rendered: {error.message}') from error
+    finally:
+        stream.close(None)
+    if pixbuf is None:
+        raise OSError('SVG could not be rendered')
+    ok, buffer = pixbuf.save_to_bufferv('png', [], [])
+    if not ok:
+        raise OSError('SVG could not be encoded as PNG')
+    target_path.write_bytes(bytes(buffer))
+    return target_path
+
+
 def _render_svg_bytes_to_png(svg_bytes, target_path):
     cairosvg = _cairosvg()
     if cairosvg is None:
+        if _gdk_pixbuf_svg() is not None:
+            return _render_svg_with_gdk_pixbuf(svg_bytes, target_path)
         raise OSError(SVG_CAIRO_MISSING_ERROR)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     # unsafe=False is what actually contains a hostile SVG: it makes cairosvg
