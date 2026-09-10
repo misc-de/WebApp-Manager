@@ -20,7 +20,8 @@ GTK 4, Libadwaita 1, GObject Introspection.
 
 Python dependencies are declared in [requirements.txt](requirements.txt)
 (`PyGObject`, `Pillow`), [requirements-optional.txt](requirements-optional.txt)
-(`cairosvg` — gates SVG icon import; `GtkSource` typelib — gates the code editor
+(`cairosvg` — preferred SVG renderer for icon import, with gdk-pixbuf/librsvg
+as fallback; `GtkSource` typelib — gates the code editor
 in the custom-asset dialog) and [requirements-dev.txt](requirements-dev.txt)
 (ruff, mypy, coverage). On most distributions the packaged `python3-gi` build is
 preferable to a pip install, because it matches the system GTK exactly.
@@ -111,9 +112,12 @@ Split across four modules forming a one-directional dependency graph
   (phosh / plasma-mobile) and `/etc/furios-release`; `$WEBAPP_FORM=mobile|desktop`
   as manual override. Only written when the two configured modes actually
   differ; deleted automatically when they converge again.
-- [icon_pipeline.py](icon_pipeline.py) — PNG normalisation via Pillow,
-  SVG via cairosvg with an explicit `_block_external_svg_resource` URL fetcher
-  (SSRF mitigation).
+- [icon_pipeline.py](icon_pipeline.py) — PNG normalisation via Pillow, SVG via
+  cairosvg (`unsafe=False`, so no XXE and no external resource is fetched) and,
+  where cairosvg is missing, via gdk-pixbuf's librsvg loader — fed from a
+  memory stream without a base URI, so it has nothing to resolve a reference
+  against either. Sites that publish only an SVG favicon used to end up with no
+  icon at all on a source install.
 - [manager_integration.py](manager_integration.py) — installs the Manager's own
   `.desktop` launcher.
 

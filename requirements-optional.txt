@@ -1,7 +1,10 @@
 # Optional dependencies. The app starts and runs without them; each one
 # unlocks a single feature and is probed with a guarded import.
 
-# SVG icon import (icon_pipeline.py)
+# SVG icon import (icon_pipeline.py). Optional twice over: without it the
+# pipeline falls back to gdk-pixbuf's SVG loader (librsvg), which every GTK
+# desktop that can render an SVG icon already has. Installing cairosvg only
+# matters where that loader is absent.
 cairosvg>=2.5
 
 # Syntax highlighting in the custom-asset code editor (detail_page/assets.py).
