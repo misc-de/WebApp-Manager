@@ -24,15 +24,7 @@ sys.modules.setdefault('logger_setup', fake_logger_setup)
 
 from browser_profiles import _assert_safe_zip_members, _scope_swipe_extension_payload
 
-try:
-    import cairosvg
-except ImportError:
-    cairosvg = None
-
-if cairosvg is not None:
-    from icon_pipeline import _render_svg_bytes_to_png
-else:
-    _render_svg_bytes_to_png = None
+from icon_pipeline import _render_svg_bytes_to_png, svg_support_available
 
 
 def _zip_bytes(members):
@@ -142,11 +134,15 @@ class ScopeSwipeXpiTests(unittest.TestCase):
             _scope_swipe_extension_payload(xpi, 'https://app.example.com/')
 
 
-@unittest.skipUnless(cairosvg is not None, 'cairosvg is not installed')
+@unittest.skipUnless(svg_support_available(), 'no SVG renderer is installed')
 class RenderSvgExternalBlockingTests(unittest.TestCase):
-    """What protects the SVG import path is cairosvg's unsafe=False, not a
-    fetcher callback of ours. These tests assert the behaviour that actually
-    matters: nothing is fetched, and entities are refused."""
+    """What protects the SVG import path is cairosvg's unsafe=False -- or, on
+    the GdkPixbuf fallback, librsvg never resolving anything without a base
+    URI -- not a fetcher callback of ours. These tests assert the behaviour
+    that actually matters: nothing is fetched, and entities are refused.
+
+    They run against whichever renderer this machine actually has, so the
+    property holds for both paths."""
 
     MINIMAL_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="red"/></svg>'
 
@@ -173,7 +169,8 @@ class RenderSvgExternalBlockingTests(unittest.TestCase):
         """The SSRF-relevant property: rendering must not perform the request.
 
         Checked against a real server rather than a stub, because the fetch
-        would happen inside cairosvg, where a stub of ours cannot observe it.
+        would happen inside the renderer, where a stub of ours cannot observe
+        it.
         """
         requested = []
 
