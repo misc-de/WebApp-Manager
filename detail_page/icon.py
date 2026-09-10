@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse, urlunparse
 
 from PIL import Image, UnidentifiedImageError
+import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, normalize_icon_bytes_to_png, normalize_icon_to_png

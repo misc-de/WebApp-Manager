@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
 from gi.repository import Adw, Gio, Gtk, GLib
 from custom_assets import count_asset_references, detach_asset_from_entries, format_asset_date, import_custom_asset, list_custom_assets, remove_custom_asset
 from desktop_entries import export_desktop_file, exportable_entry
