@@ -33,9 +33,7 @@ def _cairosvg():
 @lru_cache(maxsize=1)
 def _gdk_pixbuf_svg():
     try:
-        import gi
-
-        gi.require_version('GdkPixbuf', '2.0')
+        import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
         from gi.repository import Gio, GLib, GdkPixbuf
     except (ImportError, ValueError, AttributeError):
         return None

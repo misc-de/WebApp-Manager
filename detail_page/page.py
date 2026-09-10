@@ -1,12 +1,6 @@
 from typing import Any
-import gi
 
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
-try:
-    gi.require_version('GtkSource', '5')
-except (ValueError, ImportError):
-    pass
+import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
 from gi.repository import Adw, Gtk, GLib, Pango
 try:
     from gi.repository import GtkSource

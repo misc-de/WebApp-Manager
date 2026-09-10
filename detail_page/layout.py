@@ -1,3 +1,4 @@
+import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
 from gi.repository import Adw, Gtk, GLib, Pango
 
 from focus_guard import focus_neutral_widget, should_prevent_input_autofocus

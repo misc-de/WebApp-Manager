@@ -1,4 +1,5 @@
 import json
+import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
 from gi.repository import GLib, Adw
 from i18n import get_app_config, get_configured_language_value, save_app_config
 from logger_setup import get_logger
