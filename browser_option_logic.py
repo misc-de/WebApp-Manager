@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from xml.sax.saxutils import escape
 
-from i18n import t
+from i18n import get_translations, t
 from browser_option_registry import (
     BrowserOptionSpec,
     browser_managed_option_keys as registry_browser_managed_option_keys,
@@ -125,6 +125,28 @@ def option_ui_label_markup(option_key: str) -> str:
     )
 
 
+# Legacy rows store an option under its translated UI label. Matching one used
+# to translate every spec's label per lookup; loading the database looks up
+# every stored key, which added up to thousands of t() calls on each start.
+# The table is rebuilt whenever get_translations() hands out a different dict,
+# i.e. after a language change or a cache invalidation.
+_LABEL_KEY_CACHE: tuple[dict, dict[str, str]] | None = None
+
+
+def _option_key_by_label() -> dict[str, str]:
+    global _LABEL_KEY_CACHE
+    translations = get_translations()
+    if _LABEL_KEY_CACHE is not None and _LABEL_KEY_CACHE[0] is translations:
+        return _LABEL_KEY_CACHE[1]
+    by_label: dict[str, str] = {}
+    for spec in BROWSER_OPTION_SPECS:
+        if spec.label_key:
+            # setdefault keeps the first spec for a shared label, as the old loop did.
+            by_label.setdefault(t(spec.label_key), spec.key)
+    _LABEL_KEY_CACHE = (translations, by_label)
+    return by_label
+
+
 def option_key_from_any(value: str | None) -> str | None:
     if value is None:
         return None
@@ -136,10 +158,7 @@ def option_key_from_any(value: str | None) -> str | None:
     for key, aliases in OPTION_UI_LABEL_ALIASES.items():
         if text in aliases:
             return key
-    for spec in BROWSER_OPTION_SPECS:
-        if spec.label_key and text == t(spec.label_key):
-            return spec.key
-    return text
+    return _option_key_by_label().get(text, text)
 
 
 def normalize_option_dict(options: dict | None) -> dict[str, str]:
