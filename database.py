@@ -52,12 +52,18 @@ class Database:
             db_path.parent.mkdir(parents=True, exist_ok=True)
         self.db_name = str(db_path)
         self.conn = sqlite3.connect(self.db_name)
-        self.conn.execute('PRAGMA foreign_keys = ON')
-        self.conn.execute('PRAGMA journal_mode = WAL')
-        self.conn.execute('PRAGMA synchronous = NORMAL')
-        self.cursor = self.conn.cursor()
-        self.apply_migrations()
-        self.canonicalize_option_keys()
+        try:
+            self.conn.execute('PRAGMA foreign_keys = ON')
+            self.conn.execute('PRAGMA journal_mode = WAL')
+            self.conn.execute('PRAGMA synchronous = NORMAL')
+            self.cursor = self.conn.cursor()
+            self.apply_migrations()
+            self.canonicalize_option_keys()
+        except BaseException:
+            # A half-initialised Database is never handed out, so nothing else
+            # would ever close this connection.
+            self.conn.close()
+            raise
 
     def _current_user_version(self):
         return int(self.cursor.execute('PRAGMA user_version').fetchone()[0] or 0)

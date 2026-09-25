@@ -183,5 +183,94 @@ class LoadEntriesStorePopulationTests(unittest.TestCase):
         self.assertEqual(harness.entries_store.get_n_items(), 2)
 
 
+class LanguageResolutionCachingTests(unittest.TestCase):
+    """t() must not re-resolve the language (and deep-copy the config) per call."""
+
+    def setUp(self):
+        import i18n
+        self.i18n = i18n
+        i18n.invalidate_i18n_cache()
+
+    def tearDown(self):
+        self.i18n.invalidate_i18n_cache()
+
+    def test_repeated_t_resolves_language_once(self):
+        with mock.patch.object(self.i18n, '_resolve_language_code', return_value='en') as resolve:
+            for _ in range(50):
+                self.i18n.t('app_title')
+        self.assertEqual(resolve.call_count, 1)
+
+    def test_invalidation_resolves_again(self):
+        with mock.patch.object(self.i18n, '_resolve_language_code', return_value='en') as resolve:
+            self.i18n.get_language_code()
+            self.i18n.invalidate_i18n_cache()
+            self.i18n.get_language_code()
+        self.assertEqual(resolve.call_count, 2)
+
+    def test_saving_config_resolves_again(self):
+        import tempfile
+        from pathlib import Path
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with mock.patch.object(self.i18n, '_resolve_language_code', return_value='en') as resolve, \
+                mock.patch.object(self.i18n, 'USER_CONFIG_DIR', Path(tmp.name)), \
+                mock.patch.object(self.i18n, 'USER_CONFIG_PATH', Path(tmp.name) / 'config.json'), \
+                mock.patch.object(self.i18n, '_CONFIG_CACHE', None):
+            self.i18n.get_language_code()
+            self.i18n.save_app_config({'language': 'de'})
+            self.i18n.get_language_code()
+        self.assertEqual(resolve.call_count, 2)
+
+
+class OptionKeyLabelLookupTests(unittest.TestCase):
+    """option_key_from_any must match translated labels without translating per lookup."""
+
+    def test_translated_label_maps_to_key(self):
+        import browser_option_logic as bol
+        spec = next(spec for spec in bol.BROWSER_OPTION_SPECS if spec.label_key)
+        label = bol.t(spec.label_key)
+        if label in bol.registry_browser_managed_option_keys():
+            self.skipTest('label coincides with a canonical key')
+        self.assertEqual(bol.option_key_from_any(label), spec.key)
+
+    def test_lookup_does_not_translate_again(self):
+        import browser_option_logic as bol
+        bol.option_key_from_any('No Such Option')
+        with mock.patch.object(bol, 't', side_effect=AssertionError('t() called')):
+            self.assertEqual(bol.option_key_from_any('Still No Such Option'), 'Still No Such Option')
+
+
+class _BusyHarness(MainWindowEntriesMixin):
+    def __init__(self):
+        self._profile_size_cache = {}
+        self._profile_size_pending = set()
+        self._startup_waiting_for_profile_sizes = True
+        self.busy_hidden = 0
+
+    def _hide_busy(self):
+        self.busy_hidden += 1
+
+
+class StartupSpinnerProfileSizeTests(unittest.TestCase):
+    """A stale size already on screen must not hold the startup spinner."""
+
+    def test_refresh_of_shown_size_does_not_block(self):
+        harness = _BusyHarness()
+        harness._profile_size_cache[1] = {'path': '/p', 'text': '80 MB'}
+        harness._profile_size_pending.add(1)
+        harness._maybe_finish_startup_busy()
+        self.assertEqual(harness.busy_hidden, 1)
+
+    def test_first_measurement_blocks(self):
+        harness = _BusyHarness()
+        harness._profile_size_pending.add(1)
+        harness._maybe_finish_startup_busy()
+        self.assertEqual(harness.busy_hidden, 0)
+        harness._profile_size_pending.discard(1)
+        harness._profile_size_cache[1] = {'path': '/p', 'text': '80 MB'}
+        harness._maybe_finish_startup_busy()
+        self.assertEqual(harness.busy_hidden, 1)
+
+
 if __name__ == '__main__':
     unittest.main()

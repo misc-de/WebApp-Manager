@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import queue
 import threading
 from pathlib import Path
@@ -58,6 +59,9 @@ def queue_profile_size_measurement(profile_path, on_done):
             _PROFILE_SIZE_WORKER = threading.Thread(target=_profile_size_worker_loop, daemon=True)
             _PROFILE_SIZE_WORKER.start()
     _PROFILE_SIZE_QUEUE.put((profile_path, on_done))
+
+
+_ICON_SIZE_DIR = re.compile(r'(\d+)x\d+(?:@\d+)?$')
 
 
 def _find_files_named(root, wanted_names):
@@ -180,7 +184,9 @@ class MainWindowEntriesMixin:
         return sanitize_desktop_value(value).strip().casefold()
 
     def _find_import_collision(self, payload):
-        options = payload.get('options', {}) if isinstance(payload, dict) else {}
+        if not isinstance(payload, dict):
+            return None
+        options = payload.get('options', {})
         if not isinstance(options, dict):
             options = {}
         target_title = self._normalized_compare_text(payload.get('title', ''))
@@ -335,12 +341,12 @@ class MainWindowEntriesMixin:
             suffix_score = {'.svg': 0, '.png': 1, '.ico': 2, '.xpm': 3}.get(suffix, 9)
             size_score = 9999
             for part in path.parts:
-                if 'x' in part:
-                    try:
-                        size_score = -int(part.split('x', 1)[0])
-                        break
-                    except (AttributeError, TypeError):
-                        pass
+                # Only theme size directories ("48x48", "256x256@2") count;
+                # other names with an 'x' in them, like "pixmaps", are not sizes.
+                match = _ICON_SIZE_DIR.match(part)
+                if match:
+                    size_score = -int(match.group(1))
+                    break
             return (suffix_score, size_score, len(path.parts), len(str(path)))
 
         return sorted(found, key=score)[0]
@@ -460,26 +466,38 @@ class MainWindowEntriesMixin:
 
         queue_profile_size_measurement(profile_path, _apply)
 
+    def _profile_size_blocks_startup(self):
+        """True while a pending walk belongs to a row that has no size to show.
+
+        A stale remembered size is already on screen, so re-measuring it is a
+        background refresh: once a week every profile goes stale at once, and
+        waiting for those walks kept the startup spinner up for seconds.
+        """
+        for entry_id in self._profile_size_pending:
+            cached = self._profile_size_cache.get(entry_id)
+            if not (cached and cached.get('text')):
+                return True
+        return False
+
     def _maybe_finish_startup_busy(self):
         if not getattr(self, '_startup_waiting_for_profile_sizes', False):
             return
-        if self._profile_size_pending:
+        if self._profile_size_blocks_startup():
             return
         self._startup_waiting_for_profile_sizes = False
         self._hide_busy()
 
     def _start_startup_profile_size_sync(self):
         self._startup_waiting_for_profile_sizes = True
-        scheduled = False
         for index in range(self.entries_store.get_n_items()):
             entry = self.entries_store.get_item(index)
             profile_path = str(self._get_options_dict(entry.id).get(PROFILE_PATH_KEY) or '').strip()
             if not profile_path:
                 continue
-            scheduled = True
             self._schedule_profile_size_refresh(entry.id, profile_path, None)
-        if not scheduled:
-            self._maybe_finish_startup_busy()
+        # When every queued walk is only a refresh, no _apply is needed to
+        # release the spinner.
+        self._maybe_finish_startup_busy()
 
     def _get_options_dict(self, entry_id, force_refresh=False):
         if not force_refresh:
