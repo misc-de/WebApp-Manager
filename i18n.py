@@ -147,7 +147,15 @@ def save_app_config(data):
     if not isinstance(data, dict):
         raise TypeError('config data must be a dict')
     USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    USER_CONFIG_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    # Write-then-rename, so a crash mid-write leaves the old file intact
+    # instead of a truncated one.
+    temp_path = USER_CONFIG_PATH.with_name(f'.{USER_CONFIG_PATH.name}.{os.getpid()}.tmp')
+    try:
+        temp_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+        os.replace(temp_path, USER_CONFIG_PATH)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
     _CONFIG_CACHE = deepcopy(data)
     _LANGUAGE_CODE_CACHE = None
     return _CONFIG_CACHE
@@ -172,7 +180,14 @@ def get_app_config(force_reload=False):
 
     loaded = deepcopy(defaults) if isinstance(defaults, dict) else {}
     if USER_CONFIG_PATH.exists():
-        user_data = _filter_mutable_config(_load_json_file(USER_CONFIG_PATH))
+        # A config.json that cannot be read falls back to the defaults: engine
+        # support reads the config at import time, so raising here would keep
+        # the app from starting until the file was deleted by hand. The next
+        # save replaces the broken file.
+        try:
+            user_data = _filter_mutable_config(_load_json_file(USER_CONFIG_PATH))
+        except (OSError, ValueError):
+            user_data = {}
         loaded = _deep_merge(loaded, user_data)
 
     if not loaded:

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import queue
 import threading
 from pathlib import Path
@@ -58,6 +59,9 @@ def queue_profile_size_measurement(profile_path, on_done):
             _PROFILE_SIZE_WORKER = threading.Thread(target=_profile_size_worker_loop, daemon=True)
             _PROFILE_SIZE_WORKER.start()
     _PROFILE_SIZE_QUEUE.put((profile_path, on_done))
+
+
+_ICON_SIZE_DIR = re.compile(r'(\d+)x\d+(?:@\d+)?$')
 
 
 def _find_files_named(root, wanted_names):
@@ -180,7 +184,9 @@ class MainWindowEntriesMixin:
         return sanitize_desktop_value(value).strip().casefold()
 
     def _find_import_collision(self, payload):
-        options = payload.get('options', {}) if isinstance(payload, dict) else {}
+        if not isinstance(payload, dict):
+            return None
+        options = payload.get('options', {})
         if not isinstance(options, dict):
             options = {}
         target_title = self._normalized_compare_text(payload.get('title', ''))
@@ -335,12 +341,12 @@ class MainWindowEntriesMixin:
             suffix_score = {'.svg': 0, '.png': 1, '.ico': 2, '.xpm': 3}.get(suffix, 9)
             size_score = 9999
             for part in path.parts:
-                if 'x' in part:
-                    try:
-                        size_score = -int(part.split('x', 1)[0])
-                        break
-                    except (AttributeError, TypeError):
-                        pass
+                # Only theme size directories ("48x48", "256x256@2") count;
+                # other names with an 'x' in them, like "pixmaps", are not sizes.
+                match = _ICON_SIZE_DIR.match(part)
+                if match:
+                    size_score = -int(match.group(1))
+                    break
             return (suffix_score, size_score, len(path.parts), len(str(path)))
 
         return sorted(found, key=score)[0]

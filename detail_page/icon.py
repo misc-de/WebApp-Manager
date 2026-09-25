@@ -25,6 +25,18 @@ from logger_setup import get_logger
 LOG = get_logger(__name__)
 
 
+def _join_url(base_url, href):
+    """urljoin() for hrefs scraped from a foreign page, '' when unusable.
+
+    urljoin raises ValueError on a malformed host such as 'http://[x', and one
+    such attribute used to abort the whole icon search for the page.
+    """
+    try:
+        return urljoin(base_url, href)
+    except ValueError:
+        return ''
+
+
 class DetailPageIconMixin:
     def _icon_request_user_agent(self):
         configured = str(self._get_option_value(USER_AGENT_VALUE_KEY) or '').strip()
@@ -197,10 +209,10 @@ class DetailPageIconMixin:
     def _refresh_header_meta(self):
         if hasattr(self, 'header_name_label'):
             self.header_name_label.set_text(self.entry.title or '')
+            self.header_name_label.set_valign(Gtk.Align.START)
         if hasattr(self, 'header_profile_label'):
             self.header_profile_label.set_text(self._profile_display_name())
-        self.header_name_label.set_valign(Gtk.Align.START)
-        self.header_profile_label.set_valign(Gtk.Align.START)
+            self.header_profile_label.set_valign(Gtk.Align.START)
 
     def _emit_visual_changed(self):
         self._refresh_header_meta()
@@ -684,7 +696,7 @@ class DetailPageIconMixin:
             attrs = self._parse_html_tag_attributes(match.group(0))
             href_value = str(attrs.get('href') or '').strip()
             if href_value:
-                return urljoin(base_url, href_value)
+                return _join_url(base_url, href_value) or None
         return None
 
     def _extract_icon_candidates(self, html, base_url):
@@ -698,7 +710,9 @@ class DetailPageIconMixin:
             if not href_value:
                 continue
             rel_value = str(attrs.get('rel') or '').lower().strip()
-            href = urljoin(base_url, href_value)
+            href = _join_url(base_url, href_value)
+            if not href:
+                continue
             source_kind = None
             if 'manifest' in rel_value:
                 continue
@@ -733,7 +747,7 @@ class DetailPageIconMixin:
             rel_value = str(attrs.get('rel') or '').lower().strip()
             href_value = str(attrs.get('href') or '').strip()
             if href_value and 'manifest' in rel_value:
-                return urljoin(base_url, href_value)
+                return _join_url(base_url, href_value) or None
         return None
 
     def _extract_favicon_asset_candidates(self, html, base_url):
@@ -752,10 +766,13 @@ class DetailPageIconMixin:
                 or '/favicon' in lowered
             ):
                 continue
+            href = _join_url(base_url, href_value)
+            if not href:
+                continue
             order += 1
             candidates.append(
                 self._make_icon_candidate(
-                    urljoin(base_url, href_value),
+                    href,
                     source_kind='root_fallback',
                     order=order,
                 )
@@ -767,6 +784,9 @@ class DetailPageIconMixin:
             manifest = json.loads(manifest_text)
         except (TypeError, ValueError, json.JSONDecodeError):
             return []
+        # A manifest URL can serve any JSON value; only an object has icons.
+        if not isinstance(manifest, dict):
+            return []
         candidates = []
         order = 0
         for icon in manifest.get('icons', []) or []:
@@ -775,7 +795,9 @@ class DetailPageIconMixin:
             src = str(icon.get('src') or '').strip()
             if not src:
                 continue
-            href = urljoin(manifest_url, src)
+            href = _join_url(manifest_url, src)
+            if not href:
+                continue
             purpose_value = str(icon.get('purpose') or '')
             order += 1
             candidates.append(
@@ -797,7 +819,7 @@ class DetailPageIconMixin:
             key = str(attrs.get('name') or '').lower().strip()
             content = str(attrs.get('content') or '').strip()
             if key == 'msapplication-config' and content:
-                return urljoin(base_url, content)
+                return _join_url(base_url, content) or None
         return None
 
     def _extract_browserconfig_icon_candidates(self, browserconfig_text, browserconfig_url):
@@ -806,7 +828,9 @@ class DetailPageIconMixin:
         order = 0
         for match in pattern.finditer(browserconfig_text):
             tag_name = str(match.group(1) or '').lower()
-            href = urljoin(browserconfig_url, str(match.group(2) or '').strip())
+            href = _join_url(browserconfig_url, str(match.group(2) or '').strip())
+            if not href:
+                continue
             sizes_value = ''
             size_match = re.search(r'(\d+x\d+)', tag_name)
             if size_match:
@@ -842,7 +866,9 @@ class DetailPageIconMixin:
             key = str(attrs.get('property') or attrs.get('name') or '').lower().strip()
             if key not in supported_keys:
                 continue
-            href = urljoin(base_url, content)
+            href = _join_url(base_url, content)
+            if not href:
+                continue
             order += 1
             candidates.append(
                 self._make_icon_candidate(
@@ -1182,10 +1208,13 @@ class DetailPageIconMixin:
             try:
                 with os.fdopen(fd, 'wb') as handle:
                     while True:
+                        # read_bytes() hands out a GLib.Bytes, which is truthy
+                        # even when empty; EOF is only visible on its data.
                         chunk = stream.read_bytes(65536, None)
-                        if not chunk:
+                        data = chunk.get_data() if hasattr(chunk, 'get_data') else chunk
+                        if not data:
                             break
-                        handle.write(chunk)
+                        handle.write(data)
             finally:
                 try:
                     stream.close(None)
