@@ -25,7 +25,10 @@ def _coerce_candidate_urls(value: str, prefer_https: bool = True, include_http_f
     raw = str(value or '').strip()
     if not raw or len(raw) > MAX_URL_LENGTH or contains_unsafe_text(raw) or any(char.isspace() for char in raw):
         return []
-    parsed = urlparse(raw)
+    try:
+        parsed = urlparse(raw)
+    except ValueError:  # e.g. an unbalanced IPv6 bracket: 'http://[::1'
+        return []
     if parsed.scheme:
         if parsed.scheme not in {'http', 'https'}:
             return []
@@ -423,7 +426,12 @@ def normalize_address(value, force_https: bool = False) -> str:
     value = (value or '').strip()
     if not value or len(value) > MAX_URL_LENGTH or contains_unsafe_text(value):
         return ''
-    parsed = urlparse(value)
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        # Not parseable as a URL -- left as typed, like any other value this
+        # function cannot normalise; the validators reject it separately.
+        return value
     if not parsed.scheme:
         return value
     if parsed.scheme not in {'http', 'https'} or not parsed.netloc or parsed.username or parsed.password:
