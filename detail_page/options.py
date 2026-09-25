@@ -322,10 +322,10 @@ class DetailPageOptionsMixin:
     def _sync_browser_state_key(self, family=None):
             return sync_browser_state_key(family or self._current_browser_family())
 
-    def _sync_current_browser_state(self, commit=True):
+    def _sync_current_browser_state(self, commit=True, family=None):
             if self._syncing_browser_state:
                 return
-            family = self._current_browser_family()
+            family = family or self._current_browser_family()
             if family == 'generic':
                 return
             self._syncing_browser_state = True
@@ -709,8 +709,11 @@ class DetailPageOptionsMixin:
             }
             previous_engine = self._engine_by_id(self._get_option_value('EngineID'))
             previous_family = browser_family_for_engine(previous_engine)
+            # The dropdown already shows the new engine here, so the family has
+            # to be passed in -- read from the dropdown, the old engine's values
+            # would be stored under the new family and overwrite its state.
             if previous_family != 'generic':
-                self._sync_current_browser_state(commit=True)
+                self._sync_current_browser_state(commit=True, family=previous_family)
             engine = self._get_current_engine()
             if engine is None:
                 self._add_options({
