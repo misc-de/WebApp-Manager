@@ -26,7 +26,7 @@ fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
 import gi_versions  # noqa: F401, I001 -- pins the typelib versions before gi.repository loads
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import Adw, Gdk, GLib, Gtk
 
 import detail_page.page as page_module
 from database import Database
@@ -42,6 +42,10 @@ from webapp_constants import (
 
 
 def _widgets_constructible():
+    # Without a display, constructing a widget does not raise -- it
+    # segfaults (GTK 4.14 on the CI runner), so check for one first.
+    if Gdk.Display.get_default() is None:
+        return False
     try:
         Gtk.Box()
         return True
