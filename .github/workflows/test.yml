@@ -25,7 +25,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 \
-            python3-pil python3-coverage
+            python3-pil python3-coverage xvfb
 
       # cairosvg only gates SVG icon import, and the matching tests skip
       # themselves when it is absent -- so a missing package must not fail CI.
@@ -36,8 +36,11 @@ jobs:
       - name: Show interpreter version
         run: python3 --version
 
+      # A few detail-page tests build real widgets. They skip themselves
+      # without a display (building one headless segfaults on this GTK), so
+      # give them a virtual X server -- otherwise ~6% of the coverage is lost.
       - name: Run tests
-        run: python3 -m coverage run -m unittest discover -s tests -v
+        run: xvfb-run -a python3 -m coverage run -m unittest discover -s tests -v
 
       - name: Coverage report
         run: python3 -m coverage report --omit="tests/*"

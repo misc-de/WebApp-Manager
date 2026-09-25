@@ -312,13 +312,17 @@ Split across four modules forming a one-directional dependency graph
   secret.
 - `MainWindow` mixin hierarchy is wide (8 mixins). Consider splitting into
   composed controllers when next refactoring.
-- Line coverage is 99% (13 of ~10.4k statements missed, all defensive or
+- Line coverage is 99% (12 of ~10.4k statements missed, all defensive or
   unreachable). The `tests/test_cov_*.py` files reach the UI mixins
   headlessly: Gtk/Adw/GLib are swapped for fakes inside the module under
   test, worker threads run inline and idle callbacks are drained by hand.
   That proves the logic, not the rendering — layout and real signal wiring
-  are still only checked by hand. Nine tests are `expectedFailure` and pin
-  known bugs; remove the marker when fixing one.
+  are still only checked by hand. The few detail-page tests that build real
+  widgets skip themselves without a display (constructing a widget headless
+  segfaults rather than raising), so CI runs the suite under `xvfb-run`;
+  without it coverage drops to ~93%. Note that on a phone GTK finds the
+  Wayland socket even with `WAYLAND_DISPLAY` unset — a truly headless run
+  also needs an empty `XDG_RUNTIME_DIR`.
 - Startup still walks every browser profile the *first* time it sees it (no
   cached size yet), and that walk holds the startup spinner. Subsequent starts
   read the remembered sizes and open immediately.
