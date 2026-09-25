@@ -312,10 +312,13 @@ Split across four modules forming a one-directional dependency graph
   secret.
 - `MainWindow` mixin hierarchy is wide (8 mixins). Consider splitting into
   composed controllers when next refactoring.
-- UI test coverage is thin. The logic layer is reasonably covered
-  (`browser_option_logic` ~83%, `database` ~80%, `launcher_wrapper` ~86%), but
-  the mixin modules sit in the 7–17% range, so the ~5k lines of UI code —
-  including all worker-thread handling — are effectively untested.
+- Line coverage is 99% (13 of ~10.4k statements missed, all defensive or
+  unreachable). The `tests/test_cov_*.py` files reach the UI mixins
+  headlessly: Gtk/Adw/GLib are swapped for fakes inside the module under
+  test, worker threads run inline and idle callbacks are drained by hand.
+  That proves the logic, not the rendering — layout and real signal wiring
+  are still only checked by hand. Nine tests are `expectedFailure` and pin
+  known bugs; remove the marker when fixing one.
 - Startup still walks every browser profile the *first* time it sees it (no
   cached size yet), and that walk holds the startup spinner. Subsequent starts
   read the remembered sizes and open immediately.
