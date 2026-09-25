@@ -21,6 +21,12 @@ MUTABLE_CONFIG_KEYS = {'language', 'settings', 'window_state'}
 _CONFIG_CACHE = None
 _TRANSLATION_CACHE: dict = {}
 _LANGUAGE_METADATA_CACHE = None
+# t() resolves the language on every call, and a single start calls it a few
+# thousand times -- each resolution deep-copies the config and the language
+# list, which cost ~0.3 ms per call on a phone and close to a second per start.
+# The locale does not change at runtime, so the answer only changes when the
+# config is saved or the caches are invalidated.
+_LANGUAGE_CODE_CACHE: str | None = None
 
 
 def _load_json_file(path: Path):
@@ -137,12 +143,13 @@ def _filter_mutable_config(data):
 
 
 def save_app_config(data):
-    global _CONFIG_CACHE
+    global _CONFIG_CACHE, _LANGUAGE_CODE_CACHE
     if not isinstance(data, dict):
         raise TypeError('config data must be a dict')
     USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     USER_CONFIG_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     _CONFIG_CACHE = deepcopy(data)
+    _LANGUAGE_CODE_CACHE = None
     return _CONFIG_CACHE
 
 
@@ -155,7 +162,7 @@ def update_app_config(mutator):
 
 
 def get_app_config(force_reload=False):
-    global _CONFIG_CACHE
+    global _CONFIG_CACHE, _LANGUAGE_CODE_CACHE
     if _CONFIG_CACHE is not None and not force_reload:
         return deepcopy(_CONFIG_CACHE)
 
@@ -172,6 +179,7 @@ def get_app_config(force_reload=False):
         loaded = {'language': 'system'}
 
     _CONFIG_CACHE = loaded
+    _LANGUAGE_CODE_CACHE = None
     return deepcopy(_CONFIG_CACHE)
 
 
@@ -184,6 +192,13 @@ def get_configured_language_value():
 
 
 def get_language_code():
+    global _LANGUAGE_CODE_CACHE
+    if _LANGUAGE_CODE_CACHE is None:
+        _LANGUAGE_CODE_CACHE = _resolve_language_code()
+    return _LANGUAGE_CODE_CACHE
+
+
+def _resolve_language_code():
     configured = get_configured_language_value()
     if configured == 'system':
         return get_system_language_code()
@@ -195,9 +210,10 @@ def get_language_code():
 
 
 def invalidate_i18n_cache(reload_config=False):
-    global _CONFIG_CACHE, _TRANSLATION_CACHE, _LANGUAGE_METADATA_CACHE
+    global _CONFIG_CACHE, _TRANSLATION_CACHE, _LANGUAGE_METADATA_CACHE, _LANGUAGE_CODE_CACHE
     _TRANSLATION_CACHE = {}
     _LANGUAGE_METADATA_CACHE = None
+    _LANGUAGE_CODE_CACHE = None
     if reload_config:
         _CONFIG_CACHE = None
 
