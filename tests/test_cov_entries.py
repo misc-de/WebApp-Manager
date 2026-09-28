@@ -29,12 +29,18 @@ fake_logger_setup = types.ModuleType('logger_setup')
 fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
-from app_models import Entry  # noqa: E402
-from mainwindow import entries as entries_mod  # noqa: E402
-from mainwindow.entries import MainWindowEntriesMixin  # noqa: E402
-from webapp_constants import (  # noqa: E402
-    ADDRESS_KEY, APP_MODE_KEY, DESKTOP_NAME_SOURCE_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY,
-    USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY,
+from app_models import Entry
+from mainwindow import entries as entries_mod
+from mainwindow.entries import MainWindowEntriesMixin
+from webapp_constants import (
+    ADDRESS_KEY,
+    APP_MODE_KEY,
+    DESKTOP_NAME_SOURCE_KEY,
+    ICON_PATH_KEY,
+    PROFILE_NAME_KEY,
+    PROFILE_PATH_KEY,
+    USER_AGENT_NAME_KEY,
+    USER_AGENT_VALUE_KEY,
 )
 
 ENGINES = [

@@ -8,20 +8,19 @@ import io
 import json
 import shutil
 import tempfile
-import zipfile
-import urllib.request
 import urllib.error
+import urllib.request
+import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
 
-from webapp_constants import ADDRESS_KEY
-from input_validation import open_guarded_url
 from browser_paths import (
     DEFAULT_FIREFOX_EXTENSIONS,
-    get_firefox_extension_config,
     _is_explicitly_managed_profile_dir,
+    get_firefox_extension_config,
 )
-
+from input_validation import open_guarded_url
+from webapp_constants import ADDRESS_KEY
 
 # Upper bound for a downloaded XPI. uBlock Origin is ~4 MB, so this is
 # generous; it exists so a hostile or misconfigured source cannot stream an

@@ -4,8 +4,8 @@ import logging
 import sys
 import tempfile
 import types
-import urllib.error
 import unittest
+import urllib.error
 import zipfile
 from pathlib import Path
 from unittest import mock
@@ -31,6 +31,12 @@ from input_validation import (
     normalize_wapp_payload,
     payload_contains_inline_javascript,
 )
+from ui_flow_state import (
+    detail_neutral_focus_slot,
+    main_neutral_focus_candidates,
+    next_search_toggle_state,
+)
+from wapp_transfer import build_wapp_export_bundle_payload, build_wapp_export_payload
 from webapp_constants import (
     ICON_PATH_KEY,
     INLINE_CUSTOM_JS_KEY,
@@ -38,13 +44,11 @@ from webapp_constants import (
     OPTION_DISABLE_AI_KEY,
     OPTION_NOTIFICATIONS_KEY,
     OPTION_OPEN_LINKS_IN_TABS_KEY,
-    OPTION_PREVENT_MULTIPLE_STARTS_KEY,
     OPTION_PRESERVE_SESSION_KEY,
+    OPTION_PREVENT_MULTIPLE_STARTS_KEY,
     OPTION_SAFE_GRAPHICS_KEY,
     PROFILE_PATH_KEY,
 )
-from ui_flow_state import detail_neutral_focus_slot, main_neutral_focus_candidates, next_search_toggle_state
-from wapp_transfer import build_wapp_export_bundle_payload, build_wapp_export_payload
 
 
 def _build_test_logger(name: str) -> logging.Logger:
@@ -61,13 +65,13 @@ sys.modules.setdefault('logger_setup', fake_logger_setup)
 import browser_extensions
 from browser_profiles import (
     MAX_EXTENSION_DOWNLOAD_SIZE,
-    ProfileSettings,
     SCOPED_SWIPE_EXTENSION_NAME,
+    ProfileSettings,
     _resolve_bundled_extension_path,
     _scope_swipe_extension_payload,
+    _sync_firefox_swipe_extension,
     _write_firefox_user_js,
     _write_managed_profile_marker,
-    _sync_firefox_swipe_extension,
     delete_managed_browser_profiles,
     ensure_browser_profile,
     read_profile_settings,
@@ -288,15 +292,10 @@ class FirefoxProfileOptionTests(unittest.TestCase):
             profile_dir = Path(tmpdir)
             profile_dir.mkdir(parents=True, exist_ok=True)
             (profile_dir / 'user.js').write_text(
-                '\n'.join(
-                    [
-                        '// WEBAPP MANAGED START',
-                        'user_pref("browser.tabs.groups.smart.userEnabled", false);',
-                        'user_pref("browser.link.open_newwindow", 2);',
-                        '// WEBAPP MANAGED END',
-                        '',
-                    ]
-                ),
+                '// WEBAPP MANAGED START\n'
+                'user_pref("browser.tabs.groups.smart.userEnabled", false);\n'
+                'user_pref("browser.link.open_newwindow", 2);\n'
+                '// WEBAPP MANAGED END\n',
                 encoding='utf-8',
             )
 

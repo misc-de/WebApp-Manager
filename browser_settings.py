@@ -8,9 +8,17 @@ dependency graph and is never imported by them.
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
 from pathlib import Path
+from typing import Any
 
+from browser_extensions import firefox_extension_installed
+from browser_paths import (
+    COLOR_SCHEME_PREF_VALUES,
+    _is_explicitly_managed_profile_dir,
+    _remove_path_if_exists,
+    normalize_color_scheme,
+    normalize_default_zoom,
+)
 from distro_utils import is_furios_distribution
 from webapp_constants import (
     APP_MODE_KEY,
@@ -31,15 +39,6 @@ from webapp_constants import (
     OPTION_SWIPE_KEY,
     USER_AGENT_VALUE_KEY,
 )
-from browser_paths import (
-    COLOR_SCHEME_PREF_VALUES,
-    normalize_color_scheme,
-    normalize_default_zoom,
-    _is_explicitly_managed_profile_dir,
-    _remove_path_if_exists,
-)
-from browser_extensions import firefox_extension_installed
-
 
 FIREFOX_APP_MODE_START = '/* WEBAPP APP MODE START */\n'
 FIREFOX_APP_MODE_END = '/* WEBAPP APP MODE END */\n'
@@ -174,7 +173,7 @@ def _write_firefox_user_js(profile_dir, settings):
         'browser.newtabpage.activity-stream.feeds.topsites': False,
         'browser.newtabpage.activity-stream.feeds.system.topsites': False,
         'browser.translations.automaticallyPopup': False,
-        'xpinstall.signatures.required': False if allow_unsigned_runtime_js else True,
+        'xpinstall.signatures.required': not allow_unsigned_runtime_js,
         'webapp.clear_cache_requested': bool(clear_cache),
     }
     if disable_ai:
@@ -211,7 +210,7 @@ def _write_firefox_user_js(profile_dir, settings):
 
     if is_furios_distribution():
         prefs.update({
-            'furi.browser.preload.disabled': False if keep_in_background else True,
+            'furi.browser.preload.disabled': not keep_in_background,
             # Furios devices can fail to render Firefox WebApps on Wayland/Mali when
             # WebRender or VA-API comes up with an incompatible GPU path.
             'gfx.webrender.all': False,
@@ -341,7 +340,7 @@ def _write_firefox_user_js(profile_dir, settings):
     existing = ''
     if user_js.exists():
         existing = user_js.read_text(encoding='utf-8')
-        existing = re.sub(re.escape(start_marker) + r'.*?' + re.escape(end_marker), '', existing, flags=re.S)
+        existing = re.sub(re.escape(start_marker) + r'.*?' + re.escape(end_marker), '', existing, flags=re.DOTALL)
         existing = existing.rstrip() + ('\n' if existing.strip() else '')
     new_content = existing + ''.join(managed_lines)
     if user_js.exists():
@@ -482,7 +481,7 @@ def _sync_firefox_app_mode_css(profile_dir, enabled, frameless, logger):
             logger.warning('Failed to read Firefox userChrome.css %s: %s', css_path, error)
             existing = ''
     pattern = re.escape(FIREFOX_APP_MODE_START) + r'.*?' + re.escape(FIREFOX_APP_MODE_END)
-    cleaned = re.sub(pattern, '', existing, flags=re.S).rstrip()
+    cleaned = re.sub(pattern, '', existing, flags=re.DOTALL).rstrip()
     if not enabled:
         if css_path.exists():
             if cleaned:

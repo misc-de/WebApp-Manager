@@ -1,9 +1,9 @@
 import logging
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
-import tempfile
 
 
 def _build_test_logger(name: str) -> logging.Logger:
@@ -17,7 +17,7 @@ fake_logger_setup = types.ModuleType('logger_setup')
 fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
-from database import Database, MIGRATIONS, SCHEMA_VERSION
+from database import MIGRATIONS, SCHEMA_VERSION, Database
 
 
 def _make_memory_db():

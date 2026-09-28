@@ -1,6 +1,10 @@
 import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
-from gi.repository import Adw, GLib, Gdk, Gtk, Pango
 
+from gi.repository import Adw, Gdk, GLib, Gtk, Pango
+
+from app_identity import APP_VERSION
+from app_models import Entry
+from desktop_entries import delete_managed_entry_artifacts
 from detail_page import DetailPage
 from engine_support import ENGINES, engine_icon_name
 from focus_guard import schedule_neutral_focus, should_prevent_input_autofocus
@@ -8,9 +12,6 @@ from i18n import t
 from logger_setup import get_logger
 from ui_flow_state import next_search_toggle_state
 from ui_icons import create_image_from_ref
-from app_identity import APP_VERSION
-from app_models import Entry
-from desktop_entries import delete_managed_entry_artifacts
 from webapp_constants import ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY
 
 LOG = get_logger(__name__)
@@ -164,7 +165,7 @@ class MainWindowOverviewMixin:
             return
         try:
             self.overview_split_view.set_collapsed(bool(self._adaptive_narrow_mode))
-            self.overview_split_view.set_show_content(False if self._adaptive_narrow_mode else True)
+            self.overview_split_view.set_show_content(not self._adaptive_narrow_mode)
         except (AttributeError, TypeError):
             pass
         try:
@@ -716,8 +717,8 @@ class MainWindowOverviewMixin:
                 else:
                     self.detail_pages[entry.id].set_compact_mode_override(self._adaptive_narrow_mode if self._adaptive_split_enabled else None)
                 self._set_overview_detail_visible(self.detail_pages[entry.id], entry.title or t('app_title'))
-            except (GLib.Error, OSError, TypeError, ValueError) as error:
-                LOG.error('Failed to open detail page for entry %s: %s', entry.id, error, exc_info=True)
+            except (GLib.Error, OSError, TypeError, ValueError):
+                LOG.exception('Failed to open detail page for entry %s', entry.id)
                 self.show_overlay_notification(t('detail_view_load_failed'), timeout_ms=3500)
                 self._show_overview_root_page()
                 self.stack.set_visible_child_name('overview_page')

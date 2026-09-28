@@ -26,9 +26,10 @@ fake_logger_setup = types.ModuleType('logger_setup')
 fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
+import gi_versions  # noqa: F401
+
 from gi.repository import Gio, GLib
 
-import gi_versions  # noqa: F401
 from i18n import t
 from mainwindow import settings
 from mainwindow.settings import MainWindowSettingsMixin

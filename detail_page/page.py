@@ -1,7 +1,9 @@
 from typing import Any
 
 import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
-from gi.repository import Adw, Gtk, GLib, Pango
+
+from gi.repository import Adw, GLib, Gtk, Pango
+
 try:
     from gi.repository import GtkSource
 except (ImportError, ValueError):
@@ -11,31 +13,31 @@ import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
-
-from webapp_constants import (
-    ADDRESS_KEY,
-    DESKTOP_NAME_SOURCE_KEY,
-    PROFILE_NAME_KEY,
-    PROFILE_PATH_KEY,
-    COLOR_SCHEME_KEY,
-    DEFAULT_ZOOM_KEY,
-)
-from input_validation import (
-    check_origin_status,
-    is_structurally_valid_url,
-)
-from i18n import get_app_config, t
-from logger_setup import get_logger
-from engine_support import engine_available
 from browser_option_logic import (
     browser_family_for_engine,
     normalize_option_rows,
 )
+from engine_support import engine_available
+from i18n import get_app_config, t
+from input_validation import (
+    check_origin_status,
+    is_structurally_valid_url,
+)
+from logger_setup import get_logger
 from option_config import option_names
-from .layout import DetailPageLayoutMixin
+from webapp_constants import (
+    ADDRESS_KEY,
+    COLOR_SCHEME_KEY,
+    DEFAULT_ZOOM_KEY,
+    DESKTOP_NAME_SOURCE_KEY,
+    PROFILE_NAME_KEY,
+    PROFILE_PATH_KEY,
+)
+
 from .assets import DetailPageAssetsMixin
-from .options import DetailPageOptionsMixin
 from .icon import DetailPageIconMixin
+from .layout import DetailPageLayoutMixin
+from .options import DetailPageOptionsMixin
 from .transfer import DetailPageTransferMixin
 
 LOG = get_logger(__name__)

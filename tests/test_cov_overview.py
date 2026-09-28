@@ -1078,7 +1078,7 @@ class EntryActivationTests(_OverviewTestCase):
         with mock.patch.object(overview, 'LOG') as log:
             harness.on_entry_activated(Entry(4, 'Mail'))
             self._run_idle()
-        log.error.assert_called_once()
+        log.exception.assert_called_once()
         harness.show_overlay_notification.assert_called_once_with(overview.t('detail_view_load_failed'), timeout_ms=3500)
         self.assertNotIn(4, harness.detail_pages)
         harness._hide_busy.assert_called_once_with()

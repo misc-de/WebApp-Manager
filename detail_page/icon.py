@@ -9,18 +9,37 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, urlunparse
 
-from PIL import Image, UnidentifiedImageError
 import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
-from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, normalize_icon_bytes_to_png, normalize_icon_to_png
-from webapp_constants import ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_VALUE_KEY
-from input_validation import DESKTOP_CHROME_USER_AGENT, MAX_ICON_FILE_SIZE, build_safe_slug, candidate_urls_for_input, is_structurally_valid_url, open_guarded_url, validate_icon_source_path
-from browser_profiles import get_profile_size_bytes
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
+from PIL import Image, UnidentifiedImageError
+
 import profile_size_cache
 from app_identity import APP_ICON_NAME
+from browser_profiles import get_profile_size_bytes
 from i18n import t
+from icon_pipeline import (
+    get_managed_icon_path,
+    is_svg_support_missing_error,
+    normalize_icon_bytes_to_png,
+    normalize_icon_to_png,
+)
+from input_validation import (
+    DESKTOP_CHROME_USER_AGENT,
+    MAX_ICON_FILE_SIZE,
+    build_safe_slug,
+    candidate_urls_for_input,
+    is_structurally_valid_url,
+    open_guarded_url,
+    validate_icon_source_path,
+)
 from logger_setup import get_logger
+from webapp_constants import (
+    ICON_PATH_KEY,
+    PROFILE_NAME_KEY,
+    PROFILE_PATH_KEY,
+    USER_AGENT_VALUE_KEY,
+)
 
 LOG = get_logger(__name__)
 
@@ -531,7 +550,7 @@ class DetailPageIconMixin:
         scale = min(fit_size / width, fit_size / height)
         if scale <= 0:
             scale = 1.0
-        new_size = (max(1, int(round(width * scale))), max(1, int(round(height * scale))))
+        new_size = (max(1, round(width * scale)), max(1, round(height * scale)))
         image = image.resize(new_size, Image.Resampling.LANCZOS)
         canvas = Image.new('RGBA', (max_size, max_size), (0, 0, 0, 0))
         x = (max_size - image.width) // 2

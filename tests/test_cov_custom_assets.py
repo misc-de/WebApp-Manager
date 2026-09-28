@@ -28,8 +28,8 @@ fake_logger_setup = types.ModuleType('logger_setup')
 fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
-import custom_assets as ca  # noqa: E402
-from webapp_constants import DEFAULT_ZOOM_KEY  # noqa: E402
+import custom_assets as ca
+from webapp_constants import DEFAULT_ZOOM_KEY
 
 
 class _LibraryFixture(unittest.TestCase):

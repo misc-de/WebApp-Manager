@@ -7,6 +7,7 @@ from unittest import mock
 
 from input_validation import DESKTOP_CHROME_USER_AGENT
 
+
 def _build_test_logger(name: str) -> logging.Logger:
     logger = logging.getLogger(f'test.sorting.{name}')
     if not logger.handlers:
@@ -124,7 +125,7 @@ class UrlReadinessTests(unittest.TestCase):
 
     def test_icon_request_user_agent_prefers_configured_value(self):
         detail_page = DetailPage.__new__(DetailPage)
-        detail_page._get_option_value = lambda key: 'Custom Agent/1.0' if key == 'UserAgent' or key == 'UserAgentValue' else 'Custom Agent/1.0'
+        detail_page._get_option_value = lambda key: 'Custom Agent/1.0'
 
         with mock.patch('detail_page.icon.USER_AGENT_VALUE_KEY', 'UserAgentValue'):
             self.assertEqual(DetailPage._icon_request_user_agent(detail_page), 'Custom Agent/1.0')

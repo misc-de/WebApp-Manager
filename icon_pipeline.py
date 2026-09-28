@@ -1,6 +1,6 @@
-from pathlib import Path
-from functools import lru_cache
 import io
+from functools import lru_cache
+from pathlib import Path
 
 SVG_CAIRO_MISSING_ERROR = 'SVG support is unavailable: neither cairosvg nor a GdkPixbuf SVG loader is installed'
 
@@ -34,12 +34,13 @@ def _cairosvg():
 def _gdk_pixbuf_svg():
     try:
         import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
-        from gi.repository import Gio, GLib, GdkPixbuf
+
+        from gi.repository import GdkPixbuf, Gio, GLib
     except (ImportError, ValueError, AttributeError):
         return None
     try:
         has_svg_loader = any('svg' in (fmt.get_name() or '') for fmt in GdkPixbuf.Pixbuf.get_formats())
-    except Exception:  # pragma: no cover - defensive, get_formats is not expected to fail
+    except Exception:  # noqa: BLE001  # pragma: no cover - defensive, get_formats is not expected to fail
         return None
     if not has_svg_loader:
         return None
@@ -47,6 +48,7 @@ def _gdk_pixbuf_svg():
 
 from input_validation import build_safe_slug, validate_icon_source_path
 from webapp_constants import APPLICATIONS_DIR, ICON_THEME_APPS_DIR
+
 
 def _get_managed_icon_stem(title, entry_id=None):
     safe_slug = build_safe_slug(title)
@@ -75,7 +77,7 @@ def _looks_like_svg(payload: bytes) -> bool:
     if not payload:
         return False
     head = payload[:512].lstrip()
-    if head.startswith(b'<?xml') or head.startswith(b'<svg'):
+    if head.startswith((b'<?xml', b'<svg')):
         return True
     try:
         decoded = head.decode('utf-8', errors='ignore').lower()

@@ -1,18 +1,34 @@
-from browser_profiles import delete_managed_browser_profiles
-from desktop_entries import export_desktop_file
-from i18n import t
-from logger_setup import get_logger
 import base64
 import binascii
 import json
 from datetime import datetime
+
 import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
+
 from gi.repository import Gio, GLib, Gtk
+
 from browser_option_logic import normalize_option_dict
+from browser_profiles import delete_managed_browser_profiles
+from desktop_entries import export_desktop_file
+from i18n import t
 from icon_pipeline import is_svg_support_missing_error, normalize_icon_bytes_to_png
-from input_validation import load_import_payloads_from_path, normalize_wapp_payload, payload_contains_inline_javascript
-from webapp_constants import ADDRESS_KEY, COLOR_SCHEME_KEY, DEFAULT_ZOOM_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
+from input_validation import (
+    load_import_payloads_from_path,
+    normalize_wapp_payload,
+    payload_contains_inline_javascript,
+)
+from logger_setup import get_logger
 from wapp_transfer import build_wapp_export_payload
+from webapp_constants import (
+    ADDRESS_KEY,
+    COLOR_SCHEME_KEY,
+    DEFAULT_ZOOM_KEY,
+    ICON_PATH_KEY,
+    PROFILE_NAME_KEY,
+    PROFILE_PATH_KEY,
+    USER_AGENT_NAME_KEY,
+    USER_AGENT_VALUE_KEY,
+)
 
 LOG = get_logger(__name__)
 
@@ -153,7 +169,7 @@ class DetailPageTransferMixin:
         return True
 
     def on_export_webapp_clicked(self, button):
-        export_date = datetime.now().strftime('%Y-%m-%d')
+        export_date = datetime.now().astimezone().strftime('%Y-%m-%d')
         base_name = (self.entry.title or 'webapp').strip() or 'webapp'
         suggested_name = f"{base_name}_{export_date}.wapp"
         self._save_file_dialog(t('export_webapp_button'), suggested_name, self.on_export_wapp_selected)

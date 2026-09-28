@@ -1,16 +1,9 @@
 import configparser
 import shlex
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
-from i18n import t
-from input_validation import (
-    build_safe_slug,
-    is_structurally_valid_url,
-    is_valid_url,
-    normalize_address,
-    sanitize_desktop_value,
-)
+from app_identity import APP_ICON_NAME
 from browser_option_logic import (
     apply_semantic_mode,
     browser_family_for_command,
@@ -20,7 +13,6 @@ from browser_option_logic import (
     project_options_for_family,
     semantic_mode_from_options,
 )
-from launcher_wrapper import delete_wrapper, wrapper_path_for_slug, write_wrapper
 from browser_profiles import (
     append_unique_csv_arg,
     append_user_agent_argument,
@@ -31,7 +23,7 @@ from browser_profiles import (
     resolve_browser_command,
 )
 from custom_assets import chromium_runtime_extension_args
-from app_identity import APP_ICON_NAME
+from i18n import t
 from icon_pipeline import (
     _allowed_managed_icon_stems,
     _is_safe_managed_icon_path,
@@ -40,6 +32,14 @@ from icon_pipeline import (
     get_managed_theme_icon_path,
     normalize_icon_to_png,
 )
+from input_validation import (
+    build_safe_slug,
+    is_structurally_valid_url,
+    is_valid_url,
+    normalize_address,
+    sanitize_desktop_value,
+)
+from launcher_wrapper import delete_wrapper, wrapper_path_for_slug, write_wrapper
 from webapp_constants import (
     ADDRESS_KEY,
     APP_MODE_KEY,
@@ -53,10 +53,10 @@ from webapp_constants import (
     ONLY_HTTPS_KEY,
     OPTION_DISABLE_AI_KEY,
     OPTION_PRESERVE_SESSION_KEY,
+    OPTION_SWIPE_KEY,
     PROFILE_NAME_KEY,
     PROFILE_PATH_KEY,
     USER_AGENT_VALUE_KEY,
-    OPTION_SWIPE_KEY,
 )
 
 MANAGED_BY_VALUE = t('managed_by')
@@ -522,9 +522,9 @@ def delete_managed_entry_artifacts(entry_id, title, engines_list, logger, keep_p
             logger.error('Failed to delete managed desktop file %s: %s', desktop_path, error)
 
         wrapper_slug = build_safe_slug(desktop_data.get('title') or '')
-        if wrapper_slug and (not keep_path or wrapper_path_for_slug(wrapper_slug) != keep_path):
-            if delete_wrapper(wrapper_slug):
-                logger.info('Deleted launcher wrapper for slug %s', wrapper_slug)
+        wrapper_is_stale = bool(wrapper_slug) and (not keep_path or wrapper_path_for_slug(wrapper_slug) != keep_path)
+        if wrapper_is_stale and delete_wrapper(wrapper_slug):
+            logger.info('Deleted launcher wrapper for slug %s', wrapper_slug)
 
         icon_path = (desktop_data.get('icon_path') or '').strip()
         if icon_path and ('/' in icon_path or '\\' in icon_path) and _is_safe_managed_icon_path(icon_path, entry_id, title):

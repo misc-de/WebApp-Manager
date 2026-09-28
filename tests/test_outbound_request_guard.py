@@ -67,9 +67,8 @@ class HostClassificationTests(unittest.TestCase):
 class SchemeGuardTests(unittest.TestCase):
     def test_non_http_schemes_are_refused_before_any_io(self):
         for url in ('file:///etc/passwd', 'data:text/plain,x', 'ftp://example.com/a', 'gopher://example.com'):
-            with self.subTest(url=url):
-                with self.assertRaises(UnsafeRedirectError):
-                    open_guarded_url(url, timeout=1)
+            with self.subTest(url=url), self.assertRaises(UnsafeRedirectError):
+                open_guarded_url(url, timeout=1)
 
     def test_strict_mode_refuses_private_target_up_front(self):
         with self.assertRaises(UnsafeRedirectError):

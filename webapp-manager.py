@@ -1,15 +1,15 @@
 import threading
 
 import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
-from gi.repository import Adw, Gdk, Gio, Gtk, GLib
 
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
+
+from app_identity import APP_DB_PATH, APP_DIR, APP_ICON_NAME, APP_ID
+from app_models import Entry
 from database import Database
 from focus_guard import schedule_neutral_focus, should_prevent_input_autofocus
 from i18n import t
 from logger_setup import get_logger
-from app_models import Entry
-from app_identity import APP_DIR, APP_ID, APP_ICON_NAME, APP_DB_PATH
-from manager_integration import ensure_manager_desktop_integration, headerbar_decoration_layout_without_icon
 from mainwindow import (
     MainWindowDialogsMixin,
     MainWindowEntriesMixin,
@@ -19,6 +19,10 @@ from mainwindow import (
     MainWindowProfileImportMixin,
     MainWindowSettingsMixin,
     MainWindowWindowStateMixin,
+)
+from manager_integration import (
+    ensure_manager_desktop_integration,
+    headerbar_decoration_layout_without_icon,
 )
 from ui_flow_state import main_neutral_focus_candidates
 

@@ -4,7 +4,7 @@ import re
 import shutil
 import tempfile
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -187,7 +187,7 @@ def import_custom_asset(source_path):
     asset_type = _asset_type_for_path(source)
     if asset_type is None:
         raise ValueError('unsupported-asset-type')
-    asset_id = f"asset-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+    asset_id = f"asset-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}"
     target_dir = ASSET_LIBRARY_DIR / asset_type
     target_dir.mkdir(parents=True, exist_ok=True)
     filename = f'{asset_id}{source.suffix.lower()}'
@@ -198,7 +198,7 @@ def import_custom_asset(source_path):
         'name': source.name,
         'type': asset_type,
         'filename': filename,
-        'imported_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+        'imported_at': datetime.now(UTC).isoformat(timespec='seconds'),
         'sha256': asset_file_sha256(target_path),
     }
     library = _library_metadata()
@@ -359,7 +359,7 @@ def format_asset_date(value):
     if not raw:
         return ''
     try:
-        dt = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+        dt = datetime.fromisoformat(raw)
     except ValueError:
         return raw
     return dt.astimezone().strftime('%Y-%m-%d %H:%M')

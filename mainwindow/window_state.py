@@ -1,6 +1,9 @@
 import json
+
 import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
-from gi.repository import GLib, Adw
+
+from gi.repository import Adw, GLib
+
 from i18n import get_app_config, get_configured_language_value, save_app_config
 from logger_setup import get_logger
 
@@ -52,7 +55,7 @@ class MainWindowWindowStateMixin:
                 config['settings'] = settings
                 save_app_config(config)
             except (OSError, TypeError, ValueError, json.JSONDecodeError):
-                LOG.error('Failed to save UI settings', exc_info=True)
+                LOG.exception('Failed to save UI settings')
 
     def _appearance_value(self):
             value = str((self.ui_settings or {}).get('appearance', 'auto')).strip().lower()
@@ -71,7 +74,7 @@ class MainWindowWindowStateMixin:
                 }
                 style_manager.set_color_scheme(mapping.get(appearance, Adw.ColorScheme.DEFAULT))
             except AttributeError:
-                LOG.error('Failed to apply UI appearance', exc_info=True)
+                LOG.exception('Failed to apply UI appearance')
 
     def _schedule_window_state_save(self):
             if self._window_state_save_source_id:

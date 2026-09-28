@@ -5,16 +5,28 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
+
 import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
+
 from gi.repository import Gdk, GLib, Gtk
-from desktop_entries import build_launch_command, exportable_entry, get_expected_desktop_path, list_managed_desktop_files
+
+from desktop_entries import (
+    build_launch_command,
+    exportable_entry,
+    get_expected_desktop_path,
+    list_managed_desktop_files,
+)
 from engine_support import ENGINES
 from host_commands import host_argv, running_in_flatpak
 from i18n import t
 from input_validation import sanitize_desktop_value
 from logger_setup import get_logger
-from webapp_constants import OPTION_PREVENT_MULTIPLE_STARTS_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY
 from wapp_transfer import build_wapp_export_bundle_payload, build_wapp_export_payload
+from webapp_constants import (
+    OPTION_PREVENT_MULTIPLE_STARTS_KEY,
+    PROFILE_NAME_KEY,
+    PROFILE_PATH_KEY,
+)
 
 LOG = get_logger(__name__)
 
@@ -180,7 +192,7 @@ class MainWindowLaunchExportMixin:
             if not hasattr(Gtk, 'FileDialog'):
                 self.show_overlay_notification(t('settings_export_failed'), timeout_ms=3200)
                 return
-            export_date = datetime.now().strftime('%Y-%m-%d')
+            export_date = datetime.now().astimezone().strftime('%Y-%m-%d')
             dialog = Gtk.FileDialog(title=t('settings_export_dialog_title'), modal=True, initial_name=f'webapps_export_{export_date}.wapp')
 
             def handle_save(_dialog, result):
@@ -211,8 +223,8 @@ class MainWindowLaunchExportMixin:
                 payload = self._build_export_bundle_payload(entries)
                 target.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding='utf-8')
                 self.show_overlay_notification(t('settings_export_success', count=len(entries)), timeout_ms=2600)
-            except (OSError, TypeError, ValueError) as error:
-                LOG.error('Failed to export all WebApps into single file: %s', error, exc_info=True)
+            except (OSError, TypeError, ValueError):
+                LOG.exception('Failed to export all WebApps into single file')
                 self.show_overlay_notification(t('settings_export_failed'), timeout_ms=3200)
 
     def _launch_command_args(self, argv, *, entry=None):
@@ -281,7 +293,7 @@ class MainWindowLaunchExportMixin:
                 threading.Thread(target=_monitor_process, daemon=True).start()
                 return True
             except OSError:
-                LOG.error('Failed to launch command: %r', argv, exc_info=True)
+                LOG.exception('Failed to launch command: %r', argv)
                 return False
 
     def _launch_entry_from_icon(self, entry):

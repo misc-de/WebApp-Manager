@@ -3,14 +3,20 @@ from __future__ import annotations
 import json
 from xml.sax.saxutils import escape
 
-from i18n import get_translations, t
 from browser_option_registry import (
     BrowserOptionSpec,
-    browser_managed_option_keys as registry_browser_managed_option_keys,
-    default_option_values as registry_default_option_values,
-    supported_option_keys as registry_supported_option_keys,
     visible_browser_option_specs,
 )
+from browser_option_registry import (
+    browser_managed_option_keys as registry_browser_managed_option_keys,
+)
+from browser_option_registry import (
+    default_option_values as registry_default_option_values,
+)
+from browser_option_registry import (
+    supported_option_keys as registry_supported_option_keys,
+)
+from i18n import get_translations, t
 from webapp_constants import (
     MODE_DESKTOP_KEY,
     MODE_MOBILE_KEY,

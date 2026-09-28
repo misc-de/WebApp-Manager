@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import ipaddress
 import json
-from pathlib import Path
-from urllib.parse import urlparse
+import re
+import socket
 import urllib.error
 import urllib.request
-import re
-import ipaddress
-import socket
+from pathlib import Path
+from urllib.parse import urlparse
 
 from webapp_constants import NON_PORTABLE_WAPP_OPTION_KEYS
 
@@ -121,7 +121,7 @@ def load_import_payloads_from_path(path):
 
 def normalize_wapp_payload(payload):
     if not isinstance(payload, dict):
-        raise ValueError('Payload must be an object')
+        raise ValueError('Payload must be an object')  # noqa: TRY004 -- callers catch ValueError for every malformed import
 
     title = payload.get('title', '')
     description = payload.get('description', '')
@@ -136,7 +136,7 @@ def normalize_wapp_payload(payload):
     if raw_options is None:
         raw_options = {}
     if not isinstance(raw_options, dict):
-        raise ValueError('Options must be an object')
+        raise ValueError('Options must be an object')  # noqa: TRY004 -- callers catch ValueError for every malformed import
     options = {}
     for key, value in raw_options.items():
         if not isinstance(key, str):
@@ -254,7 +254,7 @@ def host_is_private_or_local(host) -> bool:
     host = str(host or '').strip().strip('.').lower()
     if not host:
         return True
-    if host == 'localhost' or host.endswith('.localhost') or host.endswith('.local'):
+    if host == 'localhost' or host.endswith(('.localhost', '.local')):
         return True
     try:
         return _ip_is_private_or_local(ipaddress.ip_address(host.strip('[]')))

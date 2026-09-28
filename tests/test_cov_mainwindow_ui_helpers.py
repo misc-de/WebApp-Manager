@@ -23,10 +23,14 @@ fake_logger_setup = types.ModuleType('logger_setup')
 fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
-from mainwindow import dialogs as dialogs_mod  # noqa: E402
-from mainwindow import notifications as notifications_mod  # noqa: E402
-from mainwindow import window_state as window_state_mod  # noqa: E402
-from mainwindow import MainWindowDialogsMixin, MainWindowNotificationsMixin, MainWindowWindowStateMixin  # noqa: E402
+from mainwindow import (
+    MainWindowDialogsMixin,
+    MainWindowNotificationsMixin,
+    MainWindowWindowStateMixin,
+)
+from mainwindow import dialogs as dialogs_mod
+from mainwindow import notifications as notifications_mod
+from mainwindow import window_state as window_state_mod
 
 
 def _fake_t(key, **kwargs):

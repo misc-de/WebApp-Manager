@@ -1,7 +1,17 @@
 from __future__ import annotations
 
-from browser_option_logic import browser_family_for_engine, browser_state_key, build_family_option_state, decode_browser_state
-from webapp_constants import APP_MODE_KEY, ONLY_HTTPS_KEY, OPTION_DISABLE_AI_KEY, OPTION_FORCE_PRIVACY_KEY
+from browser_option_logic import (
+    browser_family_for_engine,
+    browser_state_key,
+    build_family_option_state,
+    decode_browser_state,
+)
+from webapp_constants import (
+    APP_MODE_KEY,
+    ONLY_HTTPS_KEY,
+    OPTION_DISABLE_AI_KEY,
+    OPTION_FORCE_PRIVACY_KEY,
+)
 
 
 def ui_boolean_option_active(option_name: str, stored_value: str | None) -> bool:

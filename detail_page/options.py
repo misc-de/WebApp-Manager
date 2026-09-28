@@ -1,36 +1,38 @@
 import json
 import threading
+
 import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
+
 from gi.repository import GLib, Gtk, Pango
+
 from browser_option_logic import (
+    OPTION_SPEC_BY_KEY,
     apply_semantic_mode,
+    browser_family_for_engine,
+    browser_managed_option_keys,
     desktop_mode_value,
+    encode_browser_state,
     mobile_mode_value,
     mode_option_keys,
-    browser_family_for_engine,
-    encode_browser_state,
-    browser_managed_option_keys,
     normalize_option_rows,
     normalize_semantic_mode,
     option_ui_label,
     option_ui_label_markup,
     supported_browser_option_keys,
-    OPTION_SPEC_BY_KEY,
 )
-from browser_option_registry import OPTION_CATEGORY_ORDER, OPTION_CATEGORY_LABEL_KEYS, option_category
-from browser_profiles import apply_profile_settings, ensure_browser_profile, firefox_extension_installed, read_profile_settings
+from browser_option_registry import (
+    OPTION_CATEGORY_LABEL_KEYS,
+    OPTION_CATEGORY_ORDER,
+    option_category,
+)
+from browser_profiles import (
+    apply_profile_settings,
+    ensure_browser_profile,
+    firefox_extension_installed,
+    read_profile_settings,
+)
 from desktop_entries import export_desktop_file, get_expected_desktop_path
 from distro_utils import is_furios_distribution
-from .option_state import (
-    coerce_option_updates,
-    configured_mode_values_for_engine,
-    current_mode_value,
-    normalize_mode_value,
-    restored_browser_state,
-    store_boolean_option_value,
-    sync_browser_state_key,
-    ui_boolean_option_active,
-)
 from i18n import t
 from logger_setup import get_logger
 from webapp_constants import (
@@ -50,6 +52,17 @@ from webapp_constants import (
     PROFILE_PATH_KEY,
     USER_AGENT_NAME_KEY,
     USER_AGENT_VALUE_KEY,
+)
+
+from .option_state import (
+    coerce_option_updates,
+    configured_mode_values_for_engine,
+    current_mode_value,
+    normalize_mode_value,
+    restored_browser_state,
+    store_boolean_option_value,
+    sync_browser_state_key,
+    ui_boolean_option_active,
 )
 
 LOG = get_logger(__name__)
@@ -349,7 +362,7 @@ class DetailPageOptionsMixin:
             try:
                 rows = self.db.get_options_for_entry(self.entry.id)
             except (TypeError, ValueError, OSError):
-                LOG.error('Failed to reload options for entry %s', self.entry.id, exc_info=True)
+                LOG.exception('Failed to reload options for entry %s', self.entry.id)
                 return
             self._options_cache = normalize_option_rows(rows)
 
@@ -519,7 +532,7 @@ class DetailPageOptionsMixin:
             is_firefox = bool(engine and 'firefox' in command)
             for widget in getattr(self, '_engine_option_widgets', []):
                 widget.set_visible(bool(engine))
-            for _, widgets in getattr(self, '_option_row_widgets', {}).items():
+            for widgets in getattr(self, '_option_row_widgets', {}).values():
                 if len(widgets) > 2 and widgets[2] is not None:
                     widgets[2].set_sensitive(bool(engine))
             self.browser_option_status.set_text(t('option_adblock_unavailable') if engine and not is_firefox and OPTION_ADBLOCK_KEY in self._visible_option_names_in_order() else '')
@@ -634,7 +647,7 @@ class DetailPageOptionsMixin:
                     # Last resort: without this the UI would stay locked, since
                     # finish() -- which re-enables the switches -- never runs.
                     error_text = str(error)
-                    LOG.error('Unexpected Firefox plugin failure for entry %s: %s', self.entry.id, error, exc_info=True)
+                    LOG.exception('Unexpected Firefox plugin failure for entry %s', self.entry.id)
 
                 GLib.idle_add(self._finish_plugin_save, serial, option_key, option_name, profile_info, export_result, error_text)
 

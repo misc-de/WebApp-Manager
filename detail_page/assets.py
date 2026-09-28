@@ -1,10 +1,24 @@
 import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
-from gi.repository import Gtk, GLib
+
+from gi.repository import GLib, Gtk
+
 try:
     from gi.repository import GtkSource
 except (ImportError, ValueError):
     GtkSource = None
-from custom_assets import ASSET_OPTION_KEY_BY_TYPE, INLINE_CUSTOM_CSS_KEY, INLINE_CUSTOM_JS_KEY, INLINE_CUSTOM_CSS_HASH_KEY, INLINE_CUSTOM_JS_HASH_KEY, asset_content_sha256_from_text, encode_linked_asset_ids, format_asset_date, get_custom_asset, list_custom_assets, normalize_linked_asset_ids
+from custom_assets import (
+    ASSET_OPTION_KEY_BY_TYPE,
+    INLINE_CUSTOM_CSS_HASH_KEY,
+    INLINE_CUSTOM_CSS_KEY,
+    INLINE_CUSTOM_JS_HASH_KEY,
+    INLINE_CUSTOM_JS_KEY,
+    asset_content_sha256_from_text,
+    encode_linked_asset_ids,
+    format_asset_date,
+    get_custom_asset,
+    list_custom_assets,
+    normalize_linked_asset_ids,
+)
 from i18n import t
 
 
@@ -428,7 +442,8 @@ class DetailPageAssetsMixin:
 
                 delete_button = Gtk.Button(icon_name='user-trash-symbolic')
                 delete_button.add_css_class('flat')
-                delete_button.connect('clicked', lambda button, current_type=asset_type, current_asset_id=asset['id'], current_name=str(asset.get('name') or ''): self._confirm_remove_linked_asset(button, current_type, current_asset_id, current_name))
+                asset_name = str(asset.get('name') or '')
+                delete_button.connect('clicked', lambda button, current_type=asset_type, current_asset_id=asset['id'], current_name=asset_name: self._confirm_remove_linked_asset(button, current_type, current_asset_id, current_name))
                 row.append(delete_button)
                 selected_list.append(row)
 

@@ -29,7 +29,12 @@ sys.modules.setdefault('logger_setup', fake_logger_setup)
 
 from browser_profiles import _extension_errors_from_results, apply_profile_settings
 from detail_page import DetailPage
-from webapp_constants import ADDRESS_KEY, OPTION_SWIPE_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY
+from webapp_constants import (
+    ADDRESS_KEY,
+    OPTION_SWIPE_KEY,
+    PROFILE_NAME_KEY,
+    PROFILE_PATH_KEY,
+)
 
 
 class ExtensionErrorCollectionTests(unittest.TestCase):

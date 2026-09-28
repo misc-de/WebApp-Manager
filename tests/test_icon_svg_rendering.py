@@ -29,13 +29,12 @@ class SvgRendererSelectionTests(unittest.TestCase):
 
     @unittest.skipUnless(icon_pipeline._gdk_pixbuf_svg() is not None, 'no GdkPixbuf SVG loader available')
     def test_gdk_pixbuf_renders_when_cairosvg_is_missing(self):
-        with mock.patch.object(icon_pipeline, '_cairosvg', return_value=None):
-            with tempfile.TemporaryDirectory() as tmpdir:
-                target = Path(tmpdir) / 'icon.png'
-                icon_pipeline.normalize_icon_bytes_to_png(MINIMAL_SVG, target, source_name='favicon.svg', content_type='image/svg+xml')
-                self.assertTrue(target.exists())
-                self.assertGreater(target.stat().st_size, 0)
-                self.assertTrue(icon_pipeline.svg_support_available())
+        with mock.patch.object(icon_pipeline, '_cairosvg', return_value=None), tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / 'icon.png'
+            icon_pipeline.normalize_icon_bytes_to_png(MINIMAL_SVG, target, source_name='favicon.svg', content_type='image/svg+xml')
+            self.assertTrue(target.exists())
+            self.assertGreater(target.stat().st_size, 0)
+            self.assertTrue(icon_pipeline.svg_support_available())
 
     def test_missing_error_only_when_both_renderers_are_absent(self):
         with mock.patch.object(icon_pipeline, '_cairosvg', return_value=None), mock.patch.object(icon_pipeline, '_gdk_pixbuf_svg', return_value=None):

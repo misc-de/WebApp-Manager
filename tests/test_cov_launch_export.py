@@ -27,9 +27,13 @@ fake_logger_setup = types.ModuleType('logger_setup')
 fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
-from mainwindow import launch_export as le  # noqa: E402
-from mainwindow import MainWindowLaunchExportMixin  # noqa: E402
-from webapp_constants import OPTION_PREVENT_MULTIPLE_STARTS_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY  # noqa: E402
+from mainwindow import MainWindowLaunchExportMixin
+from mainwindow import launch_export as le
+from webapp_constants import (
+    OPTION_PREVENT_MULTIPLE_STARTS_KEY,
+    PROFILE_NAME_KEY,
+    PROFILE_PATH_KEY,
+)
 
 
 class _Entry:
