@@ -164,6 +164,12 @@ Split across four modules forming a one-directional dependency graph
   directory up. `make flatpak-repofile` regenerates the `.flatpakrepo` from the
   keyring, so the published key can never drift from the signing key; it runs
   as part of `flatpak-publish`.
+- **Version bump:** every published build gets a new version — bump
+  `APP_VERSION` in [app_identity.py](app_identity.py) *and* add a `<release>`
+  at the top of the metainfo, committed before CI builds the package.
+  Flatpak itself updates by commit, not by number, so forgetting it still
+  ships the update, but the phone keeps showing the old version.
+  `tests/test_app_version.py` keeps the two from drifting apart.
 - **Normal release:** `make release-from-ci && git push origin gh-pages`. It
   takes the newest successful Flatpak workflow run (or `RUN=<id>`), unpacks
   both architectures, signs every ref locally and publishes. Building on a

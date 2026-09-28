@@ -53,6 +53,19 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="70" date="2026-09-28">
+      <description>
+        <p>Starts roughly twice as fast on a phone: browser profile sizes are
+        remembered instead of re-measured on every start.</p>
+        <ul>
+          <li>Sites that only publish an SVG favicon get an icon again, even
+          without cairosvg.</li>
+          <li>GTK library versions are pinned consistently, so the code editor
+          no longer loads an unexpected GtkSource version.</li>
+          <li>Ten bug fixes found while extending the test suite.</li>
+        </ul>
+      </description>
+    </release>
     <release version="69" date="2026-08-22">
       <description>
         <p>Adds a Flatpak package. Browser detection and launching are routed
