@@ -241,9 +241,8 @@ class NormalizeWappPayloadTests(unittest.TestCase):
 
 class LoadImportPayloadsTests(unittest.TestCase):
     def _write_json(self, payload):
-        tmpfile = tempfile.NamedTemporaryFile(suffix='.wapp', delete=False)
-        path = Path(tmpfile.name)
-        tmpfile.close()
+        with tempfile.NamedTemporaryFile(suffix='.wapp', delete=False) as tmpfile:
+            path = Path(tmpfile.name)
         path.write_text(json.dumps(payload), encoding='utf-8')
         self.addCleanup(path.unlink, missing_ok=True)
         return path

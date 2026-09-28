@@ -29,9 +29,10 @@ fake_logger_setup = types.ModuleType('logger_setup')
 fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
+import gi_versions  # noqa: F401
+
 from gi.repository import Gio, Gtk
 
-import gi_versions  # noqa: F401
 from detail_page import DetailPage
 from detail_page.transfer import DetailPageTransferMixin
 from icon_pipeline import SVG_CAIRO_MISSING_ERROR

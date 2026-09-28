@@ -6,16 +6,32 @@
 target-version = "py311"
 
 [tool.ruff.lint]
-# Keep ruff's default rule set (pyflakes `F` + the pycodestyle error subset).
+# Keep ruff's default rule set. Since 0.16 that is considerably more than
+# pyflakes + pycodestyle errors (isort, bugbear, simplify, pyupgrade, ...), which
+# is why the version is pinned in requirements-dev.txt.
 # E402 is ignored project-wide: PyGObject requires `gi.require_version(...)`
 # calls before `from gi.repository import ...`, which legitimately puts imports
 # after executable statements in many modules.
 extend-ignore = ["E402"]
 
+[tool.ruff.lint.isort]
+# `gi_versions` pins the GObject-Introspection versions and must be imported
+# before anything from `gi.repository`. As first-party code it would sort
+# *after* the third-party `gi` import and silently undo the pinning, so it gets
+# a section of its own ahead of third-party.
+sections = { "gi-pinning" = ["gi_versions"] }
+section-order = ["future", "standard-library", "gi-pinning", "third-party", "first-party", "local-folder"]
+
 [tool.ruff.lint.per-file-ignores]
 # Packages re-export their public API through __init__, so unused-import is
 # expected there.
 "__init__.py" = ["F401"]
+# Best-effort widget calls (focus, scroll position, CSS classes, style schemes)
+# whose failure must never abort the UI flow that triggered them; there is
+# nothing useful to log either. Kept per file so new code elsewhere is still
+# checked.
+"focus_guard.py" = ["BLE001", "S110"]
+"detail_page/{assets,layout,options}.py" = ["BLE001", "S110"]
 
 [tool.mypy]
 python_version = "3.11"

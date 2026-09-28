@@ -1,12 +1,28 @@
 from pathlib import Path
 from types import SimpleNamespace
+
 import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
-from gi.repository import Adw, Gio, Gtk, GLib
-from custom_assets import count_asset_references, detach_asset_from_entries, format_asset_date, import_custom_asset, list_custom_assets, remove_custom_asset
+
+from gi.repository import Adw, Gio, GLib, Gtk
+
+from custom_assets import (
+    count_asset_references,
+    detach_asset_from_entries,
+    format_asset_date,
+    import_custom_asset,
+    list_custom_assets,
+    remove_custom_asset,
+)
 from desktop_entries import export_desktop_file, exportable_entry
 from detail_page import DetailPage
 from engine_support import ENGINES
-from i18n import available_languages, get_app_config, invalidate_i18n_cache, save_app_config, t
+from i18n import (
+    available_languages,
+    get_app_config,
+    invalidate_i18n_cache,
+    save_app_config,
+    t,
+)
 from logger_setup import get_logger
 
 LOG = get_logger(__name__)
@@ -617,7 +633,7 @@ class MainWindowSettingsMixin:
             language_label = self._available_language_rows()[idx][1]
             self.show_overlay_notification(t('settings_language_changed', language=language_label), timeout_ms=2200)
         except (OSError, TypeError, ValueError):
-            LOG.error('Failed to save language setting', exc_info=True)
+            LOG.exception('Failed to save language setting')
 
 
     def _set_titlebar_button_visibility(self, start_visible, end_visible):

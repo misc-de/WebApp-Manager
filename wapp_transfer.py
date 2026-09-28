@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from input_validation import validate_icon_source_path
 from webapp_constants import ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY
-
 
 TRANSIENT_EXPORT_OPTION_KEYS = (ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY)
 
@@ -42,7 +41,7 @@ def build_wapp_export_payload(*, title: str, description: str = '', active: bool
 
 def build_wapp_export_bundle_payload(entry_payloads: list[dict], created_at: str | None = None) -> dict:
     if created_at is None:
-        created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+        created_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
     return {
         'format': 'webapp-export-bundle-v1',
         'version': 1,

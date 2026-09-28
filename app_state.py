@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from webapp_constants import ADDRESS_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
+from webapp_constants import (
+    ADDRESS_KEY,
+    ICON_PATH_KEY,
+    PROFILE_NAME_KEY,
+    PROFILE_PATH_KEY,
+    USER_AGENT_NAME_KEY,
+    USER_AGENT_VALUE_KEY,
+)
 
 
 @dataclass
@@ -32,7 +39,7 @@ class WebAppState:
         )
 
     @classmethod
-    def from_file_data(cls, file_data: dict, fallback: 'WebAppState | None' = None):
+    def from_file_data(cls, file_data: dict, fallback: WebAppState | None = None):
         fallback = fallback or cls('', '', '', True, '', '', '', '', '')
         file_engine_id = file_data.get('engine_id')
         return cls(

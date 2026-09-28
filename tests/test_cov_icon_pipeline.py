@@ -197,24 +197,21 @@ class GdkPixbufRendererTests(unittest.TestCase):
 
     def test_loader_error_becomes_oserror(self):
         bindings, stream, _ = _fake_gdk(error=_FakeGLibError('bad svg'))
-        with mock.patch.object(icon_pipeline, '_gdk_pixbuf_svg', return_value=bindings):
-            with self.assertRaisesRegex(OSError, 'bad svg'):
-                icon_pipeline._render_svg_with_gdk_pixbuf(MINIMAL_SVG, self.target)
+        with mock.patch.object(icon_pipeline, '_gdk_pixbuf_svg', return_value=bindings), self.assertRaisesRegex(OSError, 'bad svg'):
+            icon_pipeline._render_svg_with_gdk_pixbuf(MINIMAL_SVG, self.target)
         stream.close.assert_called_once_with(None)
 
     def test_missing_pixbuf_becomes_oserror(self):
         bindings, _, new_from_stream = _fake_gdk()
         new_from_stream.return_value = None
-        with mock.patch.object(icon_pipeline, '_gdk_pixbuf_svg', return_value=bindings):
-            with self.assertRaisesRegex(OSError, 'could not be rendered'):
-                icon_pipeline._render_svg_with_gdk_pixbuf(MINIMAL_SVG, self.target)
+        with mock.patch.object(icon_pipeline, '_gdk_pixbuf_svg', return_value=bindings), self.assertRaisesRegex(OSError, 'could not be rendered'):
+            icon_pipeline._render_svg_with_gdk_pixbuf(MINIMAL_SVG, self.target)
         self.assertFalse(self.target.exists())
 
     def test_encoding_failure_becomes_oserror(self):
         bindings, _, _ = _fake_gdk(save_result=(False, b''))
-        with mock.patch.object(icon_pipeline, '_gdk_pixbuf_svg', return_value=bindings):
-            with self.assertRaisesRegex(OSError, 'encoded as PNG'):
-                icon_pipeline._render_svg_with_gdk_pixbuf(MINIMAL_SVG, self.target)
+        with mock.patch.object(icon_pipeline, '_gdk_pixbuf_svg', return_value=bindings), self.assertRaisesRegex(OSError, 'encoded as PNG'):
+            icon_pipeline._render_svg_with_gdk_pixbuf(MINIMAL_SVG, self.target)
         self.assertFalse(self.target.exists())
 
 
@@ -246,10 +243,12 @@ class RenderDispatchTests(unittest.TestCase):
         render.assert_called_once_with(MINIMAL_SVG, self.target)
 
     def test_missing_renderers_raise_the_support_error(self):
-        with mock.patch.object(icon_pipeline, '_cairosvg', return_value=None), \
-                mock.patch.object(icon_pipeline, '_gdk_pixbuf_svg', return_value=None):
-            with self.assertRaises(OSError) as caught:
-                icon_pipeline._render_svg_bytes_to_png(MINIMAL_SVG, self.target)
+        with (
+            mock.patch.object(icon_pipeline, '_cairosvg', return_value=None),
+            mock.patch.object(icon_pipeline, '_gdk_pixbuf_svg', return_value=None),
+            self.assertRaises(OSError) as caught,
+        ):
+            icon_pipeline._render_svg_bytes_to_png(MINIMAL_SVG, self.target)
         self.assertTrue(icon_pipeline.is_svg_support_missing_error(caught.exception))
         self.assertFalse(self.target.exists())
 

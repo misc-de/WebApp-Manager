@@ -4,15 +4,28 @@ import sqlite3
 import threading
 from pathlib import Path
 from types import SimpleNamespace
+
 import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
+
 from gi.repository import Gio, GLib, Gtk
-from browser_option_logic import browser_managed_option_keys, browser_state_key, encode_browser_state, mode_option_keys, normalize_option_dict, normalize_option_rows
+
+from app_identity import APP_DB_PATH
+from browser_option_logic import (
+    browser_managed_option_keys,
+    browser_state_key,
+    encode_browser_state,
+    mode_option_keys,
+    normalize_option_dict,
+    normalize_option_rows,
+)
+from browser_profiles import read_profile_settings
 from database import Database
 from detail_page import DetailPage
-from app_identity import APP_DB_PATH
-from browser_profiles import read_profile_settings
 from i18n import t
-from input_validation import load_import_payloads_from_path, payload_contains_inline_javascript
+from input_validation import (
+    load_import_payloads_from_path,
+    payload_contains_inline_javascript,
+)
 from logger_setup import get_logger
 from webapp_constants import PROFILE_PATH_KEY
 

@@ -7,15 +7,60 @@ re-exports their public symbols so existing ``from browser_profiles import X``
 call sites keep working.
 """
 import os
-import secrets
 import re
+import secrets
 import shutil
 from datetime import datetime
 from pathlib import Path
 
-from custom_assets import ensure_profile_customizations, inline_asset_text_for_options, linked_assets_for_options
+from browser_extensions import (
+    MAX_EXTENSION_DOWNLOAD_SIZE,
+    SCOPED_SWIPE_EXTENSION_NAME,
+    _assert_safe_zip_members,
+    _invalidate_firefox_extension_state,
+    _resolve_bundled_extension_path,
+    _scope_swipe_extension_payload,
+    _sync_firefox_adblock,
+    _sync_firefox_signed_extension,
+    _sync_firefox_swipe_extension,
+    firefox_extension_installed,
+    swipe_extension_mode_value,
+)
+from browser_option_logic import (
+    normalize_option_dict,
+    project_options_for_family,
+    semantic_mode_from_options,
+)
+
+# Re-exported leaf helpers. Imported here so the historical browser_profiles
+# public API (and the test suite) keep resolving ``browser_profiles.<name>``.
+from browser_paths import (
+    _detect_managed_profile_family,
+    _is_explicitly_managed_profile_dir,
+    _profile_root_for_family,
+    _safe_remove_tree,
+    _write_managed_profile_marker,
+    append_unique_csv_arg,
+    get_firefox_extension_config,
+    get_profile_size_bytes,
+    normalize_color_scheme,
+    normalize_default_zoom,
+)
+from browser_settings import (
+    ProfileSettings,
+    _clear_chromium_runtime_caches,
+    _clear_firefox_runtime_caches,
+    _sync_firefox_app_mode_css,
+    _write_chromium_preferences,
+    _write_firefox_user_js,
+    read_profile_settings,
+)
+from custom_assets import (
+    ensure_profile_customizations,
+    inline_asset_text_for_options,
+    linked_assets_for_options,
+)
 from host_commands import host_which
-from browser_option_logic import normalize_option_dict, project_options_for_family, semantic_mode_from_options
 from input_validation import build_safe_slug
 from webapp_constants import (
     CHROMIUM_PROFILE_ROOT,
@@ -28,51 +73,14 @@ from webapp_constants import (
     OPTION_CLEAR_COOKIES_ON_EXIT_KEY,
     OPTION_DISABLE_AI_KEY,
     OPTION_FORCE_PRIVACY_KEY,
-    OPTION_STARTUP_BOOSTER_KEY,
-    OPTION_SAFE_GRAPHICS_KEY,
     OPTION_KEEP_IN_BACKGROUND_KEY,
     OPTION_NOTIFICATIONS_KEY,
     OPTION_OPEN_LINKS_IN_TABS_KEY,
     OPTION_PRESERVE_SESSION_KEY,
+    OPTION_SAFE_GRAPHICS_KEY,
+    OPTION_STARTUP_BOOSTER_KEY,
     OPTION_SWIPE_KEY,
     USER_AGENT_VALUE_KEY,
-)
-
-# Re-exported leaf helpers. Imported here so the historical browser_profiles
-# public API (and the test suite) keep resolving ``browser_profiles.<name>``.
-from browser_paths import (
-    append_unique_csv_arg,
-    get_firefox_extension_config,
-    get_profile_size_bytes,
-    normalize_color_scheme,
-    normalize_default_zoom,
-    _detect_managed_profile_family,
-    _is_explicitly_managed_profile_dir,
-    _profile_root_for_family,
-    _safe_remove_tree,
-    _write_managed_profile_marker,
-)
-from browser_settings import (
-    ProfileSettings,
-    read_profile_settings,
-    _clear_chromium_runtime_caches,
-    _clear_firefox_runtime_caches,
-    _sync_firefox_app_mode_css,
-    _write_chromium_preferences,
-    _write_firefox_user_js,
-)
-from browser_extensions import (
-    MAX_EXTENSION_DOWNLOAD_SIZE,
-    SCOPED_SWIPE_EXTENSION_NAME,
-    firefox_extension_installed,
-    swipe_extension_mode_value,
-    _assert_safe_zip_members,
-    _invalidate_firefox_extension_state,
-    _resolve_bundled_extension_path,
-    _scope_swipe_extension_payload,
-    _sync_firefox_adblock,
-    _sync_firefox_signed_extension,
-    _sync_firefox_swipe_extension,
 )
 
 # Public API of this module: locally defined lifecycle/orchestration functions
@@ -80,23 +88,8 @@ from browser_extensions import (
 # (historical ``from browser_profiles import X`` call sites and the test suite).
 __all__ = [
     'MAX_EXTENSION_DOWNLOAD_SIZE',
-    'ProfileSettings',
     'SCOPED_SWIPE_EXTENSION_NAME',
-    'apply_profile_settings',
-    'resolve_browser_command',
-    'append_user_agent_argument',
-    'ensure_browser_profile',
-    'delete_managed_browser_profiles',
-    'inspect_profile_copy_source',
-    'rename_unused_managed_profile_directories',
-    'read_profile_settings',
-    'firefox_extension_installed',
-    'swipe_extension_mode_value',
-    'get_profile_size_bytes',
-    'get_firefox_extension_config',
-    'append_unique_csv_arg',
-    'normalize_color_scheme',
-    'normalize_default_zoom',
+    'ProfileSettings',
     '_assert_safe_zip_members',
     '_clear_chromium_runtime_caches',
     '_clear_firefox_runtime_caches',
@@ -114,6 +107,21 @@ __all__ = [
     '_write_chromium_preferences',
     '_write_firefox_user_js',
     '_write_managed_profile_marker',
+    'append_unique_csv_arg',
+    'append_user_agent_argument',
+    'apply_profile_settings',
+    'delete_managed_browser_profiles',
+    'ensure_browser_profile',
+    'firefox_extension_installed',
+    'get_firefox_extension_config',
+    'get_profile_size_bytes',
+    'inspect_profile_copy_source',
+    'normalize_color_scheme',
+    'normalize_default_zoom',
+    'read_profile_settings',
+    'rename_unused_managed_profile_directories',
+    'resolve_browser_command',
+    'swipe_extension_mode_value',
 ]
 
 
@@ -254,7 +262,7 @@ def _backup_profiles_ini(profiles_ini, logger):
     if not profiles_ini.exists():
         return
     try:
-        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        timestamp = datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')
         backup_path = profiles_ini.with_name(f'profiles.ini.webapp.{timestamp}.bak')
         shutil.copy2(profiles_ini, backup_path)
         backups = sorted(
@@ -298,7 +306,7 @@ def _parse_ini_key_values(section_lines):
     values = {}
     for line in section_lines[1:]:
         stripped = line.strip()
-        if not stripped or stripped.startswith(';') or stripped.startswith('#') or '=' not in line:
+        if not stripped or stripped.startswith((';', '#')) or '=' not in line:
             continue
         key, value = line.split('=', 1)
         values[key.strip()] = value.strip()

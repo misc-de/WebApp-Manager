@@ -1,5 +1,6 @@
 import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
-from gi.repository import Adw, Gtk, GLib, Pango
+
+from gi.repository import Adw, GLib, Gtk, Pango
 
 from focus_guard import focus_neutral_widget, should_prevent_input_autofocus
 from logger_setup import get_logger
@@ -104,7 +105,7 @@ class DetailPageLayoutMixin:
             self._clear_grid()
             self.grid.set_margin_top(22 if not compact else 16)
             self.grid.set_column_spacing(10 if not compact else 8)
-            self.grid.set_row_spacing(8 if not compact else 8)
+            self.grid.set_row_spacing(8)
 
             fields = [
                 (self.title_label, self.title_entry),

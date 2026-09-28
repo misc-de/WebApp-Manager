@@ -14,7 +14,6 @@ from typing import Any
 from i18n import get_app_config
 from webapp_constants import CHROMIUM_PROFILE_ROOT, FIREFOX_ROOT
 
-
 BROWSER_DEFAULT_CHECK_PREFS = {
     'firefox': {'browser.shell.checkDefaultBrowser': False},
     'chrome': {'browser.check_default_browser': False},

@@ -24,9 +24,9 @@ fake_logger_setup = types.ModuleType('logger_setup')
 fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
-import custom_assets  # noqa: E402
-from detail_page import assets as da  # noqa: E402
-from detail_page.assets import DetailPageAssetsMixin  # noqa: E402
+import custom_assets
+from detail_page import assets as da
+from detail_page.assets import DetailPageAssetsMixin
 
 
 class FakeBuffer:

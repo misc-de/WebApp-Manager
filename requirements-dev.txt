@@ -3,11 +3,11 @@
 # lint/type job runs without GTK and cannot build PyGObject.
 #
 # Versions are pinned on purpose. Lint tools change their default rule set
-# between releases (ruff 0.16 added isort to the defaults, which turned a green
-# tree red on the first CI run), so an unpinned `pip install ruff` makes CI
+# between releases (ruff 0.16 added isort, bugbear, simplify and a dozen more
+# families to the defaults -- 140 findings on a tree that was green under 0.15), so an unpinned `pip install ruff` makes CI
 # results depend on the day it ran. Bump these deliberately, with the code
 # change that the new rules require.
 
-ruff==0.15.14
-mypy==2.1.0
+ruff==0.16.9
+mypy==2.3.1
 coverage==7.13.5

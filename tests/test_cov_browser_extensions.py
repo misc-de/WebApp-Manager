@@ -228,18 +228,16 @@ class SignatureAndScopeTests(unittest.TestCase):
             buffer = io.BytesIO()
             with zipfile.ZipFile(buffer, 'w') as archive:
                 archive.writestr('link/evil.js', 'x')
-            with zipfile.ZipFile(buffer) as archive:
-                with self.assertRaisesRegex(ValueError, 'escapes extraction root'):
-                    be._assert_safe_zip_members(archive, root)
+            with zipfile.ZipFile(buffer) as archive, self.assertRaisesRegex(ValueError, 'escapes extraction root'):
+                be._assert_safe_zip_members(archive, root)
 
     def test_unsafe_member_names_are_rejected(self):
         for name in ('/etc/passwd', 'a\\b.js', '../escape.js', 'ok/../../escape.js'):
             buffer = io.BytesIO()
             with zipfile.ZipFile(buffer, 'w') as archive:
                 archive.writestr(name, 'x')
-            with zipfile.ZipFile(buffer) as archive, tempfile.TemporaryDirectory() as tmpdir:
-                with self.assertRaisesRegex(ValueError, 'unsafe archive member path'):
-                    be._assert_safe_zip_members(archive, Path(tmpdir))
+            with zipfile.ZipFile(buffer) as archive, tempfile.TemporaryDirectory() as tmpdir, self.assertRaisesRegex(ValueError, 'unsafe archive member path'):
+                be._assert_safe_zip_members(archive, Path(tmpdir))
 
     def test_scoping_without_valid_address_returns_payload_unchanged(self):
         payload = _xpi()

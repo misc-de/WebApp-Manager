@@ -71,7 +71,7 @@ class Database:
     def _backup_before_migration(self, from_version, to_version):
         if self.db_name in (':memory:', '') or not Path(self.db_name).exists():
             return
-        timestamp = datetime.now().strftime('%Y%m%dT%H%M%S')
+        timestamp = datetime.now().astimezone().strftime('%Y%m%dT%H%M%S')
         backup_path = Path(f'{self.db_name}.bak-v{from_version}-to-v{to_version}-{timestamp}')
         try:
             shutil.copy2(self.db_name, backup_path)

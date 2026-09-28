@@ -223,9 +223,8 @@ class AppConfigTests(_I18nSandbox):
 
     def test_save_replaces_the_file_atomically(self):
         self.write_user_config({'language': 'de'})
-        with mock.patch.object(i18n.os, 'replace', side_effect=OSError('disk full')):
-            with self.assertRaises(OSError):
-                i18n.save_app_config({'language': 'fr'})
+        with mock.patch.object(i18n.os, 'replace', side_effect=OSError('disk full')), self.assertRaises(OSError):
+            i18n.save_app_config({'language': 'fr'})
         # The old file is untouched and no temp file is left behind.
         self.assertEqual(json.loads(i18n.USER_CONFIG_PATH.read_text(encoding='utf-8')), {'language': 'de'})
         self.assertEqual([p.name for p in i18n.USER_CONFIG_DIR.iterdir()], [i18n.USER_CONFIG_PATH.name])

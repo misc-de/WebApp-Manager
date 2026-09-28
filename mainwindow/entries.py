@@ -1,25 +1,56 @@
 import json
 import os
-import re
 import queue
+import re
 import threading
 from pathlib import Path
 
 import gi_versions  # noqa: F401 -- pins the typelib versions before gi.repository loads
+
 from gi.repository import GLib, Gtk, Pango
 
+import profile_size_cache
 from app_models import Entry
 from app_state import WebAppState
-from browser_profiles import inspect_profile_copy_source, read_profile_settings, rename_unused_managed_profile_directories
-from browser_option_logic import browser_family_for_command, browser_managed_option_keys, browser_state_key, encode_browser_state, mode_option_keys, normalize_option_dict, normalize_option_rows
-from desktop_entries import export_desktop_file, exportable_entry, get_expected_desktop_path, list_managed_desktop_files
+from browser_option_logic import (
+    browser_family_for_command,
+    browser_managed_option_keys,
+    browser_state_key,
+    encode_browser_state,
+    mode_option_keys,
+    normalize_option_dict,
+    normalize_option_rows,
+)
+from browser_profiles import (
+    inspect_profile_copy_source,
+    read_profile_settings,
+    rename_unused_managed_profile_directories,
+)
+from desktop_entries import (
+    export_desktop_file,
+    exportable_entry,
+    get_expected_desktop_path,
+    list_managed_desktop_files,
+)
 from engine_support import ENGINES
 from i18n import t
-from icon_pipeline import get_managed_icon_path, is_svg_support_missing_error, normalize_icon_to_png
+from icon_pipeline import (
+    get_managed_icon_path,
+    is_svg_support_missing_error,
+    normalize_icon_to_png,
+)
 from input_validation import build_safe_slug, sanitize_desktop_value
 from logger_setup import get_logger
-import profile_size_cache
-from webapp_constants import ADDRESS_KEY, APP_MODE_KEY, DESKTOP_NAME_SOURCE_KEY, ICON_PATH_KEY, PROFILE_NAME_KEY, PROFILE_PATH_KEY, USER_AGENT_NAME_KEY, USER_AGENT_VALUE_KEY
+from webapp_constants import (
+    ADDRESS_KEY,
+    APP_MODE_KEY,
+    DESKTOP_NAME_SOURCE_KEY,
+    ICON_PATH_KEY,
+    PROFILE_NAME_KEY,
+    PROFILE_PATH_KEY,
+    USER_AGENT_NAME_KEY,
+    USER_AGENT_VALUE_KEY,
+)
 
 LOG = get_logger(__name__)
 
@@ -349,7 +380,7 @@ class MainWindowEntriesMixin:
                     break
             return (suffix_score, size_score, len(path.parts), len(str(path)))
 
-        return sorted(found, key=score)[0]
+        return min(found, key=score)
 
     def _resolve_import_icon_reference(self, file_data, title, entry_id):
         desktop_path = file_data.get('path')

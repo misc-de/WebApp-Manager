@@ -1,9 +1,9 @@
-from copy import deepcopy
-from typing import Any
 import json
 import locale
 import os
+from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 APP_DIR = Path(__file__).resolve().parent
 LANG_DIR = APP_DIR / 'lang'

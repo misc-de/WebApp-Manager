@@ -23,7 +23,6 @@ fake_logger_setup.get_logger = _build_test_logger
 sys.modules.setdefault('logger_setup', fake_logger_setup)
 
 from browser_profiles import _assert_safe_zip_members, _scope_swipe_extension_payload
-
 from icon_pipeline import _render_svg_bytes_to_png, svg_support_available
 
 
@@ -44,44 +43,34 @@ class ZipSlipGuardTests(unittest.TestCase):
             'icons/app.png': b'\x89PNG',
             'subdir/nested/deep/file.txt': 'ok',
         })
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                _assert_safe_zip_members(archive, Path(tmpdir))
+        with tempfile.TemporaryDirectory() as tmpdir, zipfile.ZipFile(io.BytesIO(data)) as archive:
+            _assert_safe_zip_members(archive, Path(tmpdir))
 
     def test_rejects_parent_escape(self):
         data = _zip_bytes({'../evil.txt': 'pwned'})
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                with self.assertRaises(ValueError) as context:
-                    _assert_safe_zip_members(archive, Path(tmpdir))
+        with tempfile.TemporaryDirectory() as tmpdir, zipfile.ZipFile(io.BytesIO(data)) as archive, self.assertRaises(ValueError) as context:
+            _assert_safe_zip_members(archive, Path(tmpdir))
         self.assertIn('../evil.txt', str(context.exception))
 
     def test_rejects_nested_parent_escape(self):
         data = _zip_bytes({'sub/../../evil.txt': 'pwned'})
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                with self.assertRaises(ValueError):
-                    _assert_safe_zip_members(archive, Path(tmpdir))
+        with tempfile.TemporaryDirectory() as tmpdir, zipfile.ZipFile(io.BytesIO(data)) as archive, self.assertRaises(ValueError):
+            _assert_safe_zip_members(archive, Path(tmpdir))
 
     def test_rejects_absolute_unix_path(self):
         data = _zip_bytes({'/tmp/owned.txt': 'pwned'})
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                with self.assertRaises(ValueError):
-                    _assert_safe_zip_members(archive, Path(tmpdir))
+        with tempfile.TemporaryDirectory() as tmpdir, zipfile.ZipFile(io.BytesIO(data)) as archive, self.assertRaises(ValueError):
+            _assert_safe_zip_members(archive, Path(tmpdir))
 
     def test_rejects_backslash_path(self):
         data = _zip_bytes({'sub\\..\\evil.txt': 'pwned'})
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                with self.assertRaises(ValueError):
-                    _assert_safe_zip_members(archive, Path(tmpdir))
+        with tempfile.TemporaryDirectory() as tmpdir, zipfile.ZipFile(io.BytesIO(data)) as archive, self.assertRaises(ValueError):
+            _assert_safe_zip_members(archive, Path(tmpdir))
 
     def test_allows_plain_file_at_root(self):
         data = _zip_bytes({'manifest.json': '{}'})
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                _assert_safe_zip_members(archive, Path(tmpdir))
+        with tempfile.TemporaryDirectory() as tmpdir, zipfile.ZipFile(io.BytesIO(data)) as archive:
+            _assert_safe_zip_members(archive, Path(tmpdir))
 
 
 class ScopeSwipeXpiTests(unittest.TestCase):
@@ -162,7 +151,8 @@ class RenderSvgExternalBlockingTests(unittest.TestCase):
     def test_xml_entities_are_refused(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / 'xxe.png'
-            with self.assertRaises(Exception):
+            # cairosvg and librsvg refuse this with different exception types.
+            with self.assertRaises(Exception):  # noqa: B017
                 _render_svg_bytes_to_png(self.SVG_WITH_ENTITY, target)
 
     def test_external_image_reference_is_never_fetched(self):
@@ -194,12 +184,12 @@ class RenderSvgExternalBlockingTests(unittest.TestCase):
                 '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="16" height="16">'
                 f'<image xlink:href="http://127.0.0.1:{port}/tracker.png" width="16" height="16"/>'
                 '</svg>'
-            ).encode('utf-8')
+            ).encode()
             with tempfile.TemporaryDirectory() as tmpdir:
                 target = Path(tmpdir) / 'external.png'
                 try:
                     _render_svg_bytes_to_png(svg, target)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     # Refusing outright is also acceptable -- the assertion
                     # below is about the request never being made.
                     pass
