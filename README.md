@@ -102,6 +102,11 @@ Current plugin references:
   AMO: https://addons.mozilla.org/firefox/addon/ublock-origin/  
   Project: https://github.com/gorhill/uBlock
 
+## Credits
+
+WebApp Manager builds on GTK 4, libadwaita, PyGObject, Pillow and other
+open-source projects — see **[CREDITS.md](CREDITS.md)** for the full list with licences.
+
 ## Pictures
 
 **Desktop**  
