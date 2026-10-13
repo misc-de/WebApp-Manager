@@ -916,6 +916,13 @@ class DetailPageIconMixin:
             content_type = response.headers.get_content_type()
             return payload, content_type
 
+    def _same_site_hosts(self, host):
+        host = (host or '').lower().strip()
+        if not host:
+            return set()
+        bare = host[4:] if host.startswith('www.') else host
+        return {host, bare, f'www.{bare}'}
+
     def _public_root_hosts_for_icon_fallback(self, host):
         host = (host or '').lower().strip()
         hosts = []
@@ -1003,7 +1010,13 @@ class DetailPageIconMixin:
             return None
 
         primary_icon_candidates = []
+        # Icons found only on the registrable domain (sbx.example.com ->
+        # www.example.com) belong to a different site, often an older one. A
+        # vector icon there must not beat the subdomain's own PNG, so they are
+        # tried only after every candidate of the entered site.
+        parent_icon_candidates = []
         fallback_meta_candidates = []
+        own_hosts = self._same_site_hosts(parsed.hostname or '')
         final_url = url
         seen_document_urls = set()
 
@@ -1017,31 +1030,39 @@ class DetailPageIconMixin:
                 continue
             if 'html' not in content_type:
                 continue
-            final_url = resolved_final_url or document_url
-            document_base_url = final_url
+            resolved_url = resolved_final_url or document_url
+            # Judged by the requested address: the entered site may redirect to
+            # a login host and still be the site the user asked for.
+            is_own_document = (urlparse(document_url).hostname or '').lower() in own_hosts
+            if is_own_document:
+                final_url = resolved_url
+            icon_candidates = primary_icon_candidates if is_own_document else parent_icon_candidates
+            document_base_url = resolved_url
             base_href = self._extract_base_href(html, document_base_url)
             if base_href:
                 document_base_url = base_href
-            primary_icon_candidates.extend(self._extract_icon_candidates(html, document_base_url))
-            primary_icon_candidates.extend(self._extract_favicon_asset_candidates(html, document_base_url))
+            icon_candidates.extend(self._extract_icon_candidates(html, document_base_url))
+            icon_candidates.extend(self._extract_favicon_asset_candidates(html, document_base_url))
             manifest_url = self._extract_manifest_url(html, document_base_url)
             if manifest_url:
                 try:
                     manifest_text, manifest_content_type, resolved_manifest_url = self._download_text_response(manifest_url, 'application/manifest+json,application/json,text/plain;q=0.9,*/*;q=0.8')
                     if 'json' in manifest_content_type or manifest_text.lstrip().startswith('{'):
-                        primary_icon_candidates.extend(self._extract_manifest_icon_candidates(manifest_text, resolved_manifest_url))
+                        icon_candidates.extend(self._extract_manifest_icon_candidates(manifest_text, resolved_manifest_url))
                 except (OSError, urllib.error.URLError, ValueError):
                     pass
             browserconfig_url = self._extract_browserconfig_url(html, document_base_url)
             if browserconfig_url:
                 try:
                     browserconfig_text, _browserconfig_content_type, resolved_browserconfig_url = self._download_text_response(browserconfig_url, 'application/xml,text/xml,text/plain;q=0.9,*/*;q=0.8')
-                    primary_icon_candidates.extend(self._extract_browserconfig_icon_candidates(browserconfig_text, resolved_browserconfig_url))
+                    icon_candidates.extend(self._extract_browserconfig_icon_candidates(browserconfig_text, resolved_browserconfig_url))
                 except (OSError, urllib.error.URLError, ValueError):
                     pass
             fallback_meta_candidates.extend(self._extract_meta_image_candidates(html, document_base_url))
 
-        root_hosts = self._public_root_hosts_for_icon_fallback(urlparse(final_url).hostname or parsed.hostname or '')
+        root_host = urlparse(final_url).hostname or parsed.hostname or ''
+        root_hosts = self._public_root_hosts_for_icon_fallback(root_host)
+        own_hosts |= self._same_site_hosts(root_host)
         order = 0
         for host in root_hosts:
             for fallback in (
@@ -1060,7 +1081,8 @@ class DetailPageIconMixin:
             ):
                 href = f'https://{host}{fallback}'
                 order += 1
-                primary_icon_candidates.append(self._make_icon_candidate(href, source_kind='root_fallback', order=order))
+                icon_candidates = primary_icon_candidates if host in own_hosts else parent_icon_candidates
+                icon_candidates.append(self._make_icon_candidate(href, source_kind='root_fallback', order=order))
         for href in self._special_icon_fallback_candidates(final_url):
             order += 1
             primary_icon_candidates.append(self._make_icon_candidate(href, source_kind='special_fallback', order=order))
@@ -1079,9 +1101,10 @@ class DetailPageIconMixin:
                     continue
             return None
 
-        primary_result = _try_candidates(primary_icon_candidates)
-        if primary_result is not None:
-            return primary_result
+        for candidate_list in (primary_icon_candidates, parent_icon_candidates):
+            result = _try_candidates(candidate_list)
+            if result is not None:
+                return result
         return _try_candidates(fallback_meta_candidates)
 
     def on_icon_clicked(self, button):

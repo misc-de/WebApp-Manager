@@ -1295,6 +1295,37 @@ class DownloadFaviconTests(unittest.TestCase):
         # The document list also covers the bare domain.
         self.assertIn('https://example.com/', self.fetched_documents)
 
+    def test_subdomain_icon_beats_svg_of_the_parent_site(self):
+        # Regression: sbx.saasio.eu served a new PNG, but the marketing site on
+        # the registrable domain still had an old icon.svg, and the SVG bonus
+        # made that foreign, outdated icon win.
+        self.pages['https://sbx.example.com/'] = (
+            '<link rel="icon" href="/icon.png" sizes="512x512">', 'text/html', 'https://sbx.example.com/')
+        self.pages['https://example.com/'] = (
+            '<link rel="icon" href="/icon.svg">', 'text/html', 'https://www.example.com/')
+        self.images['https://www.example.com/icon.svg'] = (b'OLD', 'image/svg+xml')
+        self.images['https://example.com/favicon.svg'] = (b'OLD', 'image/svg+xml')
+        self.images['https://sbx.example.com/icon.png'] = (b'NEW', 'image/png')
+
+        result = self.harness._download_favicon('https://sbx.example.com/')
+
+        self.assertEqual(result.read_bytes(), b'NEW')
+        self.assertNotIn('https://www.example.com/icon.svg', self.tried_images)
+        self.assertNotIn('https://example.com/favicon.svg', self.tried_images)
+
+    def test_parent_site_icon_is_used_when_the_subdomain_has_none(self):
+        self.pages['https://sbx.example.com/'] = ('<html></html>', 'text/html', 'https://sbx.example.com/')
+        self.pages['https://example.com/'] = (
+            '<link rel="icon" href="/icon.svg"><meta property="og:image" content="/og.jpg">', 'text/html', 'https://www.example.com/')
+        self.images['https://www.example.com/icon.svg'] = (b'PARENT', 'image/svg+xml')
+        self.images['https://www.example.com/og.jpg'] = (b'OG', 'image/jpeg')
+
+        result = self.harness._download_favicon('https://sbx.example.com/')
+
+        self.assertEqual(result.read_bytes(), b'PARENT')
+        # Every own root fallback was tried before the parent site's icon.
+        self.assertTrue(all(url.startswith('https://sbx.example.com/') for url in self.tried_images[:-1]))
+
     def test_meta_image_is_the_last_resort(self):
         html = '<meta property="og:image" content="/og.jpg"><base href="https://cdn.example.com/">'
         self.pages['https://example.com/'] = (html, 'text/html; charset=utf-8', '')
