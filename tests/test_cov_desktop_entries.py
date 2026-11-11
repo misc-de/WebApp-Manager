@@ -226,9 +226,10 @@ class BuildLaunchCommandTests(_SandboxMixin, unittest.TestCase):
 
     def test_firefox_session_restore_and_mode_override(self):
         spec = self._build({'EngineID': '1', OPTION_PRESERVE_SESSION_KEY: '1'})
-        self.assertEqual(spec['argv'], ['firefox'])
+        # --name/--class: the window's app_id matches the launcher's StartupWMClass
+        self.assertEqual(spec['argv'], ['firefox', '--name', 'example', '--class', 'example'])
         spec = self._build({'EngineID': '1', OPTION_PRESERVE_SESSION_KEY: '1'}, mode_override='kiosk')
-        self.assertEqual(spec['argv'], ['firefox', '--kiosk', 'https://a.example/'])
+        self.assertEqual(spec['argv'], ['firefox', '--name', 'example', '--class', 'example', '--kiosk', 'https://a.example/'])
 
     def test_generic_browser(self):
         spec = self._build({'EngineID': '4'})
@@ -241,7 +242,7 @@ class BuildLaunchCommandTests(_SandboxMixin, unittest.TestCase):
             spec = self._build({'EngineID': '1', PROFILE_NAME_KEY: 'n', PROFILE_PATH_KEY: '/s'}, prepare_profile=True)
         ensure.assert_called_once_with('Example', 'firefox', self.logger, stored_profile_name='n', stored_profile_path='/s')
         apply.assert_called_once()
-        self.assertEqual(spec['argv'], ['firefox', '-profile', '/p', 'https://a.example/'])
+        self.assertEqual(spec['argv'], ['firefox', '--name', 'example', '--class', 'example', '-profile', '/p', 'https://a.example/'])
 
     def test_missing_profile_info_still_builds_argv(self):
         with mock.patch.object(de, 'ensure_browser_profile', return_value=None), \

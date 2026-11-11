@@ -207,6 +207,12 @@ def build_launch_command(entry, options_dict, engines_list, logger, prepare_prof
     window_identity = _window_identity_for_entry(entry)
     if browser_family in {'chrome', 'chromium'}:
         exec_parts.append(f'--class={window_identity}')
+    elif browser_family == 'firefox':
+        # Without these every Firefox window reports the app_id / WM_CLASS "firefox", so the
+        # shell (Phosh, GNOME) files the web app under Firefox: tapping Firefox raises the web
+        # app's window or the other way round. --name sets the Wayland app_id, --class the X11
+        # WM_CLASS; both match StartupWMClass below.
+        exec_parts.extend(['--name', window_identity, '--class', window_identity])
     if profile_info:
         exec_parts.extend(profile_info['exec_args'])
         exec_parts.extend(chromium_runtime_extension_args(profile_info, merged_options))
